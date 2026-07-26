@@ -1,0 +1,29 @@
+{
+  "files": {
+    "REPORT.zh-CN.md": {
+      "sha256": "3d9236bc60ef96e21ff89ae304903c7a7b78cccd216f4d09925d51ea58c50855",
+      "size": 6135
+    },
+    "analysis.json": {
+      "sha256": "b3c23d5902e2a7eaa845ec84f0f886656c2f1e7b5f6bd23a15dc08f465439865",
+      "size": 6777
+    }
+  },
+  "kind": "twen_dense_optimizer_drift_audit_bundle",
+  "low_lr_calibration_config": {
+    "path": "configs/base/dense-v4-13m-low-lr-calibration.yaml",
+    "sha256": "3301c226e7ab406311277d82f7a0a26fe58b5597d914bdb24e483b38df98fa79"
+  },
+  "measurement_script": {
+    "path": "scripts/audit_dense_checkpoint_drift.py",
+    "sha256": "4769a6d5d8b9015111bb8621abf7bb9a3af5344bd9036370ed9a03a21de8f696"
+  },
+  "schema_version": 1,
+  "source_checkpoint_manifests": {
+    "v3_final": "ef43670d7c1cbc8ed3908b258659c7426b4cfe10e14c9b7db54968e2481b0e9a",
+    "v4_step_40": "e012448b215ded77959949934b313c410b7c3b2cce9b96d7b38978c08eb0bca6",
+    "v4_step_50": "f88c4f1b68e14437babf86be9b4f7f83c73bb6ae407c748c08431baaf05b7d75",
+    "v4_step_60": "47b77e66b1d64a8277929440bed31a74e83ca2d59f4af8dc58f37f77e2f32c84",
+    "v4_step_62": "4af6174ff3fcf91c339e65bd508fb5e4a69dfb74f62a46e684b59e889cf180c5"
+  }
+}

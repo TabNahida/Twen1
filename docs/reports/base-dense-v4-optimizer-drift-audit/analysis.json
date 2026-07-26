@@ -1,0 +1,176 @@
+{
+  "baseline": {
+    "complete_sha256": "3a21a50e35de74ecd0ff5b8f00aa29ed6c83f746fc2cf97d4da6b0536262b6c7",
+    "manifest_sha256": "ef43670d7c1cbc8ed3908b258659c7426b4cfe10e14c9b7db54968e2481b0e9a",
+    "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v3-500m/step-000000001912-milestone-complete"
+  },
+  "candidates": [
+    {
+      "adapter": {
+        "baseline_rms": 0.03075330688798093,
+        "candidate_rms": 0.030751122835236046,
+        "cosine": 0.9999320497654348,
+        "delta_rms": 0.0003585047691129588,
+        "element_count": 201326592,
+        "max_absolute_delta": 0.007839219411835074,
+        "relative_l2": 0.011657438025081797,
+        "tensor_count": 48
+      },
+      "complete_sha256": "eb9423931b117b1fd9f7732c1dfbf21f41311380fb1aeeb801e627321dde2932",
+      "manifest_sha256": "e012448b215ded77959949934b313c410b7c3b2cce9b96d7b38978c08eb0bca6",
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-16m-smoke/step-000000000040-periodic",
+      "scale": {
+        "baseline_rms": 0.021655233408409132,
+        "candidate_rms": 0.016558140848216593,
+        "cosine": 0.997921376041239,
+        "delta_rms": 0.005241280247814656,
+        "element_count": 24,
+        "max_absolute_delta": 0.007130347192287445,
+        "relative_l2": 0.2420329602995352,
+        "tensor_count": 24
+      },
+      "scale_values": {
+        "baseline_max": 0.03202281892299652,
+        "baseline_mean": 0.020408011429632705,
+        "baseline_min": 0.00514592882245779,
+        "candidate_max": 0.025158271193504333,
+        "candidate_mean": 0.015537724054108063,
+        "candidate_min": 0.0038850600831210613,
+        "decreased_count": 23,
+        "increased_count": 1,
+        "maximum_delta": 0.0016739466227591038,
+        "minimum_delta": -0.007130347192287445,
+        "unchanged_count": 0
+      }
+    },
+    {
+      "adapter": {
+        "baseline_rms": 0.03075330688798093,
+        "candidate_rms": 0.030751360373474285,
+        "cosine": 0.9999150461252746,
+        "delta_rms": 0.00040085729492271354,
+        "element_count": 201326592,
+        "max_absolute_delta": 0.008500907570123672,
+        "relative_l2": 0.013034607835275673,
+        "tensor_count": 48
+      },
+      "complete_sha256": "9c98002bc729c899e7dcb1d36f812afe0ef0cc95cd6a0822ab10fa6938d03ecc",
+      "manifest_sha256": "f88c4f1b68e14437babf86be9b4f7f83c73bb6ae407c748c08431baaf05b7d75",
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-16m-smoke/step-000000000050-periodic",
+      "scale": {
+        "baseline_rms": 0.021655233408409132,
+        "candidate_rms": 0.01659189231022545,
+        "cosine": 0.9976161769731607,
+        "delta_rms": 0.005229765243751731,
+        "element_count": 24,
+        "max_absolute_delta": 0.007839543744921684,
+        "relative_l2": 0.24150121797906438,
+        "tensor_count": 24
+      },
+      "scale_values": {
+        "baseline_max": 0.03202281892299652,
+        "baseline_mean": 0.020408011429632705,
+        "baseline_min": 0.00514592882245779,
+        "candidate_max": 0.02464482933282852,
+        "candidate_mean": 0.015647969383280724,
+        "candidate_min": 0.004266798496246338,
+        "decreased_count": 23,
+        "increased_count": 1,
+        "maximum_delta": 0.0020525180734694004,
+        "minimum_delta": -0.007839543744921684,
+        "unchanged_count": 0
+      }
+    },
+    {
+      "adapter": {
+        "baseline_rms": 0.03075330688798093,
+        "candidate_rms": 0.03075144472236667,
+        "cosine": 0.9999091939480093,
+        "delta_rms": 0.0004144340711267125,
+        "element_count": 201326592,
+        "max_absolute_delta": 0.008586219511926174,
+        "relative_l2": 0.013476081536086206,
+        "tensor_count": 48
+      },
+      "complete_sha256": "f2e973d0d1586da2fb70c636854a45eb44418db567c79b15f4a111a3e18eece7",
+      "manifest_sha256": "47b77e66b1d64a8277929440bed31a74e83ca2d59f4af8dc58f37f77e2f32c84",
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-16m-smoke/step-000000000060-periodic",
+      "scale": {
+        "baseline_rms": 0.021655233408409132,
+        "candidate_rms": 0.0165531949729429,
+        "cosine": 0.9976800911023261,
+        "delta_rms": 0.005262508964265781,
+        "element_count": 24,
+        "max_absolute_delta": 0.008099760860204697,
+        "relative_l2": 0.2430132645082574,
+        "tensor_count": 24
+      },
+      "scale_values": {
+        "baseline_max": 0.03202281892299652,
+        "baseline_mean": 0.020408011429632705,
+        "baseline_min": 0.00514592882245779,
+        "candidate_max": 0.024462804198265076,
+        "candidate_mean": 0.015612728234070042,
+        "candidate_min": 0.004377682693302631,
+        "decreased_count": 23,
+        "increased_count": 1,
+        "maximum_delta": 0.0018842825666069984,
+        "minimum_delta": -0.008099760860204697,
+        "unchanged_count": 0
+      }
+    },
+    {
+      "adapter": {
+        "baseline_rms": 0.03075330688798093,
+        "candidate_rms": 0.03075145315313458,
+        "cosine": 0.9999085685371958,
+        "delta_rms": 0.0004158587839454,
+        "element_count": 201326592,
+        "max_absolute_delta": 0.00857250951230526,
+        "relative_l2": 0.013522408678200612,
+        "tensor_count": 48
+      },
+      "complete_sha256": "101e2a687623b7871960ba6770bb519feb5dd8a9359290a4867324d4e5f4844a",
+      "manifest_sha256": "4af6174ff3fcf91c339e65bd508fb5e4a69dfb74f62a46e684b59e889cf180c5",
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-16m-smoke/step-000000000062-milestone-complete",
+      "scale": {
+        "baseline_rms": 0.021655233408409132,
+        "candidate_rms": 0.016546033111119414,
+        "cosine": 0.9976881942745114,
+        "delta_rms": 0.005268833420782811,
+        "element_count": 24,
+        "max_absolute_delta": 0.008134610950946808,
+        "relative_l2": 0.24330531661398877,
+        "tensor_count": 24
+      },
+      "scale_values": {
+        "baseline_max": 0.03202281892299652,
+        "baseline_mean": 0.020408011429632705,
+        "baseline_min": 0.00514592882245779,
+        "candidate_max": 0.024442685768008232,
+        "candidate_mean": 0.015604865407415977,
+        "candidate_min": 0.004386179149150848,
+        "decreased_count": 23,
+        "increased_count": 1,
+        "maximum_delta": 0.00186464237049222,
+        "minimum_delta": -0.008134610950946808,
+        "unchanged_count": 0
+      }
+    }
+  ],
+  "execution": {
+    "cuda_initialized": false,
+    "device": "cpu",
+    "model_built": false,
+    "optimizer_created": false
+  },
+  "inventory": {
+    "adapter_element_count": 201326592,
+    "adapter_tensor_count": 48,
+    "model_tensor_count": 72,
+    "scale_element_count": 24,
+    "scale_tensor_count": 24
+  },
+  "kind": "twen_dense_checkpoint_trainable_drift_audit",
+  "schema_version": 1
+}

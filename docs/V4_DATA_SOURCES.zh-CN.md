@@ -475,7 +475,18 @@ preflight 会同时认证 lineage 与 effective weights，并把
 连续运行与 STOP → resume → SIGUSR1 分支在 1,048,576 token 后逐字节等价；最终
 `artifacts/configuration/v4-optimizer-ab/summary.json` 同时要求 power、完整 profiler
 trace 与 recovery，结论为 `accepted=true`。因此 Web allowlist 现在只对 v4 设
-`launch_enabled=true`；v1/v2/v3 继续 monitor-only。
+低 LR 校准 profile 设 `launch_enabled=true`；已完成的 16M smoke 与
+v1/v2/v3 继续 monitor-only。
+
+13M 校准不再直接使用上述 16M smoke prepared identity：当前扫描器对 filtered
+candidate/frozen corpus 重审的 quality-v3 attestation SHA256 为
+`73f973c34fff3d8035c72c0898b9ee3d27c2a98e74bdb068c817491157bc4986`，
+新 prepared manifest SHA256 为
+`fff506fd87c69b75d6bd1f86a96a96ee5b9c8e66ae0ba76f5b670154031f4393`，
+共 13,733,818 unique tokens。13M 校准维持 Adapter `5e-5` / scale `1e-5` /
+5M warmup；250M 则使用独立的 Adapter `3e-5` / scale `3e-6` / 10M warmup
+合同，并始终从 v3 final model-only fork。正式暂停评测与新增来源 validation 门见
+[`V4_250M_PILOT_DATA_PLAN.zh-CN.md`](V4_250M_PILOT_DATA_PLAN.zh-CN.md)。
 
 ## 9. 明确排除的候选
 
@@ -489,9 +500,12 @@ trace 与 recovery，结论为 `accepted=true`。因此 Web allowlist 现在只�
 | `wikimedia/wikipedia` 中文 | 数据质量高，但本 recipe 默认排除 CC-BY-SA/GFDL，因此用 Common Corpus permissive sample 替代。 |
 | `PleIAs/common_corpus` 完整仓库 | README 描述 2.27T token，但 default config 只绑定一个 sample；不得把完整规模宣传当作当前锁定输入规模。 |
 
-## 10. 进入 500M formal 前的硬门
+## 10. 历史 500M formal 门（已由 250M 分阶段 pilot 取代）
 
-500M formal 只有在以下证据齐全后才可启动：
+本节保留 smoke 当时的门禁记录。当前正式方案以
+[`V4_250M_PILOT_DATA_PLAN.zh-CN.md`](V4_250M_PILOT_DATA_PLAN.zh-CN.md)
+中的 225M primary + 25M cooldown 合同为准；500M 不再是下一次直接启动目标。
+任何更长 formal 训练仍只有在以下证据齐全后才可启动：
 
 - schema v2、`jsonl_gzip`、prepared-text source mixer 和 Muon 恢复测试通过；
 - 每个 locked file 的 compressed SHA256 和 derived artifact SHA256 完整；

@@ -18,6 +18,7 @@ from urllib.request import Request, urlopen
 
 import pytest
 
+from twen.config import load_train_config
 from twen.io.locking import FileLock
 from twen.runtime.checkpoint import CHECKPOINT_SCHEMA_VERSION, MANIFEST_VERSION
 from twen.web import (
@@ -163,6 +164,12 @@ def test_packaged_dashboard_html_is_available() -> None:
     assert 'profile.start_action === "resume" ? "恢复" : "首次启动"' in html
     assert "任务通过 preflight 后会进入运行中列表" in html
     assert 'addSummary("MTP Loss"' in html
+    assert 'id="sourceMixChart"' in html
+    assert '"数据阶段",' in html
+    assert 'addSummary("来源配比"' in html
+    assert 'addSummary(\n            "语料回绕"' in html
+    assert '"source_tokens/"' in html
+    assert 'key.startsWith("phase_source_tokens/")' in html
     assert '{ key: "mtp_loss", label: "MTP"' in html
     assert '{ key: "anchor_kl_loss", label: "anchor"' in html
     assert '{ key: "hidden_alignment", label: "hidden"' in html
@@ -478,7 +485,7 @@ def test_controller_defaults_to_persistent_gpu_journal(tmp_path: Path) -> None:
     assert controller.gpu_monitor.journal_path == settings.state_dir / "gpu-telemetry.jsonl"
 
 
-def test_real_dashboard_config_only_admits_v4_and_is_confined() -> None:
+def test_real_dashboard_config_only_enables_ready_v4_calibration() -> None:
     project_root = Path(__file__).resolve().parents[1]
     settings = load_dashboard_settings(project_root / "configs/web/dashboard.json")
     assert settings.project_root == project_root.resolve()
@@ -487,22 +494,34 @@ def test_real_dashboard_config_only_admits_v4_and_is_confined() -> None:
         "base-dense-v2-500m",
         "base-dense-v3-500m",
         "base-dense-v4-16m-smoke",
+        "base-dense-v4-13m-low-lr-calibration",
     ]
-    _, v2, v3, v4 = settings.profiles
+    _, v2, v3, v4, calibration = settings.profiles
     launchable = [profile for profile in settings.profiles if profile.launch_enabled]
-    assert launchable == [v4]
-    assert v2.resume == v3.resume == v4.resume == "none"
+    assert launchable == [calibration]
+    assert v2.resume == v3.resume == v4.resume == calibration.resume == "none"
     assert v2.fork_from == v3.fork_from
-    assert v3.fork_from == (
-        project_root / "runs/base-dense-v1/step-000000000383-milestone-complete"
-    ).resolve()
-    assert v4.fork_from == (
-        project_root
-        / "runs/base-dense-v3-500m/step-000000001912-milestone-complete"
-    ).resolve()
+    assert (
+        v3.fork_from
+        == (project_root / "runs/base-dense-v1/step-000000000383-milestone-complete").resolve()
+    )
+    assert (
+        v4.fork_from
+        == (project_root / "runs/base-dense-v3-500m/step-000000001912-milestone-complete").resolve()
+    )
+    assert calibration.fork_from == v4.fork_from
+    calibration_config = load_train_config(calibration.config_path)
+    assert calibration_config.run_id == "base-dense-v4-13m-low-lr-calibration"
+    assert calibration_config.optimizer.adapter_optimizer == "muon"
+    assert calibration_config.optimizer.adapter_lr == 5e-5
+    assert calibration_config.optimizer.scale_lr == 1e-5
+    assert calibration_config.optimizer.max_tokens == 13_000_000
+    assert calibration_config.optimizer.warmup_tokens == 5_000_000
+    assert calibration_config.optimizer.lr_schedule == "cosine"
+    assert calibration_config.data.allow_corpus_reuse is False
     assert all(
         profile.config_sha256 == hashlib.sha256(profile.config_path.read_bytes()).hexdigest()
-        for profile in (v2, v3, v4)
+        for profile in (v2, v3, v4, calibration)
     )
     assert all(
         profile.config_path.is_relative_to(settings.project_root) for profile in settings.profiles
@@ -744,8 +763,7 @@ def test_second_start_uses_authenticated_auto_resume_without_fork_or_torch_impor
     assert result["effective_fork_from"] is None
     assert result["verified_checkpoint_id"] == checkpoint.name
     assert (
-        result["resume_compatibility_gate"]
-        == "training_entrypoint_preflight_and_checkpoint_loader"
+        result["resume_compatibility_gate"] == "training_entrypoint_preflight_and_checkpoint_loader"
     )
     actions = [
         json.loads(line) for line in (settings.state_dir / "actions.jsonl").read_text().splitlines()
