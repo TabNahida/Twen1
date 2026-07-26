@@ -29,6 +29,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from ..io.download import DownloadManager
 from ..io.locking import FileLock
 from ..io.proxy import ProxySettings
 from ..progress import TaskProgress
@@ -36,6 +37,7 @@ from ..utils import atomic_write_json, sha256_file
 from .audits import validate_base_audit_attestation
 from .shards import ShardTransaction, is_shard_complete, read_complete_marker
 from .sources import (
+    EXTRACTED_CONTRACT_IDENTITY_KEYS,
     BaseDataRecipe,
     CorpusBuildStopped,
     DataSourceError,
@@ -54,9 +56,11 @@ from .sources import (
     _source_fingerprint,
     _target_reached,
     _write_corpus_manifest,
+    iter_local_jsonl_rows,
     iter_remote_parquet_rows,
     load_base_data_recipe,
     load_resolved_source_lock,
+    materialize_jsonl_gzip_artifact,
     validate_extracted_base_corpus,
 )
 
@@ -441,43 +445,267 @@ def _chunk_identity_contract(
 
 def _guarded_target(
     *,
+    role: str,
     quota: int,
     observed_raw: int,
     observed_clean: int,
     clean_guard_ratio: float,
     survival_guard_points: float,
+    zero_clean_fallback: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     if quota <= 0 or observed_raw <= 0 or not 0 <= observed_clean <= observed_raw:
         raise RefillError("invalid quota/raw/clean token accounting")
-    survival = observed_clean / observed_raw
-    guarded_survival = survival - survival_guard_points
-    if guarded_survival <= 0:
-        raise RefillError(
-            "observed survival is too low for the requested survival guard: "
-            f"{survival:.8f} - {survival_guard_points:.8f}"
-        )
+    if role not in {"train", "validation"}:
+        raise RefillError(f"invalid refill target role: {role!r}")
+    observed_survival = observed_clean / observed_raw
     clean_target_with_guard = math.ceil(quota * (1.0 + clean_guard_ratio))
-    runtime_target = max(
-        observed_raw,
-        math.ceil(clean_target_with_guard / guarded_survival),
-    )
+    if observed_clean == 0:
+        if not isinstance(zero_clean_fallback, Mapping):
+            raise RefillError(
+                "observed survival is zero and no same-source fallback evidence was provided"
+            )
+        fallback_role = zero_clean_fallback.get("role")
+        fallback_raw = zero_clean_fallback.get("observed_raw_tokens")
+        fallback_clean = zero_clean_fallback.get("observed_clean_tokens")
+        if (
+            fallback_role not in {"train", "validation"}
+            or fallback_role == role
+            or isinstance(fallback_raw, bool)
+            or not isinstance(fallback_raw, int)
+            or fallback_raw <= 0
+            or isinstance(fallback_clean, bool)
+            or not isinstance(fallback_clean, int)
+            or not 0 < fallback_clean <= fallback_raw
+        ):
+            raise RefillError("invalid zero-clean fallback survival evidence")
+        planning_survival = fallback_clean / fallback_raw
+        guarded_survival = planning_survival - survival_guard_points
+        if guarded_survival <= 0:
+            raise RefillError(
+                "fallback survival is too low for the requested survival guard: "
+                f"{planning_survival:.8f} - {survival_guard_points:.8f}"
+            )
+        additional_raw = math.ceil(clean_target_with_guard / guarded_survival)
+        runtime_target = observed_raw + additional_raw
+        survival_evidence: dict[str, object] = {
+            "mode": "same-source-role-fallback-for-zero-clean",
+            "target_role": role,
+            "evidence_role": fallback_role,
+            "observed_raw_tokens": fallback_raw,
+            "observed_clean_tokens": fallback_clean,
+            "observed_survival": planning_survival,
+        }
+        formula = (
+            "runtime_raw_target=observed_raw+ceil("
+            "ceil(quota*(1+clean_guard_ratio))/"
+            "(fallback_observed_survival-survival_guard_points))"
+        )
+    else:
+        planning_survival = observed_survival
+        guarded_survival = planning_survival - survival_guard_points
+        if guarded_survival <= 0:
+            raise RefillError(
+                "observed survival is too low for the requested survival guard: "
+                f"{planning_survival:.8f} - {survival_guard_points:.8f}"
+            )
+        runtime_target = max(
+            observed_raw,
+            math.ceil(clean_target_with_guard / guarded_survival),
+        )
+        additional_raw = runtime_target - observed_raw
+        survival_evidence = {
+            "mode": "target-role-observed",
+            "target_role": role,
+            "evidence_role": role,
+            "observed_raw_tokens": observed_raw,
+            "observed_clean_tokens": observed_clean,
+            "observed_survival": observed_survival,
+        }
+        formula = (
+            "runtime_raw_target=max(observed_raw,ceil("
+            "ceil(quota*(1+clean_guard_ratio))/(observed_survival-survival_guard_points)))"
+        )
     return {
+        "role": role,
         "quota_tokens": quota,
         "observed_raw_tokens": observed_raw,
         "observed_clean_tokens": observed_clean,
         "observed_rejected_tokens": observed_raw - observed_clean,
-        "observed_survival": survival,
+        "observed_survival": observed_survival,
+        "survival_evidence": survival_evidence,
+        "planning_survival": planning_survival,
         "clean_guard_ratio": clean_guard_ratio,
         "clean_target_with_guard_tokens": clean_target_with_guard,
         "survival_guard_points": survival_guard_points,
         "guarded_survival": guarded_survival,
         "runtime_raw_target_tokens": runtime_target,
-        "additional_raw_tokens": runtime_target - observed_raw,
-        "formula": (
-            "runtime_raw_target=max(observed_raw,ceil("
-            "ceil(quota*(1+clean_guard_ratio))/(observed_survival-survival_guard_points)))"
-        ),
+        "additional_raw_tokens": additional_raw,
+        "formula": formula,
     }
+
+
+def _derive_refill_semantics(
+    *,
+    recipe: BaseDataRecipe,
+    profile: str,
+    base_manifest: Path,
+    base_value: Mapping[str, object],
+    clean_accounting: Mapping[str, object],
+    attestation_path: Path,
+    attestation: Mapping[str, object],
+    frozen_manifest: Path,
+    frozen_value: Mapping[str, object],
+    clean_guard_ratio: float,
+    survival_guard_points: float,
+) -> dict[str, object]:
+    recipe_sources = {source.source_id: source for source in recipe.sources}
+    base_sources = _source_mapping(base_value)
+    clean_sources = clean_accounting.get("sources")
+    if not isinstance(clean_sources, Mapping):
+        raise RefillError("materialized token accounting has no sources")
+    if set(recipe_sources) != set(base_sources) or set(recipe_sources) != set(clean_sources):
+        raise RefillError("recipe/base/materialized source sets differ")
+
+    documents, event_counts = _rejection_documents(attestation_path, attestation)
+    rejected_tokens = _resolve_rejected_tokens(
+        documents=documents,
+        candidate_manifest=base_manifest,
+        candidate_value=base_value,
+        frozen_manifest=frozen_manifest,
+        frozen_value=frozen_value,
+    )
+    rejected_by_source: dict[str, dict[str, int]] = {
+        source_id: {
+            "train_documents": 0,
+            "train_tokens": 0,
+            "validation_documents": 0,
+            "validation_tokens": 0,
+        }
+        for source_id in recipe_sources
+    }
+    for key, token_count in rejected_tokens.items():
+        role, source_id, _ = key
+        if source_id not in rejected_by_source:
+            raise RefillError(f"rejection references source outside recipe: {source_id}")
+        rejected_by_source[source_id][f"{role}_documents"] += 1
+        rejected_by_source[source_id][f"{role}_tokens"] += token_count
+
+    chunk_contract = _chunk_identity_contract(base_manifest, base_value)
+    planned_sources: list[dict[str, object]] = []
+    runtime_train_total = 0
+    runtime_validation_total = 0
+    for source in recipe.sources:
+        raw_summary = base_sources[source.source_id]
+        clean_summary = clean_sources[source.source_id]
+        if not isinstance(clean_summary, Mapping):
+            raise RefillError(
+                f"materialized source token accounting is invalid: {source.source_id}"
+            )
+        raw_train = int(raw_summary.get("actual_train_tokens", 0))
+        raw_validation = int(raw_summary.get("actual_validation_tokens", 0))
+        clean_train = int(clean_summary.get("train_tokens", 0))
+        clean_validation = int(clean_summary.get("validation_tokens", 0))
+        unique = rejected_by_source[source.source_id]
+        if raw_train - unique["train_tokens"] != clean_train:
+            raise RefillError(
+                f"{source.source_id} train materialization does not equal raw minus unique "
+                "rejection tokens"
+            )
+        if raw_validation - unique["validation_tokens"] != clean_validation:
+            raise RefillError(
+                f"{source.source_id} validation materialization does not equal raw minus "
+                "unique rejection tokens"
+            )
+        train_plan = _guarded_target(
+            role="train",
+            quota=int(source.train_token_quotas[profile]),
+            observed_raw=raw_train,
+            observed_clean=clean_train,
+            clean_guard_ratio=clean_guard_ratio,
+            survival_guard_points=survival_guard_points,
+        )
+        validation_plan = _guarded_target(
+            role="validation",
+            quota=source.validation_token_quota,
+            observed_raw=raw_validation,
+            observed_clean=clean_validation,
+            clean_guard_ratio=clean_guard_ratio,
+            survival_guard_points=survival_guard_points,
+            zero_clean_fallback={
+                "role": "train",
+                "observed_raw_tokens": raw_train,
+                "observed_clean_tokens": clean_train,
+            },
+        )
+        runtime_train_total += int(train_plan["runtime_raw_target_tokens"])
+        runtime_validation_total += int(validation_plan["runtime_raw_target_tokens"])
+        planned_sources.append(
+            {
+                "source_id": source.source_id,
+                "cursor": chunk_contract[source.source_id]["cursor"],
+                "original_chunk_count": chunk_contract[source.source_id]["chunk_count"],
+                "original_pipeline_fingerprint": chunk_contract[source.source_id][
+                    "pipeline_fingerprint"
+                ],
+                "original_source_fingerprint": chunk_contract[source.source_id][
+                    "source_fingerprint"
+                ],
+                "unique_rejections": unique,
+                "train": train_plan,
+                "validation": validation_plan,
+            }
+        )
+    return {
+        "rejection_event_counts": event_counts,
+        "unique_rejection_documents": len(documents),
+        "sources": planned_sources,
+        "runtime_targets": {
+            "train_tokens": runtime_train_total,
+            "validation_tokens": runtime_validation_total,
+        },
+        "original_quotas": {
+            "train_tokens": recipe.profiles[profile],
+            "validation_tokens": recipe.validation_tokens,
+        },
+    }
+
+
+def _validate_materialized_projection(
+    *,
+    materialized_value: Mapping[str, object],
+    attestation_path: Path,
+    attestation: Mapping[str, object],
+    base_manifest_sha256: str,
+    frozen_manifest_sha256: str,
+) -> None:
+    expected_projection = {
+        "method": "complete-audit-rejection-ledger-projection-v1",
+        "parent_candidate_manifest_sha256": base_manifest_sha256,
+        "parent_frozen_validation_manifest_sha256": frozen_manifest_sha256,
+        "audit_attestation_sha256": sha256_file(attestation_path),
+        "audit_attestation_fingerprint": attestation.get("attestation_fingerprint"),
+        "rejection_ledger": attestation.get("rejection_ledger"),
+    }
+    for audit_name in ("format_audit", "license_audit"):
+        audit = materialized_value.get(audit_name)
+        if not isinstance(audit, Mapping) or audit.get("projection") != expected_projection:
+            raise RefillError(
+                f"materialized corpus {audit_name} does not bind the refill audit projection"
+            )
+    materialization = materialized_value.get("materialization_audit")
+    if not isinstance(materialization, Mapping):
+        raise RefillError("materialized corpus has no authenticated materialization audit")
+    for field, expected in expected_projection.items():
+        if materialization.get(field) != expected:
+            raise RefillError(
+                "materialized corpus materialization audit does not bind the refill "
+                f"projection field: {field}"
+            )
+    if (
+        materialization.get("complete") is not True
+        or materialization.get("network_policy") != "offline-audit-materialization"
+    ):
+        raise RefillError("materialized corpus audit projection is incomplete")
 
 
 def create_refill_plan(
@@ -536,97 +764,30 @@ def create_refill_plan(
     profile = base_value.get("profile")
     if profile not in recipe.profiles:
         raise RefillError(f"base raw profile is not refillable: {profile!r}")
-    recipe_sources = {source.source_id: source for source in recipe.sources}
-    base_sources = _source_mapping(base_value)
-    clean_sources = clean_accounting.get("sources")
-    if not isinstance(clean_sources, Mapping):
-        raise RefillError("materialized token accounting has no sources")
-    if set(recipe_sources) != set(base_sources) or set(recipe_sources) != set(clean_sources):
-        raise RefillError("recipe/base/materialized source sets differ")
     if materialized_value.get("recipe_sha256") != recipe.sha256 or materialized_value.get(
         "tokenizer_manifest_sha256"
     ) != base_value.get("tokenizer_manifest_sha256"):
         raise RefillError("materialized corpus lineage differs from base raw corpus")
-
-    documents, event_counts = _rejection_documents(attestation_path, attestation)
-    rejected_tokens = _resolve_rejected_tokens(
-        documents=documents,
-        candidate_manifest=base_manifest,
-        candidate_value=base_value,
+    _validate_materialized_projection(
+        materialized_value=materialized_value,
+        attestation_path=attestation_path,
+        attestation=attestation,
+        base_manifest_sha256=base_sha,
+        frozen_manifest_sha256=frozen_sha,
+    )
+    semantics = _derive_refill_semantics(
+        recipe=recipe,
+        profile=str(profile),
+        base_manifest=base_manifest,
+        base_value=base_value,
+        clean_accounting=clean_accounting,
+        attestation_path=attestation_path,
+        attestation=attestation,
         frozen_manifest=frozen_manifest,
         frozen_value=frozen_value,
+        clean_guard_ratio=clean_guard_ratio,
+        survival_guard_points=survival_guard_points,
     )
-    rejected_by_source: dict[str, dict[str, int]] = {
-        source_id: {
-            "train_documents": 0,
-            "train_tokens": 0,
-            "validation_documents": 0,
-            "validation_tokens": 0,
-        }
-        for source_id in recipe_sources
-    }
-    for key, token_count in rejected_tokens.items():
-        role, source_id, _ = key
-        if source_id not in rejected_by_source:
-            raise RefillError(f"rejection references source outside recipe: {source_id}")
-        rejected_by_source[source_id][f"{role}_documents"] += 1
-        rejected_by_source[source_id][f"{role}_tokens"] += token_count
-
-    chunk_contract = _chunk_identity_contract(base_manifest, base_value)
-    planned_sources: list[dict[str, object]] = []
-    runtime_train_total = 0
-    runtime_validation_total = 0
-    for source in recipe.sources:
-        raw_summary = base_sources[source.source_id]
-        clean_summary = clean_sources[source.source_id]
-        assert isinstance(clean_summary, Mapping)
-        raw_train = int(raw_summary.get("actual_train_tokens", 0))
-        raw_validation = int(raw_summary.get("actual_validation_tokens", 0))
-        clean_train = int(clean_summary.get("train_tokens", 0))
-        clean_validation = int(clean_summary.get("validation_tokens", 0))
-        unique = rejected_by_source[source.source_id]
-        if raw_train - unique["train_tokens"] != clean_train:
-            raise RefillError(
-                f"{source.source_id} train materialization does not equal raw minus unique "
-                "rejection tokens"
-            )
-        if raw_validation - unique["validation_tokens"] != clean_validation:
-            raise RefillError(
-                f"{source.source_id} validation materialization does not equal raw minus "
-                "unique rejection tokens"
-            )
-        train_plan = _guarded_target(
-            quota=int(source.train_token_quotas[str(profile)]),
-            observed_raw=raw_train,
-            observed_clean=clean_train,
-            clean_guard_ratio=clean_guard_ratio,
-            survival_guard_points=survival_guard_points,
-        )
-        validation_plan = _guarded_target(
-            quota=source.validation_token_quota,
-            observed_raw=raw_validation,
-            observed_clean=clean_validation,
-            clean_guard_ratio=clean_guard_ratio,
-            survival_guard_points=survival_guard_points,
-        )
-        runtime_train_total += int(train_plan["runtime_raw_target_tokens"])
-        runtime_validation_total += int(validation_plan["runtime_raw_target_tokens"])
-        planned_sources.append(
-            {
-                "source_id": source.source_id,
-                "cursor": chunk_contract[source.source_id]["cursor"],
-                "original_chunk_count": chunk_contract[source.source_id]["chunk_count"],
-                "original_pipeline_fingerprint": chunk_contract[source.source_id][
-                    "pipeline_fingerprint"
-                ],
-                "original_source_fingerprint": chunk_contract[source.source_id][
-                    "source_fingerprint"
-                ],
-                "unique_rejections": unique,
-                "train": train_plan,
-                "validation": validation_plan,
-            }
-        )
 
     attestation_identity = _identity(attestation_path)
     base_identity = _identity(base_manifest)
@@ -646,8 +807,8 @@ def create_refill_plan(
         "audit_attestation": attestation_identity,
         "a0_attestation_sha256": attestation_identity["sha256"],
         "rejection_ledger": dict(attestation["rejection_ledger"]),
-        "rejection_event_counts": event_counts,
-        "unique_rejection_documents": len(documents),
+        "rejection_event_counts": semantics["rejection_event_counts"],
+        "unique_rejection_documents": semantics["unique_rejection_documents"],
         "base_raw_manifest": base_identity,
         "original_raw_manifest_sha256": base_identity["sha256"],
         "base_raw_corpus_fingerprint": base_value.get("corpus_fingerprint"),
@@ -664,15 +825,9 @@ def create_refill_plan(
         "resolved_source_lock_sha256": base_value.get("resolved_source_lock_sha256"),
         "tokenizer_manifest_sha256": base_value.get("tokenizer_manifest_sha256"),
         "profile": profile,
-        "sources": planned_sources,
-        "runtime_targets": {
-            "train_tokens": runtime_train_total,
-            "validation_tokens": runtime_validation_total,
-        },
-        "original_quotas": {
-            "train_tokens": recipe.profiles[str(profile)],
-            "validation_tokens": recipe.validation_tokens,
-        },
+        "sources": semantics["sources"],
+        "runtime_targets": semantics["runtime_targets"],
+        "original_quotas": semantics["original_quotas"],
         "network_policy": "fallback (Hugging Face direct first, configured proxy second)",
         "training_started": False,
         "gpu_kd_started": False,
@@ -731,6 +886,8 @@ def validate_refill_plan(path: str | Path) -> dict[str, Any]:
         or complete.get("plan") != plan.name
         or complete.get("plan_sha256") != sha256_file(plan)
         or complete.get("plan_fingerprint") != fingerprint
+        or complete.get("training_started") is not False
+        or complete.get("gpu_kd_started") is not False
     ):
         raise RefillError("refill plan COMPLETE binding mismatch")
     for name, complete_name in (
@@ -754,10 +911,24 @@ def validate_refill_plan(path: str | Path) -> dict[str, Any]:
             _validated_manifest(source)
     audit_identity = value["audit_attestation"]
     base_identity = value["base_raw_manifest"]
+    materialized_identity = value["materialized_manifest"]
     frozen_identity = value["frozen_validation_manifest"]
     assert isinstance(audit_identity, Mapping)
     assert isinstance(base_identity, Mapping)
+    assert isinstance(materialized_identity, Mapping)
     assert isinstance(frozen_identity, Mapping)
+    recipe_identity = value.get("recipe")
+    if not isinstance(recipe_identity, Mapping):
+        raise RefillError("refill plan recipe identity is invalid")
+    recipe_path = Path(str(recipe_identity.get("path"))).resolve()
+    recipe_sha = _normalized_sha(recipe_identity.get("sha256"), "recipe.sha256")
+    if (
+        not recipe_path.is_file()
+        or recipe_path.stat().st_size != recipe_identity.get("size")
+        or sha256_file(recipe_path) != recipe_sha
+    ):
+        raise RefillError("refill plan recipe is missing or identity-mismatched")
+    recipe = load_base_data_recipe(recipe_path)
     attestation = validate_base_audit_attestation(str(audit_identity["path"]))
     attestation_candidate = attestation.get("candidate")
     attestation_frozen = attestation.get("frozen_validation")
@@ -774,6 +945,9 @@ def validate_refill_plan(path: str | Path) -> dict[str, Any]:
     ).resolve() or attestation_frozen.get("manifest_sha256") != frozen_identity.get("sha256"):
         raise RefillError("audit frozen validation identity differs from refill plan")
     base_manifest, base_value, _ = _validated_manifest(str(base_identity["path"]))
+    materialized_manifest, materialized_value, _ = _validated_manifest(
+        str(materialized_identity["path"])
+    )
     frozen_manifest, frozen_value, _ = _validated_manifest(str(frozen_identity["path"]))
     base_digest = _validation_digest(base_manifest, base_value)
     frozen_digest = _validation_digest(frozen_manifest, frozen_value)
@@ -789,12 +963,100 @@ def validate_refill_plan(path: str | Path) -> dict[str, Any]:
     policy = value.get("policy")
     if not isinstance(policy, Mapping):
         raise RefillError("refill plan policy is invalid")
-    if float(policy.get("clean_guard_ratio", 0.0)) < DEFAULT_CLEAN_GUARD_RATIO:
+    raw_clean_guard = policy.get("clean_guard_ratio")
+    raw_survival_guard = policy.get("survival_guard_points")
+    if (
+        isinstance(raw_clean_guard, bool)
+        or not isinstance(raw_clean_guard, (int, float))
+        or not math.isfinite(raw_clean_guard)
+    ):
+        raise RefillError("refill plan clean guard is invalid")
+    if (
+        isinstance(raw_survival_guard, bool)
+        or not isinstance(raw_survival_guard, (int, float))
+        or not math.isfinite(raw_survival_guard)
+    ):
+        raise RefillError("refill plan survival guard is invalid")
+    clean_guard_ratio = float(raw_clean_guard)
+    survival_guard_points = float(raw_survival_guard)
+    if clean_guard_ratio < DEFAULT_CLEAN_GUARD_RATIO:
         raise RefillError("refill plan clean guard is below the policy minimum")
-    if float(policy.get("survival_guard_points", 0.0)) < DEFAULT_SURVIVAL_GUARD_POINTS:
+    if survival_guard_points < DEFAULT_SURVIVAL_GUARD_POINTS:
         raise RefillError("refill plan survival guard is below the policy minimum")
-    if policy.get("rejected_documents_are_not_counted_as_clean") is not True:
-        raise RefillError("refill plan may count rejected documents as clean")
+    if survival_guard_points >= 1.0:
+        raise RefillError("refill plan survival guard must be below one")
+    expected_policy = {
+        "clean_guard_ratio": clean_guard_ratio,
+        "minimum_clean_guard_ratio": DEFAULT_CLEAN_GUARD_RATIO,
+        "survival_guard_points": survival_guard_points,
+        "minimum_survival_guard_points": DEFAULT_SURVIVAL_GUARD_POINTS,
+        "rejection_accounting": "unique-(role,source_id,text_sha256)-via-attribution-v1",
+        "rejected_documents_are_not_counted_as_clean": True,
+    }
+    if dict(policy) != expected_policy:
+        raise RefillError("refill plan policy semantics changed")
+
+    profile = base_value.get("profile")
+    if not isinstance(profile, str) or profile not in recipe.profiles:
+        raise RefillError("base raw profile is not refillable")
+    if (
+        value.get("a0_attestation_sha256") != audit_identity.get("sha256")
+        or value.get("original_raw_manifest_sha256") != base_identity.get("sha256")
+        or value.get("base_raw_corpus_fingerprint") != base_value.get("corpus_fingerprint")
+        or value.get("recipe_id") != recipe.recipe_id
+        or value.get("recipe_sha256") != recipe.sha256
+        or recipe_sha != recipe.sha256
+        or value.get("resolved_source_lock_sha256") != base_value.get("resolved_source_lock_sha256")
+        or value.get("tokenizer_manifest_sha256") != base_value.get("tokenizer_manifest_sha256")
+        or value.get("profile") != profile
+        or value.get("rejection_ledger") != attestation.get("rejection_ledger")
+        or value.get("network_policy")
+        != "fallback (Hugging Face direct first, configured proxy second)"
+        or value.get("training_started") is not False
+        or value.get("gpu_kd_started") is not False
+    ):
+        raise RefillError("refill plan authenticated lineage semantics changed")
+    if (
+        base_value.get("recipe_sha256") != recipe.sha256
+        or frozen_value.get("recipe_sha256") != recipe.sha256
+        or materialized_value.get("recipe_sha256") != recipe.sha256
+        or frozen_value.get("tokenizer_manifest_sha256")
+        != base_value.get("tokenizer_manifest_sha256")
+        or materialized_value.get("tokenizer_manifest_sha256")
+        != base_value.get("tokenizer_manifest_sha256")
+    ):
+        raise RefillError("refill plan corpus lineage differs from recipe/base raw corpus")
+    _validate_materialized_projection(
+        materialized_value=materialized_value,
+        attestation_path=Path(str(audit_identity["path"])).resolve(),
+        attestation=attestation,
+        base_manifest_sha256=str(base_identity["sha256"]),
+        frozen_manifest_sha256=str(frozen_identity["sha256"]),
+    )
+
+    clean_accounting = corpus_tokens_by_source(materialized_manifest)
+    semantics = _derive_refill_semantics(
+        recipe=recipe,
+        profile=profile,
+        base_manifest=base_manifest,
+        base_value=base_value,
+        clean_accounting=clean_accounting,
+        attestation_path=Path(str(audit_identity["path"])).resolve(),
+        attestation=attestation,
+        frozen_manifest=frozen_manifest,
+        frozen_value=frozen_value,
+        clean_guard_ratio=clean_guard_ratio,
+        survival_guard_points=survival_guard_points,
+    )
+    for field in (
+        "rejection_event_counts",
+        "unique_rejection_documents",
+        "sources",
+        "runtime_targets",
+        "original_quotas",
+    ):
+        if value.get(field) != semantics[field]:
+            raise RefillError(f"refill plan derived {field} semantics changed")
     return value
 
 
@@ -1260,6 +1522,11 @@ def _validate_manifest_payload_without_complete(
         "attribution_files",
         "file_lists",
     )
+    contract_presence = [name in value for name in EXTRACTED_CONTRACT_IDENTITY_KEYS]
+    if any(contract_presence) and not all(contract_presence):
+        raise RefillError("refill intermediate has a partial data-contract audit")
+    if all(contract_presence):
+        identity_keys = (*identity_keys, *EXTRACTED_CONTRACT_IDENTITY_KEYS)
     identity = {name: value.get(name) for name in identity_keys}
     fingerprint = hashlib.sha256(
         json.dumps(identity, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -1541,11 +1808,33 @@ def build_refill_lineage(
         resolved_by_id = {item.source_id: item for item in resolved_lock.sources}
 
         if _row_iterator is None:
+            proxy_settings = ProxySettings.from_environment(proxy_url=proxy_url)
             file_factory = HfRangeFileFactory(
                 network_policy=network_policy,
-                proxy_settings=ProxySettings.from_environment(proxy_url=proxy_url),
+                proxy_settings=proxy_settings,
                 token=token,
                 block_size=range_block_size,
+            )
+            download_manager = DownloadManager(
+                network_policy=network_policy,
+                proxy_settings=proxy_settings,
+            )
+            resolved_for_url: dict[str, tuple[SourceRecipe, ResolvedSource]] = {}
+            derived_for_url: dict[str, Any] = {}
+            for source_recipe in recipe.sources:
+                resolved_source = resolved_by_id[source_recipe.source_id]
+                for resolved_file in resolved_source.files:
+                    if resolved_file.url in resolved_for_url:
+                        raise RefillError(f"duplicate resolved source URL: {resolved_file.url}")
+                    resolved_for_url[resolved_file.url] = (
+                        source_recipe,
+                        resolved_source,
+                    )
+            base_identity = plan.get("base_raw_manifest")
+            if not isinstance(base_identity, Mapping):
+                raise RefillError("plan base raw identity is invalid")
+            base_cache_root = (
+                Path(str(base_identity.get("path"))).resolve().parent / ".source-cache"
             )
 
             def row_iterator(
@@ -1553,15 +1842,39 @@ def build_refill_lineage(
                 start_row: int,
                 columns: Sequence[str],
             ) -> Iterator[tuple[int, Mapping[str, object]]]:
-                return iter_remote_parquet_rows(
-                    artifact,
+                if artifact.storage_format == "parquet":
+                    return iter_remote_parquet_rows(
+                        artifact,
+                        start_row,
+                        columns,
+                        file_factory=file_factory,
+                    )
+                if artifact.storage_format != "jsonl_gzip":
+                    raise RefillError(
+                        f"unsupported resolved storage format: {artifact.storage_format}"
+                    )
+                source_recipe, resolved_source = resolved_for_url[artifact.url]
+                derived = derived_for_url.get(artifact.url)
+                if derived is None:
+                    derived = materialize_jsonl_gzip_artifact(
+                        artifact,
+                        source_id=source_recipe.source_id,
+                        repo_id=resolved_source.repo_id,
+                        revision=resolved_source.revision,
+                        cache_root=base_cache_root,
+                        manager=download_manager,
+                        token=token,
+                    )
+                    derived_for_url[artifact.url] = derived
+                return iter_local_jsonl_rows(
+                    derived.path,
                     start_row,
                     columns,
-                    file_factory=file_factory,
                 )
 
         else:
             file_factory = None
+            download_manager = None
             row_iterator = _row_iterator
 
         initial_tokens = 0
@@ -1623,9 +1936,15 @@ def build_refill_lineage(
                     expected_source_fingerprint=target["source_fingerprint"],
                 )
                 results.append((source, resolved, source_progress, chunks))
-        effective_policy = (
-            file_factory.effective_network_policy if file_factory is not None else network_policy
-        )
+        if file_factory is None:
+            effective_policy = network_policy
+        elif file_factory.effective_network_policy == "proxy-fallback" or (
+            download_manager is not None
+            and download_manager.effective_network_policy == "proxy-fallback"
+        ):
+            effective_policy = "proxy-fallback"
+        else:
+            effective_policy = file_factory.effective_network_policy
         _write_corpus_manifest(
             output_root=root,
             recipe=recipe,
