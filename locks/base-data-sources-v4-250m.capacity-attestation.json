@@ -1,0 +1,323 @@
+{
+  "config": {
+    "contains_pending_identity_sentinels": true,
+    "path": "configs/base/dense-v4-250m-pilot.blocked.yaml",
+    "sha256": "f2d31d1ddbb770343796f5f4d57e7fa1fe6677097dc08ba1debaa4c8dc0f8af5"
+  },
+  "kind": "twen_v4_250m_capacity_attestation",
+  "launch_enabled": false,
+  "overall": {
+    "available_clean_tokens": null,
+    "margin_tokens": null,
+    "passed": false,
+    "required_clean_tokens": 250524288
+  },
+  "phase_disjointness": {
+    "near_duplicate": {
+      "algorithm": "lexical-5gram-one-permutation-minhash-lsh-v1",
+      "passed": false,
+      "result": null,
+      "threshold": 0.8
+    },
+    "normalized_text_exact": {
+      "algorithm": "unicode-nfkc-whitespace-sha256-intersection-v1",
+      "passed": false,
+      "result": null
+    },
+    "stable_id_exact": {
+      "algorithm": "authenticated-stable-id-set-intersection-v1",
+      "passed": false,
+      "result": null
+    }
+  },
+  "schema_version": 1,
+  "stages": {
+    "cooldown": {
+      "license_audit": {
+        "materialized_attribution_manifest_sha256": null,
+        "passed": false
+      },
+      "locked_remote_bytes": 3778042685,
+      "passed": false,
+      "per_source_capacity": [
+        {
+          "available_governed_unique_tokens": null,
+          "governance_retention_rate": 0.8702,
+          "margin_tokens": null,
+          "mix_basis_points": 2500,
+          "passed": false,
+          "planned_raw_tokens": 7986000,
+          "required_clean_tokens": 6317500,
+          "retention_evidence": "base-v4-smoke-r3-r4-governance",
+          "source_id": "chinese_fineweb2_cmn_hani"
+        },
+        {
+          "available_governed_unique_tokens": null,
+          "governance_retention_rate": 0.7374,
+          "margin_tokens": null,
+          "mix_basis_points": 2200,
+          "passed": false,
+          "planned_raw_tokens": 8294000,
+          "required_clean_tokens": 5559400,
+          "retention_evidence": "base-v4-smoke-r3-r4-governance",
+          "source_id": "math_finemath_4plus"
+        },
+        {
+          "available_governed_unique_tokens": null,
+          "governance_retention_rate": 0.4534,
+          "margin_tokens": null,
+          "mix_basis_points": 2200,
+          "passed": false,
+          "planned_raw_tokens": 13488000,
+          "required_clean_tokens": 5559400,
+          "retention_evidence": "base-v4-smoke-r3-r4-governance",
+          "source_id": "science_arxiv_open_permissive"
+        },
+        {
+          "available_governed_unique_tokens": null,
+          "governance_retention_rate": 0.8577,
+          "margin_tokens": null,
+          "mix_basis_points": 1000,
+          "passed": false,
+          "planned_raw_tokens": 3241000,
+          "required_clean_tokens": 2527000,
+          "retention_evidence": "base-v4-smoke-r3-r4-governance",
+          "source_id": "science_cosmopedia_openstax"
+        },
+        {
+          "available_governed_unique_tokens": null,
+          "governance_retention_rate": 0.7454,
+          "margin_tokens": null,
+          "mix_basis_points": 800,
+          "passed": false,
+          "planned_raw_tokens": 2984000,
+          "required_clean_tokens": 2021600,
+          "retention_evidence": "base-v4-smoke-r3-r4-governance",
+          "source_id": "science_cosmopedia_stanford"
+        },
+        {
+          "available_governed_unique_tokens": null,
+          "governance_retention_rate": 0.9167,
+          "margin_tokens": null,
+          "mix_basis_points": 400,
+          "passed": false,
+          "planned_raw_tokens": 1213000,
+          "required_clean_tokens": 1010800,
+          "retention_evidence": "base-v4-smoke-r3-r4-governance",
+          "source_id": "education_libretexts_permissive"
+        },
+        {
+          "available_governed_unique_tokens": null,
+          "governance_retention_rate": 0.3444,
+          "margin_tokens": null,
+          "mix_basis_points": 400,
+          "passed": false,
+          "planned_raw_tokens": 3229000,
+          "required_clean_tokens": 1010800,
+          "retention_evidence": "base-v4-smoke-r3-r4-governance",
+          "source_id": "public_domain_project_gutenberg"
+        },
+        {
+          "available_governed_unique_tokens": null,
+          "governance_retention_rate": 0.7585,
+          "margin_tokens": null,
+          "mix_basis_points": 500,
+          "passed": false,
+          "planned_raw_tokens": 1833000,
+          "required_clean_tokens": 1263500,
+          "retention_evidence": "base-v4-smoke-r3-r4-governance",
+          "source_id": "code_github_clean_allowlisted"
+        }
+      ],
+      "planned_clean_materialization_tokens": 25270000,
+      "planned_raw_materialization_tokens": 42268000,
+      "prepared_identity": {
+        "available_unique_samples": null,
+        "available_unique_tokens": null,
+        "dataset_fingerprint": null,
+        "manifest_path": null,
+        "manifest_sha256": null,
+        "margin_tokens": null,
+        "passed": false,
+        "source_map_sha256": null
+      },
+      "protected_sample_margin_tokens": 1984,
+      "protected_sample_tokens": 25264128,
+      "quality_audit": {
+        "audit_attestation_path": null,
+        "audit_attestation_sha256": null,
+        "passed": false
+      },
+      "recipe": {
+        "path": "locks/base-data-sources-v4-cooldown.json",
+        "recipe_id": "base-v4-250m-cooldown-20260727-r1",
+        "sha256": "7e7d067d0ba0b1552ae582ecb9a3cd55cdde111e3a930538d5d21e868c76b1e4"
+      },
+      "required_prepared_samples": 6168,
+      "required_prepared_tokens": 25262144,
+      "required_tail_batch_tokens": 262144,
+      "required_training_tokens": 25000000,
+      "resolved_lock": {
+        "passed": true,
+        "path": "locks/base-data-sources-v4-cooldown.resolved.json",
+        "remote_identity_verification": "verified_against_hub_metadata",
+        "sha256": "94e1a20c37516c6b2f54d4b591b4661dd2ad1692b690d2a3902a0a82bb30fdac"
+      },
+      "stage": "cooldown"
+    },
+    "primary": {
+      "license_audit": {
+        "materialized_attribution_manifest_sha256": null,
+        "passed": false
+      },
+      "locked_remote_bytes": 6193268750,
+      "passed": false,
+      "per_source_capacity": [
+        {
+          "available_governed_unique_tokens": null,
+          "governance_retention_rate": 0.8702,
+          "margin_tokens": null,
+          "mix_basis_points": 2400,
+          "passed": false,
+          "planned_raw_tokens": 68343000,
+          "required_clean_tokens": 54064800,
+          "retention_evidence": "base-v4-smoke-r3-r4-governance",
+          "source_id": "chinese_fineweb2_cmn_hani"
+        },
+        {
+          "available_governed_unique_tokens": null,
+          "governance_retention_rate": 0.9499,
+          "margin_tokens": null,
+          "mix_basis_points": 2500,
+          "passed": false,
+          "planned_raw_tokens": 65217000,
+          "required_clean_tokens": 56317500,
+          "retention_evidence": "base-v4-smoke-r3-r4-governance",
+          "source_id": "english_fineweb_edu_dedup"
+        },
+        {
+          "available_governed_unique_tokens": null,
+          "governance_retention_rate": 0.7374,
+          "margin_tokens": null,
+          "mix_basis_points": 1400,
+          "passed": false,
+          "planned_raw_tokens": 47046000,
+          "required_clean_tokens": 31537800,
+          "retention_evidence": "base-v4-smoke-r3-r4-governance",
+          "source_id": "math_finemath_4plus"
+        },
+        {
+          "available_governed_unique_tokens": null,
+          "governance_retention_rate": 0.7585,
+          "margin_tokens": null,
+          "mix_basis_points": 900,
+          "passed": false,
+          "planned_raw_tokens": 29403000,
+          "required_clean_tokens": 20274300,
+          "retention_evidence": "base-v4-smoke-r3-r4-governance",
+          "source_id": "code_github_clean_allowlisted"
+        },
+        {
+          "available_governed_unique_tokens": null,
+          "governance_retention_rate": 0.8577,
+          "margin_tokens": null,
+          "mix_basis_points": 400,
+          "passed": false,
+          "planned_raw_tokens": 11557000,
+          "required_clean_tokens": 9010800,
+          "retention_evidence": "base-v4-smoke-r3-r4-governance",
+          "source_id": "science_cosmopedia_openstax"
+        },
+        {
+          "available_governed_unique_tokens": null,
+          "governance_retention_rate": 0.7454,
+          "margin_tokens": null,
+          "mix_basis_points": 300,
+          "passed": false,
+          "planned_raw_tokens": 9974000,
+          "required_clean_tokens": 6758100,
+          "retention_evidence": "base-v4-smoke-r3-r4-governance",
+          "source_id": "science_cosmopedia_stanford"
+        },
+        {
+          "available_governed_unique_tokens": null,
+          "governance_retention_rate": 0.4534,
+          "margin_tokens": null,
+          "mix_basis_points": 1200,
+          "passed": false,
+          "planned_raw_tokens": 65584000,
+          "required_clean_tokens": 27032400,
+          "retention_evidence": "base-v4-smoke-r3-r4-governance",
+          "source_id": "science_arxiv_open_permissive"
+        },
+        {
+          "available_governed_unique_tokens": null,
+          "governance_retention_rate": 0.9263,
+          "margin_tokens": null,
+          "mix_basis_points": 400,
+          "passed": false,
+          "planned_raw_tokens": 10701000,
+          "required_clean_tokens": 9010800,
+          "retention_evidence": "base-v4-smoke-r3-r4-governance",
+          "source_id": "code_stackv2_edu_permissive"
+        },
+        {
+          "available_governed_unique_tokens": null,
+          "governance_retention_rate": 0.8042,
+          "margin_tokens": null,
+          "mix_basis_points": 500,
+          "passed": false,
+          "planned_raw_tokens": 15407000,
+          "required_clean_tokens": 11263500,
+          "retention_evidence": "base-v4-smoke-r3-r4-governance",
+          "source_id": "multilingual_common_corpus_permissive"
+        }
+      ],
+      "planned_clean_materialization_tokens": 225270000,
+      "planned_raw_materialization_tokens": 323232000,
+      "prepared_identity": {
+        "available_unique_samples": null,
+        "available_unique_tokens": null,
+        "dataset_fingerprint": null,
+        "manifest_path": null,
+        "manifest_sha256": null,
+        "margin_tokens": null,
+        "passed": false,
+        "source_map_sha256": null
+      },
+      "protected_sample_margin_tokens": 1472,
+      "protected_sample_tokens": 225263616,
+      "quality_audit": {
+        "audit_attestation_path": null,
+        "audit_attestation_sha256": null,
+        "passed": false
+      },
+      "recipe": {
+        "path": "locks/base-data-sources-v4-primary.json",
+        "recipe_id": "base-v4-250m-primary-20260727-r1",
+        "sha256": "479df3abec68f5c2354c226876188e1b75cceba9bfce21e23108b3d48e0dc58e"
+      },
+      "required_prepared_samples": 54996,
+      "required_prepared_tokens": 225262144,
+      "required_tail_batch_tokens": 262144,
+      "required_training_tokens": 225000000,
+      "resolved_lock": {
+        "passed": true,
+        "path": "locks/base-data-sources-v4-primary.resolved.json",
+        "remote_identity_verification": "verified_against_hub_metadata",
+        "sha256": "aedf4cf3df1219c5bd20ce740b44dd6872f536aed286716db26cad64cf05fcb8"
+      },
+      "stage": "primary"
+    }
+  },
+  "status": "blocked_pending_materialization",
+  "training_contract": {
+    "allow_corpus_reuse": false,
+    "complete_tail_batch_required": true,
+    "cooldown_start_tokens": 225000000,
+    "global_batch_tokens": 262144,
+    "max_tokens": 250000000,
+    "sequence_length": 4096
+  },
+  "training_started": false
+}

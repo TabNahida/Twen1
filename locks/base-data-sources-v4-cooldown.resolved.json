@@ -1,0 +1,455 @@
+{
+  "activation_audit": {
+    "declared_parser_compatible": true,
+    "declared_runnable": true,
+    "missing_implementation": [],
+    "required_implementation": [
+      "schema-v2 validation",
+      "immutable jsonl_gzip download with LFS SHA256 verification",
+      "streaming gzip JSON Lines extraction",
+      "dotted-field access and canonical license normalization",
+      "source-stratified optimizer-batch mixing"
+    ],
+    "runnable": true,
+    "schema_status": "stable",
+    "verified_implementation": [
+      "schema-v2 validation",
+      "immutable jsonl_gzip download with LFS SHA256 verification",
+      "streaming gzip JSON Lines extraction",
+      "dotted-field access and canonical license normalization",
+      "source-stratified optimizer-batch mixing"
+    ]
+  },
+  "format_audit": {
+    "complete": true,
+    "formats": {
+      "jsonl_gzip": {
+        "locked_file_count": 3,
+        "source_count": 3
+      },
+      "parquet": {
+        "locked_file_count": 5,
+        "source_count": 5
+      }
+    }
+  },
+  "kind": "twen_resolved_base_data_sources",
+  "license_audit": {
+    "complete": true,
+    "normalization": "canonical_allowlist_before_acceptance",
+    "sources": [
+      {
+        "allowlist": [],
+        "declaration": "ODC-By-1.0",
+        "field": null,
+        "scope": "Database license; also subject to Common Crawl Terms of Use.",
+        "source_id": "chinese_fineweb2_cmn_hani",
+        "value_mode": "canonical_after_normalization"
+      },
+      {
+        "allowlist": [],
+        "declaration": "ODC-By-1.0",
+        "field": null,
+        "scope": "Database license; also subject to Common Crawl Terms of Use.",
+        "source_id": "math_finemath_4plus",
+        "value_mode": "canonical_after_normalization"
+      },
+      {
+        "allowlist": [
+          "cc0-1.0",
+          "cc-by-1.0",
+          "cc-by-2.0",
+          "cc-by-2.5",
+          "cc-by-3.0",
+          "cc-by-4.0"
+        ],
+        "declaration": "per-document CC BY, CC BY-SA or CC0",
+        "field": "metadata.license",
+        "scope": "Only normalized CC0 and CC BY rows are admitted by this draft.",
+        "source_id": "science_arxiv_open_permissive",
+        "value_mode": "canonical_after_normalization"
+      },
+      {
+        "allowlist": [],
+        "declaration": "Apache-2.0",
+        "field": null,
+        "scope": "Synthetic Mixtral output released by the dataset authors.",
+        "source_id": "science_cosmopedia_openstax",
+        "value_mode": "canonical_after_normalization"
+      },
+      {
+        "allowlist": [],
+        "declaration": "Apache-2.0",
+        "field": null,
+        "scope": "Synthetic Mixtral output released by the dataset authors.",
+        "source_id": "science_cosmopedia_stanford",
+        "value_mode": "canonical_after_normalization"
+      },
+      {
+        "allowlist": [
+          "public-domain",
+          "cc0-1.0",
+          "cc-by-1.0",
+          "cc-by-2.0",
+          "cc-by-2.5",
+          "cc-by-3.0",
+          "cc-by-4.0"
+        ],
+        "declaration": "per-document Public Domain, CC BY, CC BY-SA or GFDL",
+        "field": "metadata.license",
+        "scope": "Only normalized Public Domain, CC0 and CC BY rows are admitted by this draft.",
+        "source_id": "education_libretexts_permissive",
+        "value_mode": "canonical_after_normalization"
+      },
+      {
+        "allowlist": [
+          "public-domain"
+        ],
+        "declaration": "per-document Public Domain",
+        "field": "metadata.license",
+        "scope": "English Project Gutenberg/PG19 books marked Public Domain; only normalized Public Domain rows are admitted.",
+        "source_id": "public_domain_project_gutenberg",
+        "value_mode": "canonical_after_normalization"
+      },
+      {
+        "allowlist": [
+          "apache-2.0",
+          "bsd-2-clause",
+          "bsd-3-clause",
+          "cc0-1.0",
+          "isc",
+          "mit"
+        ],
+        "declaration": "per-row SPDX field",
+        "field": "license",
+        "scope": "Cleaning code is Apache-2.0; every source file retains its repository license.",
+        "source_id": "code_github_clean_allowlisted",
+        "value_mode": "canonical_spdx"
+      }
+    ]
+  },
+  "materialization_audit": {
+    "complete": true,
+    "remote_identity_verification": "verified_against_hub_metadata",
+    "sources": [
+      {
+        "locked_files": [
+          {
+            "path": "data/cmn_Hani/train/004_00072.parquet",
+            "sha256": "1a12f849443704a260195472bfd4d047d22a0e4db58fce66d870a443e6ce85be",
+            "size": 1183319384
+          }
+        ],
+        "method": "immutable_lfs_range_stream",
+        "source_id": "chinese_fineweb2_cmn_hani",
+        "storage_format": "parquet"
+      },
+      {
+        "locked_files": [
+          {
+            "path": "finemath-4plus/train-00061-of-00064.parquet",
+            "sha256": "c78473e2f04cefe953ebe26c8d5fdee1b1a4b70c4b95a0210314304a9ba175e7",
+            "size": 288814138
+          }
+        ],
+        "method": "immutable_lfs_range_stream",
+        "source_id": "math_finemath_4plus",
+        "storage_format": "parquet"
+      },
+      {
+        "locked_files": [
+          {
+            "path": "arxiv-papers-0006.json.gz",
+            "sha256": "60dbfe42596e6255eb2e54566c715c2ebddb77df0d6030154a293f570d933f32",
+            "size": 840230674
+          }
+        ],
+        "method": "verified_complete_lfs_download_then_streaming_gzip_jsonl",
+        "source_id": "science_arxiv_open_permissive",
+        "storage_format": "jsonl_gzip"
+      },
+      {
+        "locked_files": [
+          {
+            "path": "data/openstax/train-00000-of-00002.parquet",
+            "sha256": "bb0d51bf863f11feafb99ea9af56acec1b8b6837413f51a7498282c7e8f37381",
+            "size": 173501101
+          }
+        ],
+        "method": "immutable_lfs_range_stream",
+        "source_id": "science_cosmopedia_openstax",
+        "storage_format": "parquet"
+      },
+      {
+        "locked_files": [
+          {
+            "path": "data/stanford/train-00003-of-00013.parquet",
+            "sha256": "2190925f386734e57e66da066f543937a65d6d65b4afe4dbf2f4fdfe8983286a",
+            "size": 254262994
+          }
+        ],
+        "method": "immutable_lfs_range_stream",
+        "source_id": "science_cosmopedia_stanford",
+        "storage_format": "parquet"
+      },
+      {
+        "locked_files": [
+          {
+            "path": "libretexts-0000.json.gz",
+            "sha256": "71851a2b5acfccf80659729a0eccd07ab6ed737f0edc659a662aa9c1cd2194db",
+            "size": 115037937
+          }
+        ],
+        "method": "verified_complete_lfs_download_then_streaming_gzip_jsonl",
+        "source_id": "education_libretexts_permissive",
+        "storage_format": "jsonl_gzip"
+      },
+      {
+        "locked_files": [
+          {
+            "path": "project_gutenberg-dolma-0000.json.gz",
+            "sha256": "f7e3716e1e2be607a044920ffec69d1395598cca178d4ccbbd343f206b31effb",
+            "size": 570083371
+          }
+        ],
+        "method": "verified_complete_lfs_download_then_streaming_gzip_jsonl",
+        "source_id": "public_domain_project_gutenberg",
+        "storage_format": "jsonl_gzip"
+      },
+      {
+        "locked_files": [
+          {
+            "path": "data/train-00571-of-00880.parquet",
+            "sha256": "035dc344e445b1a5ee2471f5225a9b39ddf12d69fdedf14a895f559cbf05e4c9",
+            "size": 352793086
+          }
+        ],
+        "method": "immutable_lfs_range_stream",
+        "source_id": "code_github_clean_allowlisted",
+        "storage_format": "parquet"
+      }
+    ]
+  },
+  "recipe_id": "base-v4-250m-cooldown-20260727-r1",
+  "recipe_schema_version": 2,
+  "recipe_sha256": "7e7d067d0ba0b1552ae582ecb9a3cd55cdde111e3a930538d5d21e868c76b1e4",
+  "schema_version": 1,
+  "source_mix": {
+    "algorithm": "token-deficit-corrected-source-mix-bp-v2",
+    "basis_points_total": 10000,
+    "schema_version": 1,
+    "sources": [
+      {
+        "mix_basis_points": 2500,
+        "origin_group": "existing",
+        "source_id": "chinese_fineweb2_cmn_hani",
+        "train_token_quotas": {
+          "materialization": 6317500
+        },
+        "validation_token_quota": 62500
+      },
+      {
+        "mix_basis_points": 2200,
+        "origin_group": "existing",
+        "source_id": "math_finemath_4plus",
+        "train_token_quotas": {
+          "materialization": 5559400
+        },
+        "validation_token_quota": 55000
+      },
+      {
+        "mix_basis_points": 2200,
+        "origin_group": "new",
+        "source_id": "science_arxiv_open_permissive",
+        "train_token_quotas": {
+          "materialization": 5559400
+        },
+        "validation_token_quota": 55000
+      },
+      {
+        "mix_basis_points": 1000,
+        "origin_group": "existing",
+        "source_id": "science_cosmopedia_openstax",
+        "train_token_quotas": {
+          "materialization": 2527000
+        },
+        "validation_token_quota": 25000
+      },
+      {
+        "mix_basis_points": 800,
+        "origin_group": "existing",
+        "source_id": "science_cosmopedia_stanford",
+        "train_token_quotas": {
+          "materialization": 2021600
+        },
+        "validation_token_quota": 20000
+      },
+      {
+        "mix_basis_points": 400,
+        "origin_group": "new",
+        "source_id": "education_libretexts_permissive",
+        "train_token_quotas": {
+          "materialization": 1010800
+        },
+        "validation_token_quota": 10000
+      },
+      {
+        "mix_basis_points": 400,
+        "origin_group": "new",
+        "source_id": "public_domain_project_gutenberg",
+        "train_token_quotas": {
+          "materialization": 1010800
+        },
+        "validation_token_quota": 10000
+      },
+      {
+        "mix_basis_points": 500,
+        "origin_group": "existing",
+        "source_id": "code_github_clean_allowlisted",
+        "train_token_quotas": {
+          "materialization": 1263500
+        },
+        "validation_token_quota": 12500
+      }
+    ],
+    "unit": "valid_tokens"
+  },
+  "sources": [
+    {
+      "config": "cmn_Hani",
+      "files": [
+        {
+          "path": "data/cmn_Hani/train/004_00072.parquet",
+          "sha256": "1a12f849443704a260195472bfd4d047d22a0e4db58fce66d870a443e6ce85be",
+          "size": 1183319384,
+          "url": "https://huggingface.co/datasets/HuggingFaceFW/fineweb-2/resolve/af9c13333eb981300149d5ca60a8e9d659b276b9/data/cmn_Hani/train/004_00072.parquet"
+        }
+      ],
+      "license": "ODC-By-1.0",
+      "repo_id": "HuggingFaceFW/fineweb-2",
+      "revision": "af9c13333eb981300149d5ca60a8e9d659b276b9",
+      "source_id": "chinese_fineweb2_cmn_hani",
+      "split": "train",
+      "storage_format": "parquet"
+    },
+    {
+      "config": "finemath-4plus",
+      "files": [
+        {
+          "path": "finemath-4plus/train-00061-of-00064.parquet",
+          "sha256": "c78473e2f04cefe953ebe26c8d5fdee1b1a4b70c4b95a0210314304a9ba175e7",
+          "size": 288814138,
+          "url": "https://huggingface.co/datasets/HuggingFaceTB/finemath/resolve/e92b25a616738fe95dc186b64dfb19f9c8525594/finemath-4plus/train-00061-of-00064.parquet"
+        }
+      ],
+      "license": "ODC-By-1.0",
+      "repo_id": "HuggingFaceTB/finemath",
+      "revision": "e92b25a616738fe95dc186b64dfb19f9c8525594",
+      "source_id": "math_finemath_4plus",
+      "split": "train",
+      "storage_format": "parquet"
+    },
+    {
+      "config": "default",
+      "files": [
+        {
+          "path": "arxiv-papers-0006.json.gz",
+          "sha256": "60dbfe42596e6255eb2e54566c715c2ebddb77df0d6030154a293f570d933f32",
+          "size": 840230674,
+          "url": "https://huggingface.co/datasets/common-pile/arxiv_papers_filtered/resolve/033cf7f53f9b348deec868c1a5a48484f3ee9e52/arxiv-papers-0006.json.gz"
+        }
+      ],
+      "license": "per-document CC BY, CC BY-SA or CC0",
+      "repo_id": "common-pile/arxiv_papers_filtered",
+      "revision": "033cf7f53f9b348deec868c1a5a48484f3ee9e52",
+      "source_id": "science_arxiv_open_permissive",
+      "split": "train",
+      "storage_format": "jsonl_gzip"
+    },
+    {
+      "config": "openstax",
+      "files": [
+        {
+          "path": "data/openstax/train-00000-of-00002.parquet",
+          "sha256": "bb0d51bf863f11feafb99ea9af56acec1b8b6837413f51a7498282c7e8f37381",
+          "size": 173501101,
+          "url": "https://huggingface.co/datasets/HuggingFaceTB/cosmopedia/resolve/0ae6ec63f91742bd2d1eaef4f02232c55d719385/data/openstax/train-00000-of-00002.parquet"
+        }
+      ],
+      "license": "Apache-2.0",
+      "repo_id": "HuggingFaceTB/cosmopedia",
+      "revision": "0ae6ec63f91742bd2d1eaef4f02232c55d719385",
+      "source_id": "science_cosmopedia_openstax",
+      "split": "train",
+      "storage_format": "parquet"
+    },
+    {
+      "config": "stanford",
+      "files": [
+        {
+          "path": "data/stanford/train-00003-of-00013.parquet",
+          "sha256": "2190925f386734e57e66da066f543937a65d6d65b4afe4dbf2f4fdfe8983286a",
+          "size": 254262994,
+          "url": "https://huggingface.co/datasets/HuggingFaceTB/cosmopedia/resolve/0ae6ec63f91742bd2d1eaef4f02232c55d719385/data/stanford/train-00003-of-00013.parquet"
+        }
+      ],
+      "license": "Apache-2.0",
+      "repo_id": "HuggingFaceTB/cosmopedia",
+      "revision": "0ae6ec63f91742bd2d1eaef4f02232c55d719385",
+      "source_id": "science_cosmopedia_stanford",
+      "split": "train",
+      "storage_format": "parquet"
+    },
+    {
+      "config": "default",
+      "files": [
+        {
+          "path": "libretexts-0000.json.gz",
+          "sha256": "71851a2b5acfccf80659729a0eccd07ab6ed737f0edc659a662aa9c1cd2194db",
+          "size": 115037937,
+          "url": "https://huggingface.co/datasets/common-pile/libretexts_filtered/resolve/70388bca52b4a93515e14b1d56618fd7944988fd/libretexts-0000.json.gz"
+        }
+      ],
+      "license": "per-document Public Domain, CC BY, CC BY-SA or GFDL",
+      "repo_id": "common-pile/libretexts_filtered",
+      "revision": "70388bca52b4a93515e14b1d56618fd7944988fd",
+      "source_id": "education_libretexts_permissive",
+      "split": "train",
+      "storage_format": "jsonl_gzip"
+    },
+    {
+      "config": "default",
+      "files": [
+        {
+          "path": "project_gutenberg-dolma-0000.json.gz",
+          "sha256": "f7e3716e1e2be607a044920ffec69d1395598cca178d4ccbbd343f206b31effb",
+          "size": 570083371,
+          "url": "https://huggingface.co/datasets/common-pile/project_gutenberg_filtered/resolve/3cdf6879c807f4e4e063f2ceb23bc268d8c29ab7/project_gutenberg-dolma-0000.json.gz"
+        }
+      ],
+      "license": "per-document Public Domain",
+      "repo_id": "common-pile/project_gutenberg_filtered",
+      "revision": "3cdf6879c807f4e4e063f2ceb23bc268d8c29ab7",
+      "source_id": "public_domain_project_gutenberg",
+      "split": "train",
+      "storage_format": "jsonl_gzip"
+    },
+    {
+      "config": "native_parquet",
+      "files": [
+        {
+          "path": "data/train-00571-of-00880.parquet",
+          "sha256": "035dc344e445b1a5ee2471f5225a9b39ddf12d69fdedf14a895f559cbf05e4c9",
+          "size": 352793086,
+          "url": "https://huggingface.co/datasets/codeparrot/github-code-clean/resolve/c48d40f9e70f0196f8236901ee35807f7d6c44c0/data/train-00571-of-00880.parquet"
+        }
+      ],
+      "license": "per-row SPDX field",
+      "repo_id": "codeparrot/github-code-clean",
+      "revision": "c48d40f9e70f0196f8236901ee35807f7d6c44c0",
+      "source_id": "code_github_clean_allowlisted",
+      "split": "train",
+      "storage_format": "parquet"
+    }
+  ]
+}

@@ -1,0 +1,141 @@
+architecture:
+  active_student_layers: null
+  adapter_init_path: artifacts/calibration/base/adapters.safetensors
+  channel_map_path: artifacts/calibration/base/channel_map.json
+  donor_hidden_size: 4096
+  donor_intermediate_size: 12288
+  donor_layers: 32
+  expert_initialization: donor
+  expert_intermediate_size: 1536
+  layer_map_path: artifacts/calibration/base/layer_map.json
+  lora_rank: 16
+  norm_topk_prob: true
+  num_experts: 8
+  random_expert_seed: 1701
+  student_hidden_size: 1024
+  student_intermediate_size: 3584
+  student_layers: 24
+  top_k: 2
+checkpoint:
+  every_minutes: 20.0
+  every_steps: 50
+  keep_last: 3
+  output_dir: runs/base-dense-v4-250m-pilot
+  save_on_signal: true
+  stop_file: STOP
+data:
+  global_batch_tokens: 262144
+  manifest_path: PENDING_PRIMARY_PREPARED_MANIFEST
+  manifest_sha256: PENDING_PRIMARY_PREPARED_MANIFEST_SHA256
+  max_sequence_length: 4096
+  micro_batch_size: 1
+  mode: prepared-text
+  num_workers: 4
+  shuffle_seed: 3407
+  source_map_sha256: PENDING_PRIMARY_SOURCE_MAP_SHA256
+  source_mix_algorithm: token-deficit-corrected-source-mix-bp-v2
+  source_mix_allow_weight_override: false
+  source_mix_basis_points:
+    chinese_fineweb2_cmn_hani: 2400
+    code_github_clean_allowlisted: 900
+    code_stackv2_edu_permissive: 400
+    english_fineweb_edu_dedup: 2500
+    math_finemath_4plus: 1400
+    multilingual_common_corpus_permissive: 500
+    science_arxiv_open_permissive: 1200
+    science_cosmopedia_openstax: 400
+    science_cosmopedia_stanford: 300
+  allow_corpus_reuse: false
+  quality_cooldown_manifest_path: PENDING_COOLDOWN_PREPARED_MANIFEST
+  quality_cooldown_manifest_sha256: PENDING_COOLDOWN_PREPARED_MANIFEST_SHA256
+  quality_cooldown_start_tokens: 225000000
+  phase_disjointness_attestation_path: PENDING_PRIMARY_COOLDOWN_PHASE_DISJOINTNESS_ATTESTATION
+  phase_disjointness_attestation_sha256: PENDING_PRIMARY_COOLDOWN_PHASE_DISJOINTNESS_ATTESTATION_SHA256
+losses:
+  anchor_kl: 0.0
+  dense_oracle: 0.0
+  dense_oracle_batch_fraction: 0.0
+  hidden_alignment: 0.0
+  hidden_alignment_batch_fraction: 0.0
+  kd_temperature: 2.0
+  load_balance: 0.0
+  mtp: 0.1
+  ntp: 1.0
+  router_supervision: 0.0
+  router_z: 0.0
+  teacher_kd: 0.0
+optimizer:
+  adam_beta1: 0.9
+  adam_beta2: 0.95
+  adam_eps: 1.0e-08
+  adapter_lr: 3.0e-05
+  adapter_optimizer: muon
+  grad_clip_norm: 1.0
+  lora_lr: 3.0e-05
+  lr_schedule: cosine
+  max_tokens: 250000000
+  min_lr_ratio: 0.1
+  muon_adjust_lr_fn: match_rms_adamw
+  muon_eps: 1.0e-07
+  muon_momentum: 0.95
+  muon_nesterov: true
+  muon_ns_coefficients:
+  - 3.4445
+  - -4.775
+  - 2.0315
+  muon_ns_steps: 5
+  router_lr: 0.0003
+  scale_lr: 3.0e-06
+  warmup_tokens: 10000000
+  weight_decay: 0.01
+run_id: base-dense-v4-250m-pilot
+runtime:
+  activation_checkpoint_layer_count: 0
+  activation_checkpointing: true
+  activation_checkpointing_on_alignment_only: false
+  allow_tf32: true
+  bf16: true
+  compile_streaming_loss: true
+  dense_transfer_checkpoint_layer_count: 0
+  dense_transfer_execution: expanded
+  dense_transfer_token_checkpoint: true
+  deterministic: false
+  expandable_segments: true
+  fused_adamw: true
+  log_every_steps: 1
+  loss_checkpoint_chunks: true
+  loss_chunk_tokens: 512
+  offline: true
+  profile: false
+  profile_active_steps: 3
+  profile_wait_steps: 1
+  profile_warmup_steps: 1
+  seed: 3407
+  sharding: fsdp2
+  teacher_cpu_offload: false
+schema_version: 1
+sources:
+  backbone:
+    local_path: artifacts/models/qwen3.5-0.8b-base
+    manifest_sha256: 5e847be98c2d114d2fb85a67ac77f4eef416e11871c1a5580d1bc52663e2e643
+    model_id: Qwen/Qwen3.5-0.8B-Base
+    revision: dc7cdfe2ee4154fa7e30f5b51ca41bfa40174e68
+  donor:
+    local_path: artifacts/models/qwen3.5-9b-base
+    manifest_sha256: ede9a83f7b8ab73842d79b2459262a8b963e215684177a6685b3dc2e2bb803a1
+    model_id: Qwen/Qwen3.5-9B-Base
+    revision: 68c46c4b3498877f3ef123c856ecfde50c39f404
+  folded_experts_path: null
+  folded_experts_sha256: null
+  teacher:
+    local_path: artifacts/models/qwen3.5-9b-base
+    manifest_sha256: ede9a83f7b8ab73842d79b2459262a8b963e215684177a6685b3dc2e2bb803a1
+    model_id: Qwen/Qwen3.5-9B-Base
+    revision: 68c46c4b3498877f3ef123c856ecfde50c39f404
+  tokenizer:
+    local_path: artifacts/models/qwen3.5-0.8b-base
+    manifest_sha256: 5e847be98c2d114d2fb85a67ac77f4eef416e11871c1a5580d1bc52663e2e643
+    model_id: Qwen/Qwen3.5-0.8B-Base
+    revision: dc7cdfe2ee4154fa7e30f5b51ca41bfa40174e68
+stage: dense-oracle
+track: base

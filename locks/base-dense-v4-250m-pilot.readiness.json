@@ -1,0 +1,118 @@
+{
+  "blockers": [
+    "prepared manifest and source-map PENDING sentinels are unresolved",
+    "per-source governed unique capacity has not been attested",
+    "primary/cooldown stable-ID exact and near disjointness has not passed",
+    "ArXiv per-document versioned-license yield is not yet materialized",
+    "Chinese semantic conversion noise remains a manual/statistical review gate",
+    "frozen validation does not yet cover ArXiv and every newly introduced formal source"
+  ],
+  "config_path": "configs/base/dense-v4-250m-pilot.blocked.yaml",
+  "config_sha256": "f2d31d1ddbb770343796f5f4d57e7fa1fe6677097dc08ba1debaa4c8dc0f8af5",
+  "contract": {
+    "adapter_lr": 3e-05,
+    "adapter_optimizer": "muon",
+    "allow_corpus_reuse": false,
+    "cooldown_start_tokens": 225000000,
+    "global_batch_tokens": 262144,
+    "lora_lr": 3e-05,
+    "lr_schedule": "cosine",
+    "max_tokens": 250000000,
+    "min_lr_ratio": 0.1,
+    "objective": "base_text_ntp_plus_native_mtp_no_9b_logits",
+    "scale_lr": 3e-06,
+    "warmup_tokens": 10000000
+  },
+  "fork_from": "runs/base-dense-v3-500m/step-000000001912-milestone-complete",
+  "fork_policy": {
+    "forbidden_warm_starts": [
+      "runs/base-dense-v4-16m-smoke",
+      "runs/base-dense-v4-13m-low-lr-calibration"
+    ],
+    "required_model_only_checkpoint": "runs/base-dense-v3-500m/step-000000001912-milestone-complete",
+    "reset_optimizer_and_scheduler": true
+  },
+  "kind": "twen_v4_250m_pilot_readiness",
+  "launch_command_after_all_gates_pass": [
+    ".venv/bin/python",
+    "-m",
+    "twen.cli",
+    "train",
+    "--stage",
+    "dense-oracle",
+    "--config",
+    "configs/base/dense-v4-250m-pilot.blocked.yaml",
+    "--resume",
+    "none",
+    "--fork-from",
+    "runs/base-dense-v3-500m/step-000000001912-milestone-complete",
+    "--progress",
+    "always"
+  ],
+  "launch_enabled": false,
+  "pause_evaluation_policy": {
+    "checkpoint_every_steps": 50,
+    "hard_stop": {
+      "checkpoint_lineage_failure": true,
+      "data_reuse_or_epoch_gt_zero": true,
+      "nonfinite_metric": true,
+      "phase_identity_or_disjointness_failure": true,
+      "rolling_50_step_clip_fraction_gt": 0.01,
+      "scale_relative_l2_gt": 0.05
+    },
+    "pause_at_committed_tokens": [
+      13000000,
+      26000000,
+      52000000,
+      105000000,
+      157000000,
+      210000000,
+      223000000,
+      236000000,
+      250000000
+    ],
+    "required_additional_validation_sources": [
+      "science_arxiv_open_permissive",
+      "code_stackv2_edu_permissive",
+      "multilingual_common_corpus_permissive",
+      "education_libretexts_permissive",
+      "public_domain_project_gutenberg"
+    ],
+    "validation_stop": {
+      "aggregate_nll_above_v3_once": 0.01,
+      "aggregate_nll_above_v3_twice": 0.005,
+      "chinese_nll_above_v3_once": 0.05,
+      "chinese_nll_above_v3_twice": 0.03,
+      "nll_regression_from_best_twice": 0.001,
+      "selection_tie_tolerance": 0.0001,
+      "two_major_evaluations_improvement_below": 0.0001
+    }
+  },
+  "recipe_identities": {
+    "cooldown": {
+      "path": "locks/base-data-sources-v4-cooldown.json",
+      "sha256": "7e7d067d0ba0b1552ae582ecb9a3cd55cdde111e3a930538d5d21e868c76b1e4"
+    },
+    "primary": {
+      "path": "locks/base-data-sources-v4-primary.json",
+      "sha256": "479df3abec68f5c2354c226876188e1b75cceba9bfce21e23108b3d48e0dc58e"
+    }
+  },
+  "required_capacity_attestation": "locks/base-data-sources-v4-250m.capacity-attestation.json",
+  "resolved_lock_identities": {
+    "cooldown": {
+      "passed": true,
+      "path": "locks/base-data-sources-v4-cooldown.resolved.json",
+      "remote_identity_verification": "verified_against_hub_metadata",
+      "sha256": "94e1a20c37516c6b2f54d4b591b4661dd2ad1692b690d2a3902a0a82bb30fdac"
+    },
+    "primary": {
+      "passed": true,
+      "path": "locks/base-data-sources-v4-primary.resolved.json",
+      "remote_identity_verification": "verified_against_hub_metadata",
+      "sha256": "aedf4cf3df1219c5bd20ce740b44dd6872f536aed286716db26cad64cf05fcb8"
+    }
+  },
+  "schema_version": 1,
+  "training_started": false
+}
