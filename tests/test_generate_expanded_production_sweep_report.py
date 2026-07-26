@@ -44,6 +44,11 @@ def test_locked_report_reproduces_recommendation_formulas_and_gates() -> None:
     )
     assert report["numerical_admission"]["expanded"]["status"] == "pass"
     assert report["numerical_admission"]["folded"]["status"] == "fail_experimental_only"
+    mtp_source = report["source_provenance"]["files"]["mtp"]
+    assert mtp_source["git_commit"] == reporter.EXPECTED_MTP_GIT_COMMIT
+    assert mtp_source["git_blob_sha1"] == reporter.EXPECTED_MTP_GIT_BLOB_SHA1
+    assert mtp_source["sha256"] == reporter.EXPECTED_MTP_SHA256
+    assert mtp_source["path"].startswith("git:")
 
     rows = {row["key"]: row for row in report["rows"]}
     assert rows["b1_ordinary_final_n10"]["accepted"] is True
@@ -60,7 +65,7 @@ def test_locked_report_reproduces_recommendation_formulas_and_gates() -> None:
     assert all(row["power"]["high_utilization"]["sample_count"] > 0 for row in report["rows"])
 
 
-def test_generation_is_idempotent_preserves_approval_and_passes_pipeline_contract(
+def test_generation_is_idempotent_and_preserves_historical_source_identity(
     tmp_path: Path,
 ) -> None:
     report_dir = tmp_path / "expanded-sweep"
@@ -107,8 +112,9 @@ def test_generation_is_idempotent_preserves_approval_and_passes_pipeline_contrac
         performance_complete=prefix.with_name(prefix.name + ".COMPLETE"),
     )
     contract = pipeline._performance_report_contract(layout)
-    assert contract["ready"] is True, contract["reason"]
+    assert contract["ready"] is False
     assert contract["bundle"]["ready"] is True
+    assert "report mtp source provenance SHA changed" in contract["reason"]
 
 
 def test_locked_input_sha_and_numerical_admission_fail_closed(tmp_path: Path) -> None:

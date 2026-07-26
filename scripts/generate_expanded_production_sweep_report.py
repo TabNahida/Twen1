@@ -18,6 +18,7 @@ import math
 import os
 import shutil
 import statistics
+import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,6 +33,9 @@ HIGH_UTILIZATION_THRESHOLD_PERCENT = 90.0
 
 EXPECTED_BENCHMARK_SHA256 = "93c9610cbced74111f554f0306d1ef4ebecc537f767e5a194b53d4bca821abaa"
 EXPECTED_MTP_SHA256 = "74ff303a7526120ebbc32306f5ed5fab9ad8e65d672deb83c3729564b312564c"
+EXPECTED_MTP_GIT_COMMIT = "fc3f2cd2f8a5c24abdab4a55cb6629c619008d27"
+EXPECTED_MTP_GIT_BLOB_SHA1 = "6e5ba4fd397946ce224252948bed7b692db97ecf"
+EXPECTED_MTP_SOURCE_PATH = "src/twen/modeling/mtp.py"
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,6 +266,74 @@ def _require_sha(path: Path, expected: str, label: str) -> dict[str, Any]:
             f"locked {label} SHA256 changed: expected {expected}, got {actual}: {resolved}"
         )
     return _identity(resolved)
+
+
+def _require_historical_git_source(
+    root: Path,
+    *,
+    commit: str,
+    relative_path: str,
+    expected_blob_sha1: str,
+    expected_sha256: str,
+    label: str,
+) -> dict[str, Any]:
+    """Authenticate source bytes used by a historical benchmark.
+
+    A later bug fix must not make an old performance run appear to have used
+    the new implementation.  The benchmark report therefore reads the exact
+    source blob from its pinned commit instead of silently rebinding the
+    evidence to the current working-tree file.
+    """
+
+    root = root.resolve()
+    object_name = f"{commit}:{relative_path}"
+    try:
+        resolved_commit = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", f"{commit}^{{commit}}"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout.strip()
+        blob_sha1 = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", object_name],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout.strip()
+        payload = subprocess.run(
+            ["git", "-C", str(root), "show", object_name],
+            check=True,
+            capture_output=True,
+            timeout=10,
+        ).stdout
+    except (OSError, subprocess.SubprocessError) as error:
+        raise ValueError(f"cannot read locked historical {label}: {object_name}") from error
+
+    if resolved_commit != commit:
+        raise ValueError(
+            f"locked historical {label} commit changed: expected {commit}, "
+            f"got {resolved_commit}"
+        )
+    if blob_sha1 != expected_blob_sha1:
+        raise ValueError(
+            f"locked historical {label} Git blob changed: expected "
+            f"{expected_blob_sha1}, got {blob_sha1}"
+        )
+    actual_sha256 = hashlib.sha256(payload).hexdigest()
+    if actual_sha256 != expected_sha256:
+        raise ValueError(
+            f"locked historical {label} SHA256 changed: expected "
+            f"{expected_sha256}, got {actual_sha256}"
+        )
+    return {
+        "path": f"git:{commit}:{relative_path}",
+        "size": len(payload),
+        "sha256": actual_sha256,
+        "git_commit": commit,
+        "git_blob_sha1": blob_sha1,
+    }
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -675,8 +747,13 @@ def build_report(root: Path) -> dict[str, Any]:
         EXPECTED_BENCHMARK_SHA256,
         "benchmark source",
     )
-    mtp_identity = _require_sha(
-        root / "src/twen/modeling/mtp.py", EXPECTED_MTP_SHA256, "native MTP source"
+    mtp_identity = _require_historical_git_source(
+        root,
+        commit=EXPECTED_MTP_GIT_COMMIT,
+        relative_path=EXPECTED_MTP_SOURCE_PATH,
+        expected_blob_sha1=EXPECTED_MTP_GIT_BLOB_SHA1,
+        expected_sha256=EXPECTED_MTP_SHA256,
+        label="native MTP source",
     )
     rows = [_row(root, spec) for spec in CASE_SPECS]
     by_key = {row["key"]: row for row in rows}
