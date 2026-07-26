@@ -25,6 +25,15 @@
       "label": "Base Dense v3 500M (completed, lower peak LR)",
       "launch_enabled": false,
       "resume": "none"
+    },
+    {
+      "config": "configs/base/dense-v4-16m-smoke.yaml",
+      "config_sha256": "4d13ded603d2cda979fba6d59cb67909287973b6d558dd35dc742538a0b4aa97",
+      "fork_from": "runs/base-dense-v3-500m/step-000000001912-milestone-complete",
+      "id": "base-dense-v4-16m-smoke",
+      "label": "Base Dense v4 16M (governed Muon/text smoke; gated)",
+      "launch_enabled": false,
+      "resume": "none"
     }
   ],
   "project_root": "../..",
