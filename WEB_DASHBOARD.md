@@ -59,8 +59,8 @@ finalizer 会把 resolved config 的 SHA256 一并固化到 profile；重启 Das
 fail closed。finalizer 本身不会启动训练。不要把 v2 路径临时从浏览器传给服务，也不要用占位 SHA
 手改 profile。
 
-finalizer 修改磁盘上的 allowlist 后，当前常驻进程仍保留启动时的旧配置；按下方普通后台进程的
-停止与启动步骤重新加载。重启 Dashboard 不会启动训练，也不会误杀独立训练进程。
+finalizer 修改磁盘上的 allowlist 后，当前常驻进程仍保留启动时的旧配置；按下方 user-systemd
+步骤 restart 以重新加载。重启 Dashboard 不会启动训练，也不会误杀独立训练进程。
 
 ## 创建认证与前台验收（不启动训练）
 
@@ -83,25 +83,19 @@ PYTHONPATH=src .venv/bin/python -m twen web serve \
 当前 v1 是 monitor-only，启动按钮禁用。HTTP Basic 在明文 HTTP 上传输，局域网若不完全受信，
 应在反向代理上启用 HTTPS 或改用 SSH/VPN；不要做公网端口转发。
 
-## 普通后台进程（不注册 service）
+## user-systemd 后台服务
 
-Dashboard 作为独立 session 的普通后台进程运行，不注册 systemd service，也不会随 WSL 启动
-自动恢复。它收到 `SIGTERM` 后会停止并回收自己的 `nvidia-smi` 子进程，同时 flush 当前 10 秒
-遥测聚合桶；它不会把该信号转发给训练。启动 Dashboard 不会启动训练：
+Dashboard 使用仓库内固定的
+[`deploy/systemd/twen-dashboard.service`](deploy/systemd/twen-dashboard.service)
+作为 user service，`Restart=always`。它收到 `SIGTERM` 后会停止并回收自己的
+`nvidia-smi` 子进程，同时 flush 当前 10 秒遥测聚合桶；它不会把该信号转发给训练。
+首次安装或 unit 文件更新后执行：
 
 ```bash
-mkdir -p .twen/background
-setsid --fork /usr/bin/bash -c '
-  echo "$$" > .twen/background/dashboard.pid
-  exec env PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 \
-    XDG_CACHE_HOME=.cache/xdg TORCHINDUCTOR_CACHE_DIR=.cache/torchinductor \
-    TRITON_CACHE_DIR=.cache/triton TILELANG_CACHE_DIR=.cache/tilelang \
-    /usr/bin/bash scripts/with_cuda_toolchain.sh \
-    .venv/bin/python -m twen web serve \
-      --dashboard-config configs/web/dashboard.json \
-      --host 0.0.0.0 --port 8765 \
-      --auth-file .twen/dashboard/http-auth.json
-' >>.twen/background/dashboard.log 2>&1 </dev/null
+systemctl --user link \
+  /media/data1/Project/AI/Twen1/deploy/systemd/twen-dashboard.service
+systemctl --user daemon-reload
+systemctl --user enable --now twen-dashboard.service
 ```
 
 只读检查监听与认证（不会启动训练）：
@@ -116,15 +110,16 @@ curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8765/
 查看后台日志与进程：
 
 ```bash
-tail -f .twen/background/dashboard.log
-ps -p "$(cat .twen/background/dashboard.pid)" -o pid,etime,stat,cmd
+systemctl --user --no-pager --full status twen-dashboard.service
+journalctl --user -u twen-dashboard.service -f
 ```
 
-停止 Dashboard 本身时，先核对上面 PID 的命令行，再发送 `SIGTERM`：
+重新加载 profile 或停止 Dashboard 本身：
 
 ```bash
-kill -TERM "$(cat .twen/background/dashboard.pid)"
+systemctl --user restart twen-dashboard.service
+systemctl --user stop twen-dashboard.service
 ```
 
-训练控制应在页面完成；不要用 `kill -9`。普通后台进程在 WSL 实例关闭时也会退出，之后需要用户
-显式重新启动。
+训练控制应在页面完成；不要用 `kill -9`。启用后的 service 会在 user manager 启动时恢复，
+进程异常退出时也会自动重启；WSL 实例本身完全关闭期间当然不会运行。

@@ -1,0 +1,17 @@
+[Unit]
+Description=Twen authenticated training dashboard
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/media/data1/Project/AI/Twen1
+ExecStart=/media/data1/Project/AI/Twen1/.venv/bin/python -m twen web serve --dashboard-config configs/web/dashboard.json --host 0.0.0.0 --port 8765 --auth-file .twen/dashboard/http-auth.json
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=30
+UMask=0077
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
