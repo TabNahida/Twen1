@@ -368,7 +368,7 @@
         <div class="panel chart-panel"><div class="panel-header"><div><h2>平滑 Loss</h2><p>100-step 与 152-step 均值；152 steps 覆盖两个典型 source 周期</p></div></div><div class="chart-wrap"><canvas id="smoothedLossChart"></canvas></div></div>
         <div class="panel chart-panel"><div class="panel-header"><div><h2>训练吞吐</h2><p>compute / wall token/s</p></div></div><div class="chart-wrap"><canvas id="trainingSpeedChart"></canvas></div></div>
         <div class="panel chart-panel"><div class="panel-header"><div><h2>训练显存</h2><p>allocated / reserved / peak</p></div></div><div class="chart-wrap"><canvas id="trainingMemoryChart"></canvas></div></div>
-        <div class="panel chart-panel"><div class="panel-header"><div><h2>学习率与梯度</h2><p>adapter LR 与 grad norm</p></div></div><div class="chart-wrap"><canvas id="trainingLrChart"></canvas></div></div>
+        <div class="panel chart-panel"><div class="panel-header"><div><h2>学习率与梯度</h2><p>adapter nominal LR、Muon adjusted coefficient 与 grad norm</p></div></div><div class="chart-wrap"><canvas id="trainingLrChart"></canvas></div></div>
       </section>
 
       <section id="evaluationSection" class="panel" hidden>
@@ -543,6 +543,17 @@
       const tel = telemetry[telemetry.length - 1] || snapshot?.status?.latest_telemetry || {};
       return { metric, tel };
     }
+    function adapterLearningRates(metric) {
+      const nominal = metric?.["lr/adapters"] ?? metric?.lr;
+      const adjusted = metric?.["lr_adjusted/adapters"];
+      let factor = metric?.["lr_adjustment_factor/adapters"];
+      if (!finite(factor) && finite(nominal) && nominal !== 0 && finite(adjusted)) factor = adjusted / nominal;
+      return {
+        nominal: finite(nominal) ? nominal : null,
+        adjusted: finite(adjusted) ? adjusted : null,
+        factor: finite(factor) ? factor : null
+      };
+    }
     function renderOverview() {
       const task = snapshot?.task;
       if (!task) return;
@@ -574,10 +585,21 @@
         addSummary("Sequence", finite(progress.completed_sequences) ? `${num(progress.completed_sequences, 0)} / ${num(progress.total_sequences, 0)}` : "—", data.optimizer_created === false ? "未创建 optimizer" : "");
       } else if (task.kind === "training") {
         const { metric, tel } = latestTraining();
+        const adapterLr = adapterLearningRates(metric);
         addSummary("Step", num(metric.step ?? tel.step, 0), `${compact(metric.tokens ?? tel.tokens)} tokens`);
         addSummary("Loss", num(metric.loss, 4), finite(metric.ntp_loss ?? metric.ntp) ? `NTP ${num(metric.ntp_loss ?? metric.ntp, 4)}` : "");
         addSummary("KD Loss", num(metric.teacher_kd_loss ?? metric.teacher_kd, 4), "teacher distillation");
         addSummary("MTP Loss", num(metric.mtp_loss ?? metric.mtp, 4), "Qwen3.5 native MTP");
+        if (finite(adapterLr.adjusted) || finite(adapterLr.factor)) {
+          addSummary(
+            "Muon 更新系数",
+            finite(adapterLr.adjusted) ? num(adapterLr.adjusted, 10) : "—",
+            [
+              finite(adapterLr.nominal) ? `nominal ${num(adapterLr.nominal, 10)}` : null,
+              finite(adapterLr.factor) ? `adjustment ×${num(adapterLr.factor, 4)}` : null
+            ].filter(Boolean).join(" · ")
+          );
+        }
         addSummary("Wall 吞吐", finite(tel.wall_clock_tokens_per_second_ema) ? `${num(tel.wall_clock_tokens_per_second_ema, 0)} tok/s` : "—", finite(tel.compute_tokens_per_second_ema) ? `compute ${num(tel.compute_tokens_per_second_ema, 0)}` : "");
         addSummary("GPU 显存", finite(tel.gpu_peak_allocated_gib) ? `${num(tel.gpu_peak_allocated_gib, 2)} GiB` : "—", finite(tel.gpu_peak_reserved_gib) ? `reserved ${num(tel.gpu_peak_reserved_gib, 2)}` : "");
         addSummary("ETA", duration(tel.wall_clock_eta_seconds ?? tel.eta_seconds), finite(metric.grad_norm) ? `grad ${num(metric.grad_norm, 3)}` : "");
@@ -750,9 +772,17 @@
         { key: "gpu_reserved_gib", label: "reserved", color: "#9aa2af", unit: " GiB", digits: 3 },
         { key: "gpu_peak_allocated_gib", label: "peak", color: "#d5a53c", unit: " GiB", digits: 3 }
       ], { zero: true });
-      const normalized = rows.map(row => ({ ...row, learning_rate: row["lr/adapters"] ?? row.lr }));
+      const normalized = rows.map(row => {
+        const adapterLr = adapterLearningRates(row);
+        return {
+          ...row,
+          adapter_lr_nominal: adapterLr.nominal,
+          adapter_lr_adjusted: adapterLr.adjusted
+        };
+      });
       drawChart($("trainingLrChart"), normalized, [
-        { key: "learning_rate", label: "LR", color: "#4c8df6", digits: 8 },
+        { key: "adapter_lr_nominal", label: "adapter nominal", color: "#4c8df6", digits: 10 },
+        { key: "adapter_lr_adjusted", label: "Muon adjusted", color: "#9b7ede", digits: 10 },
         { key: "grad_norm", label: "grad", color: "#d5a53c", digits: 5, axis: "right" }
       ], { zero: true });
     }

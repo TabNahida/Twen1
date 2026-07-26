@@ -166,6 +166,11 @@ def test_packaged_dashboard_html_is_available() -> None:
     assert '{ key: "mtp_loss", label: "MTP"' in html
     assert '{ key: "anchor_kl_loss", label: "anchor"' in html
     assert '{ key: "hidden_alignment", label: "hidden"' in html
+    assert 'metric?.["lr_adjusted/adapters"]' in html
+    assert 'metric?.["lr_adjustment_factor/adapters"]' in html
+    assert 'addSummary(\n            "Muon 更新系数"' in html
+    assert '{ key: "adapter_lr_nominal", label: "adapter nominal"' in html
+    assert '{ key: "adapter_lr_adjusted", label: "Muon adjusted"' in html
     assert 'const fresh = await request("/api/bootstrap")' in html
     assert "live_gpu_relevant" in html
     assert 'task.kind === "kd"' in html
@@ -473,7 +478,7 @@ def test_controller_defaults_to_persistent_gpu_journal(tmp_path: Path) -> None:
     assert controller.gpu_monitor.journal_path == settings.state_dir / "gpu-telemetry.jsonl"
 
 
-def test_real_dashboard_config_has_only_completed_profiles_and_is_confined() -> None:
+def test_real_dashboard_config_has_completed_and_gated_profiles_and_is_confined() -> None:
     project_root = Path(__file__).resolve().parents[1]
     settings = load_dashboard_settings(project_root / "configs/web/dashboard.json")
     assert settings.project_root == project_root.resolve()
@@ -481,16 +486,24 @@ def test_real_dashboard_config_has_only_completed_profiles_and_is_confined() -> 
         "base-dense-v1",
         "base-dense-v2-500m",
         "base-dense-v3-500m",
+        "base-dense-v4-16m-smoke",
     ]
     launchable = [profile for profile in settings.profiles if profile.launch_enabled]
     assert launchable == []
-    v2, v3 = settings.profiles[1:]
-    assert v2.resume == v3.resume == "none"
+    _, v2, v3, v4 = settings.profiles
+    assert v2.resume == v3.resume == v4.resume == "none"
     assert v2.fork_from == v3.fork_from
     assert v3.fork_from == (
         project_root / "runs/base-dense-v1/step-000000000383-milestone-complete"
     ).resolve()
-    assert v3.config_sha256 == hashlib.sha256(v3.config_path.read_bytes()).hexdigest()
+    assert v4.fork_from == (
+        project_root
+        / "runs/base-dense-v3-500m/step-000000001912-milestone-complete"
+    ).resolve()
+    assert all(
+        profile.config_sha256 == hashlib.sha256(profile.config_path.read_bytes()).hexdigest()
+        for profile in (v2, v3, v4)
+    )
     assert all(
         profile.config_path.is_relative_to(settings.project_root) for profile in settings.profiles
     )
@@ -587,6 +600,51 @@ def test_jsonl_tail_cache_is_incremental_and_waits_for_complete_line(tmp_path: P
     ]
     path.write_text('{"step":7}\n', encoding="utf-8")
     assert cache.read(path, limit=3) == [{"step": 7}]
+
+
+def test_snapshot_preserves_muon_learning_rate_observability_metrics(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    profile = settings.profiles[0]
+    profile.run_dir.mkdir(parents=True)
+    expected_source_mix = {
+        "enabled": True,
+        "basis_points": {"alpha": 6000, "beta": 4000},
+        "lineage_basis_points": {"alpha": 7000, "beta": 3000},
+        "effective_basis_points": {"alpha": 6000, "beta": 4000},
+        "weight_override": True,
+    }
+    (profile.run_dir / "rank0-session.json").write_text(
+        json.dumps(
+            {
+                "status": "completed",
+                "hostname": platform.node(),
+                "pid": 1234,
+                "run_id": profile.run_id,
+                "stage": profile.stage,
+                "source_mix": expected_source_mix,
+            }
+        ),
+        encoding="utf-8",
+    )
+    expected = {
+        "step": 9,
+        "tokens": 2_359_296,
+        "lr/adapters": 0.0001,
+        "lr_adjusted/adapters": 0.00128,
+        "lr_adjustment_factor/adapters": 12.8,
+    }
+    (profile.run_dir / "metrics.jsonl").write_text(
+        json.dumps(expected) + "\n",
+        encoding="utf-8",
+    )
+
+    snapshot = DashboardController(settings).snapshot(f"profile:{profile.profile_id}")
+
+    assert snapshot["metrics"][-1] == expected
+    assert snapshot["status"]["latest_metric"] == expected
+    assert snapshot["status"]["source_mix"] == expected_source_mix
 
 
 def test_console_tail_removes_ansi_and_splits_progress_updates(tmp_path: Path) -> None:

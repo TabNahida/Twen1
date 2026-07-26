@@ -1123,6 +1123,15 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
+def _session_source_mix(session: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """Expose the authenticated runtime mix without parsing a checkpoint."""
+
+    if session is None:
+        return None
+    source_mix = session.get("source_mix")
+    return dict(source_mix) if isinstance(source_mix, Mapping) else None
+
+
 def _process_matches_profile(pid: int, profile: LaunchProfile) -> bool:
     """Defend against stale/reused PIDs before signaling a training process."""
 
@@ -1518,6 +1527,7 @@ class DashboardController:
             "stop_confirmation": profile.stop_confirmation,
             "save_confirmation": profile.save_confirmation,
             "session": session,
+            "source_mix": _session_source_mix(session),
             "controller": controller_for_profile,
             "latest_metric": metrics[-1] if metrics else None,
             "latest_telemetry": telemetry[-1] if telemetry else None,
@@ -1610,6 +1620,7 @@ class DashboardController:
             "launch_enabled": False,
             "preflight_enforced": True,
             "session": session,
+            "source_mix": _session_source_mix(session),
             "controller": None,
             "latest_metric": metrics[-1] if metrics else None,
             "latest_telemetry": telemetry[-1] if telemetry else None,

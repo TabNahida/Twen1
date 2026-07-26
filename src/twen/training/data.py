@@ -1,4 +1,4 @@
-"""Random-access adapter over the immutable top-64 KD corpus lock."""
+"""Random-access adapters over immutable KD and prepared-text corpus locks."""
 
 from __future__ import annotations
 
@@ -10,13 +10,19 @@ from typing import Any
 
 from ..data import (
     DatasetLayout,
+    PreparedCorpusManifest,
+    PreparedTextBatch,
+    PreparedTextRecord,
+    PreparedTextShardDataset,
     SampleReference,
     TeacherKDBatch,
     TeacherKDCorpusManifest,
     TeacherKDRecord,
     TeacherKDShardDataset,
+    collate_prepared_text,
     collate_teacher_kd,
     read_kd_manifest,
+    read_prepared_manifest,
     validate_kd_corpus_manifest,
     validate_prepared_corpus,
     write_kd_corpus_manifest,
@@ -243,6 +249,28 @@ class KDRecordStore:
             tuple(references),
         ).result()
 
+    def _valid_token_counts(
+        self,
+        references: Sequence[SampleReference],
+    ) -> tuple[int, ...]:
+        return tuple(
+            int(self._shard_loss_count_vectors(reference.shard_id)[1][reference.shard_offset])
+            for reference in references
+        )
+
+    def optimizer_batch_valid_token_counts(
+        self,
+        references: Sequence[SampleReference],
+    ) -> tuple[int, ...]:
+        """Return exact non-padding tokens aligned with the planned references."""
+
+        if self._closed:
+            raise RuntimeError("KDRecordStore is closed")
+        return self._executor.submit(
+            self._valid_token_counts,
+            tuple(references),
+        ).result()
+
     def _shard_mtp_loss_count_vector(self, shard_id: str) -> Any:
         cached = self._mtp_loss_count_cache.get(shard_id)
         if cached is not None:
@@ -360,9 +388,271 @@ class KDRecordStore:
             pass
 
 
+class PreparedTextRecordStore:
+    """Small LRU over prepared token shards without loading any KD tensors."""
+
+    def __init__(
+        self,
+        manifest_path: str | Path,
+        *,
+        expected_sequence_length: int,
+        cache_shards: int = 32,
+        verify_shards: bool = True,
+    ) -> None:
+        if cache_shards < 1:
+            raise ValueError("cache_shards must be positive")
+        if not isinstance(verify_shards, bool):
+            raise ValueError("verify_shards must be a boolean")
+        self.manifest_path = Path(manifest_path)
+        self.manifest: PreparedCorpusManifest = (
+            validate_prepared_corpus(self.manifest_path)
+            if verify_shards
+            else read_prepared_manifest(self.manifest_path)
+        )
+        if self.manifest.sequence_length != expected_sequence_length:
+            raise ValueError(
+                f"prepared corpus sequence length {self.manifest.sequence_length} "
+                f"!= training {expected_sequence_length}"
+            )
+        self.cache_shards = cache_shards
+        self.expected_sequence_length = expected_sequence_length
+        self._entries = {
+            entry.shard_id: entry
+            for entry in self.manifest.shards
+        }
+        self._cache: OrderedDict[str, PreparedTextShardDataset] = OrderedDict()
+        self._loss_count_cache: dict[str, tuple[Any, Any]] = {}
+        self._mtp_loss_count_cache: dict[str, Any] = {}
+        self._executor = ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="twen-prepared-text-prefetch",
+        )
+        self._closed = False
+
+    @property
+    def layout(self) -> DatasetLayout:
+        return DatasetLayout.from_shards(
+            (
+                (entry.shard_id, entry.sequence_count)
+                for entry in self.manifest.shards
+            ),
+            fingerprint=self.manifest.dataset_fingerprint,
+        )
+
+    def _dataset(self, shard_id: str) -> PreparedTextShardDataset:
+        if self._closed:
+            raise RuntimeError("PreparedTextRecordStore is closed")
+        existing = self._cache.pop(shard_id, None)
+        if existing is not None:
+            self._cache[shard_id] = existing
+            return existing
+        try:
+            entry = self._entries[shard_id]
+        except KeyError as error:
+            raise KeyError(f"unknown prepared-text shard {shard_id}") from error
+        root = self.manifest_path.parent.resolve()
+        shard = (root / entry.path).resolve()
+        try:
+            shard.relative_to(root)
+        except ValueError as error:
+            raise ValueError(
+                f"prepared-text shard escapes corpus root: {entry.path}"
+            ) from error
+        if shard == root:
+            raise ValueError(f"prepared-text shard resolves to corpus root: {entry.path}")
+        dataset = PreparedTextShardDataset(
+            shard,
+            expected_sequence_count=entry.sequence_count,
+            expected_sequence_length=self.expected_sequence_length,
+        )
+        self._cache[shard_id] = dataset
+        while len(self._cache) > self.cache_shards:
+            _, expired = self._cache.popitem(last=False)
+            expired.close()
+        return dataset
+
+    def record(self, reference: SampleReference) -> PreparedTextRecord:
+        return self._dataset(reference.shard_id)[reference.shard_offset]
+
+    def batch(self, references: Sequence[SampleReference]) -> PreparedTextBatch:
+        records = [self.record(reference) for reference in references]
+        if len(records) == 1:
+            record = records[0]
+            return PreparedTextBatch(
+                **{
+                    name: getattr(record, name).unsqueeze(0)
+                    for name in ("input_ids", "labels", "attention_mask")
+                }
+            )
+        return collate_prepared_text(records)
+
+    def _shard_loss_count_vectors(self, shard_id: str) -> tuple[Any, Any]:
+        cached = self._loss_count_cache.get(shard_id)
+        if cached is None:
+            cached = self._dataset(shard_id).loss_count_vectors()
+            self._loss_count_cache[shard_id] = cached
+        return cached
+
+    def _loss_token_counts(
+        self,
+        references: Sequence[SampleReference],
+    ) -> tuple[int, int]:
+        target_tokens = 0
+        valid_hidden_tokens = 0
+        for reference in references:
+            target_counts, hidden_counts = self._shard_loss_count_vectors(
+                reference.shard_id
+            )
+            target_tokens += int(target_counts[reference.shard_offset])
+            valid_hidden_tokens += int(hidden_counts[reference.shard_offset])
+        return target_tokens, valid_hidden_tokens
+
+    def optimizer_batch_token_counts(
+        self,
+        references: Sequence[SampleReference],
+    ) -> tuple[int, int]:
+        if self._closed:
+            raise RuntimeError("PreparedTextRecordStore is closed")
+        return self._executor.submit(
+            self._loss_token_counts,
+            tuple(references),
+        ).result()
+
+    def _valid_token_counts(
+        self,
+        references: Sequence[SampleReference],
+    ) -> tuple[int, ...]:
+        return tuple(
+            int(self._shard_loss_count_vectors(reference.shard_id)[1][reference.shard_offset])
+            for reference in references
+        )
+
+    def optimizer_batch_valid_token_counts(
+        self,
+        references: Sequence[SampleReference],
+    ) -> tuple[int, ...]:
+        if self._closed:
+            raise RuntimeError("PreparedTextRecordStore is closed")
+        return self._executor.submit(
+            self._valid_token_counts,
+            tuple(references),
+        ).result()
+
+    def _shard_mtp_loss_count_vector(self, shard_id: str) -> Any:
+        cached = self._mtp_loss_count_cache.get(shard_id)
+        if cached is None:
+            cached = self._dataset(shard_id).mtp_loss_count_vector()
+            self._mtp_loss_count_cache[shard_id] = cached
+        return cached
+
+    def _mtp_loss_token_count(
+        self,
+        references: Sequence[SampleReference],
+    ) -> int:
+        target_tokens = 0
+        for reference in references:
+            counts = self._shard_mtp_loss_count_vector(reference.shard_id)
+            target_tokens += int(counts[reference.shard_offset])
+        return target_tokens
+
+    def optimizer_batch_mtp_token_count(
+        self,
+        references: Sequence[SampleReference],
+    ) -> int:
+        if self._closed:
+            raise RuntimeError("PreparedTextRecordStore is closed")
+        return self._executor.submit(
+            self._mtp_loss_token_count,
+            tuple(references),
+        ).result()
+
+    def _prefetch_batch(
+        self,
+        references: Sequence[SampleReference],
+        *,
+        pin_memory: bool,
+    ) -> PreparedTextBatch:
+        batch = self.batch(references)
+        if not pin_memory:
+            return batch
+        return PreparedTextBatch(
+            **{
+                name: tensor.pin_memory()
+                for name, tensor in batch.tensors().items()
+            }
+        )
+
+    def iter_prefetched_batches(
+        self,
+        reference_batches: Iterable[Sequence[SampleReference]],
+        *,
+        prefetch_depth: int,
+        pin_memory: bool = True,
+    ) -> Iterator[PreparedTextBatch]:
+        if self._closed:
+            raise RuntimeError("PreparedTextRecordStore is closed")
+        if prefetch_depth < 1:
+            raise ValueError("prefetch_depth must be positive")
+        source = iter(reference_batches)
+        pending: list[Future[PreparedTextBatch]] = []
+
+        def fill() -> None:
+            while len(pending) < prefetch_depth:
+                try:
+                    references = next(source)
+                except StopIteration:
+                    break
+                pending.append(
+                    self._executor.submit(
+                        self._prefetch_batch,
+                        tuple(references),
+                        pin_memory=pin_memory,
+                    )
+                )
+
+        fill()
+        try:
+            while pending:
+                future = pending.pop(0)
+                batch = future.result()
+                fill()
+                yield batch
+        finally:
+            for future in pending:
+                future.cancel()
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._executor.shutdown(wait=True, cancel_futures=True)
+        while self._cache:
+            _, dataset = self._cache.popitem(last=False)
+            dataset.close()
+        self._closed = True
+
+    def __del__(self) -> None:  # pragma: no cover - engine closes deterministically
+        try:
+            if hasattr(self, "_executor"):
+                self.close()
+        except Exception:
+            pass
+
+
 def move_kd_batch(batch: TeacherKDBatch, device: Any) -> TeacherKDBatch:
     values = {
         name: tensor.to(device=device, non_blocking=True)
         for name, tensor in batch.tensors().items()
     }
     return TeacherKDBatch(**values, temperature=batch.temperature)
+
+
+def move_prepared_text_batch(
+    batch: PreparedTextBatch,
+    device: Any,
+) -> PreparedTextBatch:
+    return PreparedTextBatch(
+        **{
+            name: tensor.to(device=device, non_blocking=True)
+            for name, tensor in batch.tensors().items()
+        }
+    )

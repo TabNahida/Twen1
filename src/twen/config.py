@@ -143,8 +143,8 @@ class ArchitectureConfig:
 class DataConfig:
     manifest_path: str
     manifest_sha256: str
-    teacher_kd_manifest_path: str
-    teacher_kd_manifest_sha256: str
+    teacher_kd_manifest_path: str | None = None
+    teacher_kd_manifest_sha256: str | None = None
     max_sequence_length: int = 4096
     micro_batch_size: int = 1
     global_batch_tokens: int = 262_144
@@ -160,19 +160,57 @@ class DataConfig:
     quality_cooldown_teacher_kd_manifest_path: str | None = None
     quality_cooldown_teacher_kd_manifest_sha256: str | None = None
     quality_cooldown_start_tokens: int | None = None
+    # Opt-in pure-text input reads the authenticated prepared corpus directly.
+    # Keeping this field last preserves the legacy positional constructor, and
+    # the default is omitted from canonical serialization below.
+    mode: str = "teacher-kd"
+    # Source mixing is an atomic, resume-critical contract.  The expected
+    # source-map digest binds the exact prepared-shard ownership recovered by
+    # preflight; explicit basis-point weights bind the intended valid-token
+    # ratios even when an older authenticated corpus predates the embedded
+    # source_mix contract.
+    source_mix_algorithm: str | None = None
+    source_map_sha256: str | None = None
+    source_mix_basis_points: dict[str, int] | None = None
+    # Fail closed when configured weights differ from the authenticated
+    # prepared lineage.  Capacity-driven reweighting is permitted only when
+    # the run explicitly records this resume-critical exception.
+    source_mix_allow_weight_override: bool = False
 
     def quality_cooldown_enabled(self) -> bool:
         return self.quality_cooldown_start_tokens is not None
 
+    def source_mix_enabled(self) -> bool:
+        return self.source_mix_algorithm is not None
+
     def validate(self) -> None:
-        for name, digest in (
-            ("manifest_sha256", self.manifest_sha256),
-            ("teacher_kd_manifest_sha256", self.teacher_kd_manifest_sha256),
-        ):
+        if self.mode not in {"teacher-kd", "prepared-text"}:
+            raise ConfigError("data.mode must be 'teacher-kd' or 'prepared-text'")
+        for name, digest in (("manifest_sha256", self.manifest_sha256),):
             if not re.fullmatch(r"[0-9a-fA-F]{64}", digest):
                 raise ConfigError(f"data.{name} must be a SHA256 hex digest")
         self.manifest_sha256 = self.manifest_sha256.lower()
-        self.teacher_kd_manifest_sha256 = self.teacher_kd_manifest_sha256.lower()
+        if self.mode == "teacher-kd":
+            if (
+                not isinstance(self.teacher_kd_manifest_path, str)
+                or not self.teacher_kd_manifest_path
+                or not isinstance(self.teacher_kd_manifest_sha256, str)
+                or not re.fullmatch(
+                    r"[0-9a-fA-F]{64}",
+                    self.teacher_kd_manifest_sha256,
+                )
+            ):
+                raise ConfigError(
+                    "data.mode='teacher-kd' requires a teacher KD manifest path and SHA256"
+                )
+            self.teacher_kd_manifest_sha256 = self.teacher_kd_manifest_sha256.lower()
+        elif (
+            self.teacher_kd_manifest_path is not None
+            or self.teacher_kd_manifest_sha256 is not None
+        ):
+            raise ConfigError(
+                "data.mode='prepared-text' must omit teacher KD manifest path and SHA256"
+            )
         if self.max_sequence_length <= 0 or self.micro_batch_size <= 0:
             raise ConfigError("sequence length and micro batch size must be positive")
         if self.global_batch_tokens <= 0:
@@ -181,8 +219,75 @@ class DataConfig:
             raise ConfigError(
                 "data.num_workers must be positive (it controls the bounded KD prefetch depth)"
             )
-        if self.teacher_top_k != 64:
+        if self.mode == "teacher-kd" and self.teacher_top_k != 64:
             raise ConfigError("the current top-64 KD contract requires teacher_top_k=64")
+        if self.mode == "prepared-text" and self.quality_cooldown_enabled():
+            raise ConfigError(
+                "data.mode='prepared-text' does not yet support the legacy KD quality cooldown"
+            )
+        source_mix_values = (
+            self.source_mix_algorithm,
+            self.source_map_sha256,
+            self.source_mix_basis_points,
+        )
+        if not isinstance(self.source_mix_allow_weight_override, bool):
+            raise ConfigError(
+                "data.source_mix_allow_weight_override must be a boolean"
+            )
+        if any(value is not None for value in source_mix_values) and not all(
+            value is not None for value in source_mix_values
+        ):
+            raise ConfigError(
+                "source mixing requires algorithm, source-map SHA256, and basis-point weights"
+            )
+        if self.source_mix_enabled():
+            if self.mode != "prepared-text":
+                raise ConfigError("source mixing currently requires data.mode='prepared-text'")
+            if (
+                self.source_mix_algorithm
+                != "token-deficit-corrected-source-mix-bp-v2"
+            ):
+                raise ConfigError("data.source_mix_algorithm is unsupported")
+            if (
+                not isinstance(self.source_map_sha256, str)
+                or not re.fullmatch(r"[0-9a-fA-F]{64}", self.source_map_sha256)
+            ):
+                raise ConfigError("data.source_map_sha256 must be a SHA256 hex digest")
+            self.source_map_sha256 = self.source_map_sha256.lower()
+            raw_weights = self.source_mix_basis_points
+            if not isinstance(raw_weights, dict) or not raw_weights:
+                raise ConfigError(
+                    "data.source_mix_basis_points must be a non-empty mapping"
+                )
+            normalized_weights: dict[str, int] = {}
+            for source_id, weight in raw_weights.items():
+                if not isinstance(source_id, str) or not source_id.strip():
+                    raise ConfigError(
+                        "data.source_mix_basis_points keys must be non-empty source IDs"
+                    )
+                normalized_source_id = source_id.strip()
+                if normalized_source_id in normalized_weights:
+                    raise ConfigError(
+                        "data.source_mix_basis_points contains duplicate source IDs"
+                    )
+                if (
+                    isinstance(weight, bool)
+                    or not isinstance(weight, int)
+                    or weight <= 0
+                ):
+                    raise ConfigError(
+                        "data.source_mix_basis_points values must be positive integers"
+                    )
+                normalized_weights[normalized_source_id] = weight
+            if sum(normalized_weights.values()) != 10_000:
+                raise ConfigError(
+                    "data.source_mix_basis_points must total exactly 10,000"
+                )
+            self.source_mix_basis_points = dict(sorted(normalized_weights.items()))
+        elif self.source_mix_allow_weight_override:
+            raise ConfigError(
+                "data.source_mix_allow_weight_override requires enabled source mixing"
+            )
         cooldown_values = (
             self.quality_cooldown_manifest_path,
             self.quality_cooldown_manifest_sha256,
@@ -290,6 +395,16 @@ class OptimizerConfig:
     min_lr_ratio: float = 0.1
     decay_tokens: int | None = None
     grad_clip_norm: float = 1.0
+    # ``adamw`` is the legacy optimizer contract.  Muon is opt-in and applies
+    # only to the two-dimensional dense transfer adapters; scalar branch
+    # scales and every non-adapter group remain on AdamW.
+    adapter_optimizer: str = "adamw"
+    muon_momentum: float = 0.95
+    muon_nesterov: bool = True
+    muon_ns_coefficients: tuple[float, float, float] = (3.4445, -4.775, 2.0315)
+    muon_eps: float = 1e-7
+    muon_ns_steps: int = 5
+    muon_adjust_lr_fn: str | None = "match_rms_adamw"
 
     def validate(self) -> None:
         for name in ("adapter_lr", "router_lr", "lora_lr", "scale_lr"):
@@ -332,6 +447,59 @@ class OptimizerConfig:
                 "warmup-stable-decay requires optimizer.decay_tokens in "
                 "[1, max_tokens - warmup_tokens]"
             )
+        if self.adapter_optimizer not in {"adamw", "muon"}:
+            raise ConfigError("optimizer.adapter_optimizer must be 'adamw' or 'muon'")
+        if (
+            not isinstance(self.muon_momentum, (int, float))
+            or isinstance(self.muon_momentum, bool)
+            or not math.isfinite(float(self.muon_momentum))
+            or not 0.0 <= float(self.muon_momentum) < 1.0
+        ):
+            raise ConfigError("optimizer.muon_momentum must be finite and in [0, 1)")
+        if not isinstance(self.muon_nesterov, bool):
+            raise ConfigError("optimizer.muon_nesterov must be a boolean")
+        coefficients = self.muon_ns_coefficients
+        if (
+            not isinstance(coefficients, (list, tuple))
+            or len(coefficients) != 3
+            or any(
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+                for value in coefficients
+            )
+        ):
+            raise ConfigError(
+                "optimizer.muon_ns_coefficients must contain exactly three finite numbers"
+            )
+        self.muon_ns_coefficients = tuple(float(value) for value in coefficients)
+        if (
+            isinstance(self.muon_eps, bool)
+            or not isinstance(self.muon_eps, (int, float))
+            or not math.isfinite(float(self.muon_eps))
+            or float(self.muon_eps) <= 0
+        ):
+            raise ConfigError("optimizer.muon_eps must be finite and positive")
+        if (
+            isinstance(self.muon_ns_steps, bool)
+            or not isinstance(self.muon_ns_steps, int)
+            or not 1 <= self.muon_ns_steps <= 99
+        ):
+            raise ConfigError("optimizer.muon_ns_steps must be an integer in [1, 99]")
+        if self.muon_adjust_lr_fn not in {None, "original", "match_rms_adamw"}:
+            raise ConfigError(
+                "optimizer.muon_adjust_lr_fn must be null, 'original', or 'match_rms_adamw'"
+            )
+        legacy_muon_defaults = (
+            float(self.muon_momentum) == 0.95
+            and self.muon_nesterov is True
+            and self.muon_ns_coefficients == (3.4445, -4.775, 2.0315)
+            and float(self.muon_eps) == 1e-7
+            and self.muon_ns_steps == 5
+            and self.muon_adjust_lr_fn == "match_rms_adamw"
+        )
+        if self.adapter_optimizer == "adamw" and not legacy_muon_defaults:
+            raise ConfigError("optimizer.muon_* settings require adapter_optimizer='muon'")
 
 
 @dataclass(slots=True)
@@ -483,8 +651,23 @@ class TrainConfig:
         self.data.validate()
         self.losses.validate()
         self.optimizer.validate()
+        if self.optimizer.adapter_optimizer == "muon" and self.stage != "dense-oracle":
+            raise ConfigError(
+                "optimizer.adapter_optimizer='muon' currently requires stage='dense-oracle'"
+            )
         self.checkpoint.validate()
         self.runtime.validate()
+        if self.data.mode == "prepared-text":
+            enabled_teacher_losses = [
+                name
+                for name in ("teacher_kd", "hidden_alignment", "anchor_kl")
+                if float(getattr(self.losses, name)) != 0.0
+            ]
+            if enabled_teacher_losses:
+                raise ConfigError(
+                    "data.mode='prepared-text' requires zero teacher-side losses: "
+                    + ", ".join(enabled_teacher_losses)
+                )
         if self.data.quality_cooldown_enabled():
             start = self.data.quality_cooldown_start_tokens
             assert start is not None
@@ -593,8 +776,37 @@ class TrainConfig:
             optimizer.pop("lr_schedule", None)
             optimizer.pop("min_lr_ratio", None)
             optimizer.pop("decay_tokens", None)
+        # Preserve the historical optimizer mapping and therefore every v1-v3
+        # resolved-config hash when Muon has not been selected.
+        if (
+            optimizer.get("adapter_optimizer") == "adamw"
+            and optimizer.get("muon_momentum") == 0.95
+            and optimizer.get("muon_nesterov") is True
+            and optimizer.get("muon_ns_coefficients") == (3.4445, -4.775, 2.0315)
+            and optimizer.get("muon_eps") == 1e-7
+            and optimizer.get("muon_ns_steps") == 5
+            and optimizer.get("muon_adjust_lr_fn") == "match_rms_adamw"
+        ):
+            optimizer.pop("adapter_optimizer", None)
+            for name in (
+                "muon_momentum",
+                "muon_nesterov",
+                "muon_ns_coefficients",
+                "muon_eps",
+                "muon_ns_steps",
+                "muon_adjust_lr_fn",
+            ):
+                optimizer.pop(name, None)
         runtime = value["runtime"]
         data = value["data"]
+        if data.get("mode") == "teacher-kd":
+            data.pop("mode", None)
+        else:
+            if data.get("teacher_kd_manifest_path") is None:
+                data.pop("teacher_kd_manifest_path", None)
+            if data.get("teacher_kd_manifest_sha256") is None:
+                data.pop("teacher_kd_manifest_sha256", None)
+            data.pop("teacher_top_k", None)
         if data.get("quality_cooldown_start_tokens") is None:
             for name in (
                 "quality_cooldown_manifest_path",
@@ -602,6 +814,14 @@ class TrainConfig:
                 "quality_cooldown_teacher_kd_manifest_path",
                 "quality_cooldown_teacher_kd_manifest_sha256",
                 "quality_cooldown_start_tokens",
+            ):
+                data.pop(name, None)
+        if data.get("source_mix_algorithm") is None:
+            for name in (
+                "source_mix_algorithm",
+                "source_map_sha256",
+                "source_mix_basis_points",
+                "source_mix_allow_weight_override",
             ):
                 data.pop(name, None)
         # New phase-specific counts are opt-in. Omitting every None preserves

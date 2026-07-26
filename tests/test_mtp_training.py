@@ -295,6 +295,76 @@ def test_streaming_wrapper_omits_mtp_loss_when_disabled() -> None:
     assert outputs["mtp"] is None
 
 
+def test_prepared_text_wrapper_skips_teacher_payload_and_preserves_native_mtp_gradient() -> None:
+    torch.manual_seed(27)
+    vocabulary, hidden = 11, 4
+    input_ids = torch.tensor([[0, 1, 2, 3, 4]])
+    labels = input_ids.clone()
+    attention_mask = torch.tensor([[1, 1, 1, 1, 0]])
+    model = _TinyCausalLM(vocabulary, hidden)
+    mtp = _FrozenMTP()
+    wrapper = StreamingLossCausalLM(
+        model,
+        chunk_tokens=2,
+        checkpoint_chunks=True,
+        mtp=mtp,
+        teacher_kd_enabled=False,
+    )
+
+    outputs = wrapper(
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        labels=labels,
+    )
+
+    assert outputs["teacher_kd"] is None
+    assert outputs["anchor_kl"] is None
+    assert outputs["mtp"] is not None
+    (outputs["ntp"] + 0.1 * outputs["mtp"]).backward()
+    assert mtp.calls == 2
+    assert mtp.scale.grad is None
+    assert model.model.embed_tokens.weight.grad is None
+    assert model.model.adapter.weight.grad is not None
+    assert torch.count_nonzero(model.model.adapter.weight.grad).item() > 0
+
+
+def test_prepared_text_wrapper_rejects_teacher_or_anchor_payload() -> None:
+    vocabulary, hidden = 7, 3
+    input_ids = torch.tensor([[0, 1, 2]])
+    teacher = _teacher_payload(input_ids, vocabulary)
+    wrapper = StreamingLossCausalLM(
+        _TinyCausalLM(vocabulary, hidden),
+        chunk_tokens=2,
+        checkpoint_chunks=False,
+        teacher_kd_enabled=False,
+    )
+
+    with pytest.raises(ValueError, match="teacher_kd_enabled=false"):
+        wrapper(
+            input_ids=input_ids,
+            attention_mask=torch.ones_like(input_ids),
+            labels=input_ids,
+            teacher_indices=teacher[0],
+        )
+    with pytest.raises(ValueError, match="anchor_hidden_states"):
+        wrapper(
+            input_ids=input_ids,
+            attention_mask=torch.ones_like(input_ids),
+            labels=input_ids,
+            anchor_hidden_states=torch.zeros((1, 3, hidden)),
+        )
+
+
+def test_streaming_wrapper_rejects_non_boolean_teacher_kd_switch() -> None:
+    with pytest.raises(ValueError, match="teacher_kd_enabled"):
+        StreamingLossCausalLM(
+            _TinyCausalLM(7, 3),
+            chunk_tokens=2,
+            checkpoint_chunks=False,
+            teacher_kd_enabled=0,  # type: ignore[arg-type]
+        )
+
+
 def test_mtp_streaming_ce_matches_eager_oracle_and_checkpoints_head() -> None:
     torch.manual_seed(29)
     hidden = torch.randn(1, 4, 3, requires_grad=True)

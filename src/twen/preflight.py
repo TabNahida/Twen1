@@ -85,6 +85,16 @@ class PreflightReport:
     quality_cooldown_token_count: int = 0
     quality_cooldown_selected_shard_ids: tuple[str, ...] = ()
     quality_cooldown_source_mix_token_counts: tuple[tuple[str, int], ...] = ()
+    source_mix_enabled: bool = False
+    source_mix_algorithm: str | None = None
+    source_map_sha256: str | None = None
+    source_mix_dataset_fingerprint: str | None = None
+    source_mix_basis_points: tuple[tuple[str, int], ...] = ()
+    source_mix_lineage_basis_points: tuple[tuple[str, int], ...] = ()
+    source_mix_effective_basis_points: tuple[tuple[str, int], ...] = ()
+    source_mix_weight_override: bool = False
+    source_mix_seed: int | None = None
+    source_map_payload_json: str | None = None
 
 
 def _prepared_data_governance(prepared_corpus: object) -> DataGovernanceStatus:
@@ -205,6 +215,18 @@ def compute_batch_geometry(config: TrainConfig, world_size: int) -> BatchGeometr
     if accumulation < 1:
         raise TrainingPreflightError("global batch is smaller than one distributed microbatch")
     return BatchGeometry(world_size, micro_tokens, accumulation, config.data.global_batch_tokens)
+
+
+def validate_optimizer_world_size(config: TrainConfig, world_size: int) -> None:
+    """Reject optimizer/distribution combinations with undefined semantics."""
+
+    if isinstance(world_size, bool) or not isinstance(world_size, int) or world_size < 1:
+        raise TrainingPreflightError("world_size must be a positive integer")
+    if config.optimizer.adapter_optimizer == "muon" and world_size != 1:
+        raise TrainingPreflightError(
+            "optimizer.adapter_optimizer='muon' currently requires world_size=1; "
+            "Newton-Schulz orthogonalization of sharded adapter matrices is not implemented"
+        )
 
 
 def _audit_architecture(config: TrainConfig, source_configs: dict[str, dict[str, object]]) -> None:
@@ -478,11 +500,47 @@ def _qwen35_rope_buffer_bytes(text_config: Mapping[str, object]) -> int:
     return 2 * ((rotary_dimension + 1) // 2) * 4
 
 
+def _source_mix_weight_contract(
+    config: TrainConfig,
+    authenticated_source_map: object,
+) -> tuple[dict[str, int], dict[str, int], bool]:
+    """Resolve lineage/effective weights under an explicit fail-closed policy."""
+
+    lineage = dict(getattr(authenticated_source_map, "source_mix_weights", {}))
+    configured = getattr(config.data, "source_mix_basis_points", None)
+    if not isinstance(configured, Mapping):
+        raise ValueError("configured source-mix weights are missing")
+    effective = dict(configured)
+    override = getattr(
+        config.data,
+        "source_mix_allow_weight_override",
+        False,
+    )
+    if not isinstance(override, bool):
+        raise ValueError("source-mix weight override flag must be a boolean")
+    if lineage == effective:
+        if override:
+            raise ValueError(
+                "source-mix weight override is enabled but effective weights "
+                "do not differ from authenticated lineage"
+            )
+        return lineage, effective, False
+    if not override:
+        raise ValueError(
+            "authenticated source-mix weights differ from configured effective "
+            "weights; set data.source_mix_allow_weight_override=true only for "
+            "an explicitly audited capacity override"
+        )
+    return lineage, effective, True
+
+
 def run_training_preflight(
     config: TrainConfig, *, world_size: int | None = None
 ) -> PreflightReport:
     """Validate every local dependency, artifact identity, and offline invariant."""
 
+    actual_world_size = int(os.environ.get("WORLD_SIZE", "1")) if world_size is None else world_size
+    validate_optimizer_world_size(config, actual_world_size)
     enforce_offline_environment()
     if not config.runtime.offline:
         raise TrainingPreflightError("training configurations must set runtime.offline=true")
@@ -531,62 +589,122 @@ def run_training_preflight(
         prepared_corpus.tokenizer_sha256,
         config.sources.tokenizer.manifest_sha256,
     )
+    authenticated_source_map = None
+    source_mix_dataset_fingerprint: str | None = None
+    source_map_payload_json: str | None = None
+    source_mix_lineage_basis_points: tuple[tuple[str, int], ...] = ()
+    source_mix_effective_basis_points: tuple[tuple[str, int], ...] = ()
+    source_mix_weight_override = False
+    if config.data.source_mix_enabled():
+        from .data.cursor import (
+            SOURCE_MIX_ALGORITHM,
+            AuthenticatedSourceMap,
+            DeterministicSourceMixCursor,
+        )
 
-    kd_manifest = _require_file(
-        config.data.teacher_kd_manifest_path,
-        config.data.teacher_kd_manifest_sha256,
-        "teacher KD manifest",
-    )
-    from .data import (
-        read_kd_manifest,
-        validate_kd_corpus_coverage,
-        validate_kd_corpus_manifest,
-    )
+        try:
+            authenticated_source_map = AuthenticatedSourceMap.from_prepared_manifest(
+                prepared_corpus
+            )
+            if authenticated_source_map.fingerprint != config.data.source_map_sha256:
+                raise ValueError(
+                    "authenticated source-map SHA256 differs from the configured identity"
+                )
+            lineage_mix, effective_mix, source_mix_weight_override = (
+                _source_mix_weight_contract(
+                    config,
+                    authenticated_source_map,
+                )
+            )
+            source_mix_lineage_basis_points = tuple(sorted(lineage_mix.items()))
+            source_mix_effective_basis_points = tuple(
+                sorted(effective_mix.items())
+            )
+            if config.data.source_mix_algorithm != SOURCE_MIX_ALGORITHM:
+                raise ValueError("configured source-mix algorithm is unsupported")
+            source_mix_cursor = DeterministicSourceMixCursor(
+                authenticated_source_map,
+                effective_mix,
+                seed=config.data.shuffle_seed,
+            )
+        except (TypeError, ValueError, OSError) as error:
+            raise TrainingPreflightError(
+                f"authenticated source-mix preflight failed: {error}"
+            ) from error
+        source_mix_dataset_fingerprint = source_mix_cursor.dataset_fingerprint
+        source_map_payload_json = json.dumps(
+            authenticated_source_map.to_dict(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
 
-    kd_corpus = validate_kd_corpus_manifest(
-        kd_manifest,
-        expected_temperature=config.losses.kd_temperature,
-    )
-    validate_kd_corpus_coverage(kd_corpus, prepared_corpus)
-    _require_same(
-        "prepared/KD dataset fingerprint",
-        kd_corpus.dataset_fingerprint,
-        prepared_corpus.dataset_fingerprint,
-    )
-    _require_same(
-        "KD teacher model_id", kd_corpus.teacher_model_id, config.sources.teacher.model_id
-    )
-    _require_same(
-        "KD teacher revision", kd_corpus.teacher_revision, config.sources.teacher.revision
-    )
-    _require_same(
-        "KD teacher manifest",
-        kd_corpus.teacher_model_sha256,
-        config.sources.teacher.manifest_sha256,
-    )
-    _require_same(
-        "KD tokenizer manifest",
-        kd_corpus.tokenizer_sha256,
-        config.sources.tokenizer.manifest_sha256,
-    )
-    for entry in kd_corpus.shards:
-        shard_manifest = read_kd_manifest(kd_manifest.parent / entry.path)
+    data_mode = str(getattr(config.data, "mode", "teacher-kd"))
+    kd_manifest: Path | None = None
+    kd_corpus: object | None = None
+    checked.append(str(data_manifest))
+    if data_mode == "teacher-kd":
+        kd_manifest = _require_file(
+            config.data.teacher_kd_manifest_path,
+            config.data.teacher_kd_manifest_sha256,
+            "teacher KD manifest",
+        )
+        from .data import (
+            read_kd_manifest,
+            validate_kd_corpus_coverage,
+            validate_kd_corpus_manifest,
+        )
+
+        kd_corpus = validate_kd_corpus_manifest(
+            kd_manifest,
+            expected_temperature=config.losses.kd_temperature,
+        )
+        validate_kd_corpus_coverage(kd_corpus, prepared_corpus)
         _require_same(
-            f"KD shard {entry.path} sequence length",
-            shard_manifest.sequence_length,
-            config.data.max_sequence_length,
+            "prepared/KD dataset fingerprint",
+            kd_corpus.dataset_fingerprint,
+            prepared_corpus.dataset_fingerprint,
         )
         _require_same(
-            f"KD shard {entry.path} vocab_size",
-            shard_manifest.vocab_size,
-            source_configs["teacher"].get("vocab_size"),
+            "KD teacher model_id", kd_corpus.teacher_model_id, config.sources.teacher.model_id
         )
-    checked.extend((str(data_manifest), str(kd_manifest)))
+        _require_same(
+            "KD teacher revision", kd_corpus.teacher_revision, config.sources.teacher.revision
+        )
+        _require_same(
+            "KD teacher manifest",
+            kd_corpus.teacher_model_sha256,
+            config.sources.teacher.manifest_sha256,
+        )
+        _require_same(
+            "KD tokenizer manifest",
+            kd_corpus.tokenizer_sha256,
+            config.sources.tokenizer.manifest_sha256,
+        )
+        for entry in kd_corpus.shards:
+            shard_manifest = read_kd_manifest(kd_manifest.parent / entry.path)
+            _require_same(
+                f"KD shard {entry.path} sequence length",
+                shard_manifest.sequence_length,
+                config.data.max_sequence_length,
+            )
+            _require_same(
+                f"KD shard {entry.path} vocab_size",
+                shard_manifest.vocab_size,
+                source_configs["teacher"].get("vocab_size"),
+            )
+        checked.append(str(kd_manifest))
+    elif data_mode != "prepared-text":
+        raise TrainingPreflightError(f"unsupported training data mode: {data_mode!r}")
 
     quality_cooldown_summary = None
     cooldown_data_manifest: Path | None = None
     cooldown_kd_manifest: Path | None = None
     if config.data.quality_cooldown_enabled():
+        if kd_manifest is None or kd_corpus is None:
+            raise TrainingPreflightError(
+                "quality cooldown requires data.mode='teacher-kd'"
+            )
         cooldown_prepared_path = config.data.quality_cooldown_manifest_path
         cooldown_prepared_sha = config.data.quality_cooldown_manifest_sha256
         cooldown_kd_path = config.data.quality_cooldown_teacher_kd_manifest_path
@@ -775,7 +893,6 @@ def run_training_preflight(
         calibration_files.append(("folded_manifest", folded_manifest))
         checked.append(str(folded_manifest))
 
-    actual_world_size = int(os.environ.get("WORLD_SIZE", "1")) if world_size is None else world_size
     batch = compute_batch_geometry(config, actual_world_size)
     teacher_cpu_shadow_bytes = 0
     teacher_gpu_stage_bytes = 0
@@ -802,8 +919,39 @@ def run_training_preflight(
         teacher_cpu_shadow_bytes = cpu_shadow.bytes + teacher_buffer_bytes
         teacher_gpu_stage_bytes = cpu_shadow.bytes + teacher_buffer_bytes
     data_fingerprint = sha256_file(data_manifest)
-    if quality_cooldown_summary is not None:
-        assert cooldown_data_manifest is not None and cooldown_kd_manifest is not None
+    if authenticated_source_map is not None:
+        assert source_mix_dataset_fingerprint is not None
+        data_fingerprint = hashlib.sha256(
+            json.dumps(
+                {
+                    "kind": "authenticated-source-mixed-prepared-text-data-v2",
+                    "prepared_manifest_sha256": sha256_file(data_manifest),
+                    "prepared_dataset_fingerprint": (
+                        prepared_corpus.dataset_fingerprint
+                    ),
+                    "source_map_sha256": authenticated_source_map.fingerprint,
+                    "source_mix_algorithm": config.data.source_mix_algorithm,
+                    "source_mix_lineage_basis_points": dict(
+                        source_mix_lineage_basis_points
+                    ),
+                    "source_mix_effective_basis_points": dict(
+                        source_mix_effective_basis_points
+                    ),
+                    "source_mix_weight_override": source_mix_weight_override,
+                    "source_mix_dataset_fingerprint": (
+                        source_mix_dataset_fingerprint
+                    ),
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+    elif quality_cooldown_summary is not None:
+        assert (
+            kd_manifest is not None
+            and cooldown_data_manifest is not None
+            and cooldown_kd_manifest is not None
+        )
         data_fingerprint = hashlib.sha256(
             json.dumps(
                 {
@@ -908,6 +1056,32 @@ def run_training_preflight(
             if quality_cooldown_summary is not None
             else ()
         ),
+        source_mix_enabled=authenticated_source_map is not None,
+        source_mix_algorithm=(
+            config.data.source_mix_algorithm
+            if authenticated_source_map is not None
+            else None
+        ),
+        source_map_sha256=(
+            authenticated_source_map.fingerprint
+            if authenticated_source_map is not None
+            else None
+        ),
+        source_mix_dataset_fingerprint=source_mix_dataset_fingerprint,
+        source_mix_basis_points=(
+            source_mix_effective_basis_points
+            if authenticated_source_map is not None
+            else ()
+        ),
+        source_mix_lineage_basis_points=source_mix_lineage_basis_points,
+        source_mix_effective_basis_points=source_mix_effective_basis_points,
+        source_mix_weight_override=source_mix_weight_override,
+        source_mix_seed=(
+            config.data.shuffle_seed
+            if authenticated_source_map is not None
+            else None
+        ),
+        source_map_payload_json=source_map_payload_json,
     )
 
 
@@ -962,6 +1136,28 @@ def _preflight_report_payload(report: PreflightReport) -> dict[str, object]:
             "source_mix_token_counts": [
                 list(item) for item in report.quality_cooldown_source_mix_token_counts
             ],
+        },
+        "source_mix": {
+            "enabled": report.source_mix_enabled,
+            "algorithm": report.source_mix_algorithm,
+            "source_map_sha256": report.source_map_sha256,
+            "dataset_fingerprint": report.source_mix_dataset_fingerprint,
+            "basis_points": [
+                list(item) for item in report.source_mix_basis_points
+            ],
+            "lineage_basis_points": [
+                list(item) for item in report.source_mix_lineage_basis_points
+            ],
+            "effective_basis_points": [
+                list(item) for item in report.source_mix_effective_basis_points
+            ],
+            "weight_override": report.source_mix_weight_override,
+            "seed": report.source_mix_seed,
+            "source_map": (
+                json.loads(report.source_map_payload_json)
+                if report.source_map_payload_json is not None
+                else None
+            ),
         },
     }
 
@@ -1079,6 +1275,171 @@ def _preflight_report_from_payload(value: object) -> PreflightReport:
     ):
         raise TrainingPreflightError("rank zero returned incomplete cooldown corpus inventory")
 
+    raw_source_mix = value.get("source_mix", {"enabled": False})
+    if (
+        not isinstance(raw_source_mix, dict)
+        or not isinstance(raw_source_mix.get("enabled"), bool)
+    ):
+        raise TrainingPreflightError("rank zero returned invalid source-mix status")
+    source_mix_enabled = raw_source_mix["enabled"]
+    source_mix_algorithm = raw_source_mix.get("algorithm")
+    source_map_sha256 = raw_source_mix.get("source_map_sha256")
+    source_mix_dataset_fingerprint = raw_source_mix.get("dataset_fingerprint")
+    raw_source_mix_basis_points = raw_source_mix.get("basis_points", [])
+    raw_source_mix_lineage_basis_points = raw_source_mix.get(
+        "lineage_basis_points",
+        [],
+    )
+    raw_source_mix_effective_basis_points = raw_source_mix.get(
+        "effective_basis_points",
+        [],
+    )
+    source_mix_weight_override = raw_source_mix.get("weight_override", False)
+    source_mix_seed = raw_source_mix.get("seed")
+    raw_source_map = raw_source_mix.get("source_map")
+    source_mix_basis_points: list[tuple[str, int]] = []
+    source_mix_lineage_basis_points: list[tuple[str, int]] = []
+    source_mix_effective_basis_points: list[tuple[str, int]] = []
+
+    def source_mix_weights(
+        raw: object,
+        *,
+        label: str,
+        allow_empty: bool,
+    ) -> list[tuple[str, int]]:
+        if not isinstance(raw, list):
+            raise TrainingPreflightError(
+                f"rank zero returned invalid {label} source-mix basis points"
+            )
+        parsed: list[tuple[str, int]] = []
+        for item in raw:
+            if (
+                not isinstance(item, list)
+                or len(item) != 2
+                or not isinstance(item[0], str)
+                or not item[0]
+                or isinstance(item[1], bool)
+                or not isinstance(item[1], int)
+                or item[1] <= 0
+            ):
+                raise TrainingPreflightError(
+                    f"rank zero returned invalid {label} source-mix basis points"
+                )
+            parsed.append((item[0], item[1]))
+        if (
+            parsed != sorted(parsed)
+            or len({item[0] for item in parsed}) != len(parsed)
+            or (parsed and sum(item[1] for item in parsed) != 10_000)
+            or (not parsed and not allow_empty)
+        ):
+            raise TrainingPreflightError(
+                f"rank zero returned non-canonical {label} source-mix basis points"
+            )
+        return parsed
+
+    if source_mix_enabled:
+        from .data.cursor import (
+            SOURCE_MIX_ALGORITHM,
+            AuthenticatedSourceMap,
+            DeterministicSourceMixCursor,
+        )
+
+        if (
+            source_mix_algorithm != SOURCE_MIX_ALGORITHM
+            or not isinstance(source_map_sha256, str)
+            or len(source_map_sha256) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in source_map_sha256
+            )
+            or not isinstance(source_mix_dataset_fingerprint, str)
+            or len(source_mix_dataset_fingerprint) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in source_mix_dataset_fingerprint
+            )
+            or not isinstance(source_mix_weight_override, bool)
+            or isinstance(source_mix_seed, bool)
+            or not isinstance(source_mix_seed, int)
+            or not isinstance(raw_source_map, Mapping)
+        ):
+            raise TrainingPreflightError(
+                "rank zero returned incomplete source-mix identity"
+            )
+        source_mix_basis_points = source_mix_weights(
+            raw_source_mix_basis_points,
+            label="compatibility",
+            allow_empty=False,
+        )
+        source_mix_lineage_basis_points = source_mix_weights(
+            raw_source_mix_lineage_basis_points,
+            label="lineage",
+            allow_empty=True,
+        )
+        source_mix_effective_basis_points = source_mix_weights(
+            raw_source_mix_effective_basis_points,
+            label="effective",
+            allow_empty=False,
+        )
+        if source_mix_basis_points != source_mix_effective_basis_points:
+            raise TrainingPreflightError(
+                "rank zero source-mix compatibility/effective weights differ"
+            )
+        try:
+            source_map = AuthenticatedSourceMap.from_dict(raw_source_map)
+            if source_map.fingerprint != source_map_sha256:
+                raise ValueError("source-map fingerprint mismatch")
+            if (
+                source_map.source_mix_weights
+                != dict(source_mix_lineage_basis_points)
+            ):
+                raise ValueError("source-map lineage weights mismatch")
+            weights_differ = (
+                source_mix_lineage_basis_points
+                != source_mix_effective_basis_points
+            )
+            if source_mix_weight_override != weights_differ:
+                raise ValueError(
+                    "source-mix override flag disagrees with lineage/effective weights"
+                )
+            source_mix_cursor = DeterministicSourceMixCursor(
+                source_map,
+                dict(source_mix_effective_basis_points),
+                seed=source_mix_seed,
+            )
+        except (TypeError, ValueError) as error:
+            raise TrainingPreflightError(
+                f"rank zero returned invalid source-map payload: {error}"
+            ) from error
+        if source_mix_cursor.dataset_fingerprint != source_mix_dataset_fingerprint:
+            raise TrainingPreflightError(
+                "rank zero source-mix dataset fingerprint mismatch"
+            )
+        source_map_payload_json = json.dumps(
+            source_map.to_dict(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    else:
+        if any(
+            item not in (None, [], ())
+            for item in (
+                source_mix_algorithm,
+                source_map_sha256,
+                source_mix_dataset_fingerprint,
+                raw_source_mix_basis_points,
+                raw_source_mix_lineage_basis_points,
+                raw_source_mix_effective_basis_points,
+                source_mix_seed,
+                raw_source_map,
+            )
+        ) or source_mix_weight_override is not False:
+            raise TrainingPreflightError(
+                "disabled source mixing contains active identity"
+            )
+        source_map_payload_json = None
+
     def checkpoint_indices(field: str) -> tuple[int, ...]:
         raw = value.get(field, [])
         if not isinstance(raw, list) or any(
@@ -1195,6 +1556,30 @@ def _preflight_report_from_payload(value: object) -> PreflightReport:
         quality_cooldown_token_count=(int(cooldown_token_count) if cooldown_enabled else 0),
         quality_cooldown_selected_shard_ids=tuple(raw_cooldown_shards),
         quality_cooldown_source_mix_token_counts=tuple(cooldown_mix),
+        source_mix_enabled=source_mix_enabled,
+        source_mix_algorithm=(
+            str(source_mix_algorithm) if source_mix_enabled else None
+        ),
+        source_map_sha256=(
+            str(source_map_sha256) if source_mix_enabled else None
+        ),
+        source_mix_dataset_fingerprint=(
+            str(source_mix_dataset_fingerprint)
+            if source_mix_enabled
+            else None
+        ),
+        source_mix_basis_points=tuple(source_mix_basis_points),
+        source_mix_lineage_basis_points=tuple(
+            source_mix_lineage_basis_points
+        ),
+        source_mix_effective_basis_points=tuple(
+            source_mix_effective_basis_points
+        ),
+        source_mix_weight_override=(
+            source_mix_weight_override if source_mix_enabled else False
+        ),
+        source_mix_seed=(source_mix_seed if source_mix_enabled else None),
+        source_map_payload_json=source_map_payload_json,
     )
 
 

@@ -176,6 +176,9 @@ def test_atomic_checkpoint_round_trip_and_manifest(tmp_path: Path) -> None:
     assert loaded.stateful["model"]["weight"] == 12
     assert loaded.trainer_state.global_step == 12
     assert loaded.data_cursor.global_token_index == 12 * 4096
+    # v1-v3 checkpoints predate data-mode and optimizer audit metadata. Their
+    # authenticated empty ``extra`` mapping must remain fully loadable.
+    assert loaded.metadata["extra"] == {}
 
 
 def test_latest_valid_path_and_metadata_are_resolved_together(tmp_path: Path) -> None:

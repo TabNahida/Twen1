@@ -191,6 +191,63 @@ def test_calibration_artifact_content_changes_preflight_fingerprint(
     assert after != before
 
 
+def test_prepared_text_preflight_never_opens_poisoned_kd_assets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _preflight_config(tmp_path)
+    config.data.mode = "prepared-text"
+    config.data.teacher_kd_manifest_path = None
+    config.data.teacher_kd_manifest_sha256 = None
+    config.losses.teacher_kd = 0.0
+    config.losses.hidden_alignment = 0.0
+    config.losses.anchor_kl = 0.0
+    config.validate()
+    prepared_fingerprint = "prepared-text-dataset-v1"
+
+    import twen.data
+    import twen.preflight
+
+    monkeypatch.setattr(twen.preflight, "enforce_offline_environment", lambda: None)
+    monkeypatch.setattr(twen.preflight, "twen_source_tree_sha256", lambda: "1" * 64)
+    source_root = Path(config.sources.backbone.local_path)
+    source_manifest = source_root / "download-manifest.json"
+    monkeypatch.setattr(
+        twen.preflight,
+        "_check_source",
+        lambda _name, _source: (
+            source_root,
+            source_manifest,
+            {"model_type": "qwen3_5_text", "vocab_size": 128},
+        ),
+    )
+    monkeypatch.setattr(twen.preflight, "_audit_architecture", lambda *_args: None)
+    monkeypatch.setattr(twen.preflight, "_validate_calibration_contract", lambda *_args: [])
+    monkeypatch.setattr(
+        twen.data,
+        "validate_prepared_corpus",
+        lambda _path: SimpleNamespace(
+            sequence_length=config.data.max_sequence_length,
+            dataset_fingerprint=prepared_fingerprint,
+            tokenizer_sha256=config.sources.tokenizer.manifest_sha256,
+            shards=(),
+        ),
+    )
+
+    def poison_kd(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("prepared-text preflight touched poisoned KD state")
+
+    monkeypatch.setattr(twen.data, "validate_kd_corpus_manifest", poison_kd)
+    monkeypatch.setattr(twen.data, "validate_kd_corpus_coverage", poison_kd)
+    monkeypatch.setattr(twen.data, "read_kd_manifest", poison_kd)
+
+    report = run_training_preflight(config, world_size=1)
+
+    assert report.data_fingerprint == config.data.manifest_sha256
+    assert str(Path(config.data.manifest_path).resolve()) in report.checked_paths
+    assert all("kd" not in Path(path).name.lower() for path in report.checked_paths)
+
+
 def test_preflight_authenticates_second_prepared_kd_cooldown_contract(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

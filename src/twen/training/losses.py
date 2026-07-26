@@ -211,6 +211,40 @@ def _streaming_student_sums_from_logits(
     return ntp_sum, kd_sum, anchor_sum
 
 
+def _streaming_ntp_sum_from_logits(
+    student_logits: Any,
+    labels: Any,
+    weight: Any,
+) -> Any:
+    """Reduce one pure next-token chunk without any teacher-side inputs."""
+
+    import torch
+
+    student_float = student_logits.float()
+    active = weight.to(dtype=torch.bool)
+    safe_labels = labels.masked_fill(~active, 0)
+    target_logits = torch.gather(
+        student_float,
+        -1,
+        safe_labels.unsqueeze(-1),
+    ).squeeze(-1)
+    log_z = torch.logsumexp(student_float, dim=-1)
+    return ((log_z - target_logits) * active.to(dtype=student_float.dtype)).sum()
+
+
+@cache
+def _compiled_streaming_ntp_sum() -> Any:
+    """Lazily compile the static CUDA pure-NTP reduction."""
+
+    import torch
+
+    return torch.compile(
+        _streaming_ntp_sum_from_logits,
+        fullgraph=True,
+        dynamic=False,
+    )
+
+
 def _streaming_student_sums_no_anchor(
     student_logits: Any,
     labels: Any,
@@ -518,6 +552,86 @@ def masked_full_kl(
             total_weight = total_weight + weight.sum()
 
     return total_loss / total_weight.clamp_min(1.0)
+
+
+def streaming_next_token_loss(
+    final_hidden_states: Any,
+    lm_head: Any,
+    labels: Any,
+    *,
+    mask: Any | None = None,
+    ignore_index: int = -100,
+    chunk_tokens: int | None = DEFAULT_LOSS_CHUNK_TOKENS,
+    checkpoint_chunks: bool = True,
+    compile_loss: bool = False,
+) -> Any:
+    """Project and reduce pure-text NTP without constructing KD intermediates.
+
+    The target contract is identical to :func:`streaming_language_model_losses`:
+    the hidden state at position ``t`` predicts ``labels[t + 1]`` and the
+    optional mask applies to the predicting position. Each vocabulary chunk is
+    released immediately after its scalar cross-entropy sum is produced.
+    """
+
+    import torch
+
+    chunk_tokens = _validated_chunk_tokens(chunk_tokens)
+    checkpoint_chunks = _validated_checkpoint_chunks(checkpoint_chunks)
+    compile_loss = _validated_compile_loss(compile_loss)
+    if final_hidden_states.ndim < 2:
+        raise ValueError("final_hidden_states must have [..., sequence, hidden] shape")
+    token_shape = tuple(final_hidden_states.shape[:-1])
+    if tuple(labels.shape) != token_shape:
+        raise ValueError("labels shape must match final_hidden_states token dimensions")
+    if mask is not None and tuple(mask.shape) != token_shape:
+        raise ValueError("mask shape must match final_hidden_states token dimensions")
+
+    hidden_size = final_hidden_states.shape[-1]
+    token_count = labels.numel()
+    zero = _differentiable_zero(final_hidden_states)
+    if token_count == 0:
+        return zero
+
+    shifted_labels = labels.new_full(labels.shape, ignore_index)
+    if labels.shape[-1] > 1:
+        shifted_labels[..., :-1] = labels[..., 1:]
+    target_weight = shifted_labels.ne(ignore_index)
+    if mask is not None:
+        target_weight = target_weight & mask.ne(0)
+        shifted_labels = shifted_labels.masked_fill(~target_weight, ignore_index)
+
+    flat_hidden = final_hidden_states.reshape(-1, hidden_size)
+    flat_labels = shifted_labels.reshape(-1)
+    flat_weight = target_weight.reshape(-1)
+    valid_count = flat_weight.sum()
+
+    def chunk_sum(
+        chunk_hidden: Any,
+        chunk_labels: Any,
+        chunk_weight: Any,
+    ) -> Any:
+        logits = lm_head(chunk_hidden)
+        if not isinstance(logits, torch.Tensor):
+            raise TypeError("lm_head must return a Tensor")
+        if logits.ndim != 2 or logits.shape[0] != chunk_hidden.shape[0]:
+            raise ValueError("lm_head must map [tokens, hidden] to [tokens, vocabulary]")
+        reducer = (
+            _compiled_streaming_ntp_sum()
+            if compile_loss and logits.device.type == "cuda"
+            else _streaming_ntp_sum_from_logits
+        )
+        return reducer(logits, chunk_labels, chunk_weight)
+
+    total = zero
+    for start, end in _chunk_ranges(token_count, chunk_tokens):
+        total = total + _run_loss_chunk(
+            chunk_sum,
+            flat_hidden[start:end],
+            flat_labels[start:end],
+            flat_weight[start:end],
+            checkpoint_chunks=checkpoint_chunks,
+        )
+    return total / valid_count.clamp_min(1).to(dtype=total.dtype)
 
 
 def streaming_language_model_losses(

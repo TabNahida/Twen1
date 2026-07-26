@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from .schedule import TokenCosineSchedule, TokenWarmupStableDecaySchedule
@@ -96,12 +96,108 @@ class TrainableModelState:
         )
 
 
+class OptimizerBundle:
+    """One optimizer-like view over disjoint parameter optimizers.
+
+    PyTorch DCP natively accepts an iterable of optimizers, while the training
+    loop and token scheduler expect one object exposing flattened parameter
+    groups.  This adapter keeps both contracts without inventing a merged
+    optimizer state format.
+    """
+
+    def __init__(
+        self,
+        optimizers: Iterable[Any],
+        *,
+        expected_parameters: Iterable[Any] | None = None,
+    ) -> None:
+        children = tuple(optimizers)
+        if not children:
+            raise ValueError("OptimizerBundle requires at least one optimizer")
+        if any(
+            not hasattr(optimizer, "param_groups")
+            or not callable(getattr(optimizer, "step", None))
+            or not callable(getattr(optimizer, "zero_grad", None))
+            for optimizer in children
+        ):
+            raise TypeError("OptimizerBundle children must implement the optimizer protocol")
+
+        groups = [group for optimizer in children for group in optimizer.param_groups]
+        parameters = [parameter for group in groups for parameter in group["params"]]
+        parameter_ids = [id(parameter) for parameter in parameters]
+        seen_ids: set[int] = set()
+        duplicate_ids: set[int] = set()
+        for parameter_id in parameter_ids:
+            if parameter_id in seen_ids:
+                duplicate_ids.add(parameter_id)
+            seen_ids.add(parameter_id)
+        if duplicate_ids:
+            raise ValueError(
+                "OptimizerBundle child parameter sets overlap; "
+                f"duplicate_parameters={len(duplicate_ids)}"
+            )
+
+        if expected_parameters is not None:
+            expected = tuple(expected_parameters)
+            expected_ids = [id(parameter) for parameter in expected]
+            if len(set(expected_ids)) != len(expected_ids):
+                raise ValueError("expected optimizer parameter set contains aliases")
+            actual_ids = set(parameter_ids)
+            expected_id_set = set(expected_ids)
+            missing = expected_id_set - actual_ids
+            extra = actual_ids - expected_id_set
+            if missing or extra:
+                raise ValueError(
+                    "OptimizerBundle parameters differ from the expected trainable set; "
+                    f"missing={len(missing)}, extra={len(extra)}"
+                )
+
+        self.optimizers = children
+        # Each entry is the underlying mutable group dictionary.  The token LR
+        # scheduler therefore updates the real child optimizer groups.
+        self.param_groups = groups
+        self.defaults = {
+            "fused": all(
+                bool(getattr(optimizer, "defaults", {}).get("fused", False))
+                for optimizer in children
+            )
+        }
+
+    def __iter__(self) -> Any:
+        return iter(self.optimizers)
+
+    def __len__(self) -> int:
+        return len(self.optimizers)
+
+    def step(self, closure: Any | None = None) -> Any:
+        if closure is not None:
+            raise ValueError("OptimizerBundle does not support optimizer closures")
+        result = None
+        for optimizer in self.optimizers:
+            result = optimizer.step()
+        return result
+
+    def zero_grad(self, set_to_none: bool = True) -> None:
+        for optimizer in self.optimizers:
+            optimizer.zero_grad(set_to_none=set_to_none)
+
+
 class OptimizerState:
     """FQN/DTensor optimizer state for exact DCP resharding."""
 
     def __init__(self, model: Any, optimizer: Any) -> None:
         self.model = model
-        self.optimizer = optimizer
+        if isinstance(optimizer, OptimizerBundle):
+            self.optimizer = optimizer.optimizers
+        elif isinstance(optimizer, Iterable) and not hasattr(optimizer, "param_groups"):
+            optimizers = tuple(optimizer)
+            if not optimizers:
+                raise ValueError("OptimizerState requires at least one optimizer")
+            if any(not hasattr(item, "param_groups") for item in optimizers):
+                raise TypeError("OptimizerState iterable contains a non-optimizer value")
+            self.optimizer = optimizers
+        else:
+            self.optimizer = optimizer
 
     def state_dict(self) -> dict[str, Any]:
         from torch.distributed.checkpoint.state_dict import (
@@ -152,6 +248,53 @@ def materialize_adamw_state(optimizer: Any) -> None:
             state["step"] = torch.tensor(0.0, dtype=torch.float32, device=step_device)
             state["exp_avg"] = torch.zeros_like(parameter)
             state["exp_avg_sq"] = torch.zeros_like(parameter)
+
+
+def materialize_muon_state(optimizer: Any) -> None:
+    """Create Muon's momentum templates without performing an optimizer step."""
+
+    import torch
+
+    for group in optimizer.param_groups:
+        required_group_fields = {
+            "momentum",
+            "nesterov",
+            "ns_coefficients",
+            "eps",
+            "ns_steps",
+            "adjust_lr_fn",
+        }
+        missing_group_fields = required_group_fields - set(group)
+        if missing_group_fields:
+            raise ValueError(
+                "optimizer does not expose Twen's Muon group schema; "
+                f"missing={sorted(missing_group_fields)}"
+            )
+        for parameter in group["params"]:
+            if parameter.ndim != 2:
+                raise ValueError(
+                    "Muon state can only be materialized for 2D parameters; "
+                    f"found shape={tuple(parameter.shape)}"
+                )
+            if not parameter.is_floating_point() or parameter.is_complex():
+                raise ValueError("Muon parameters must be real floating-point tensors")
+            state = optimizer.state[parameter]
+            if state:
+                if set(state) != {"momentum_buffer"}:
+                    raise ValueError("existing Muon state does not match Twen's schema")
+                momentum = state["momentum_buffer"]
+                if (
+                    not isinstance(momentum, torch.Tensor)
+                    or momentum.shape != parameter.shape
+                    or momentum.dtype != parameter.dtype
+                    or momentum.device != parameter.device
+                ):
+                    raise ValueError("existing Muon momentum buffer differs from its parameter")
+                continue
+            state["momentum_buffer"] = torch.zeros_like(
+                parameter,
+                memory_format=torch.preserve_format,
+            )
 
 
 class TokenLRScheduler:

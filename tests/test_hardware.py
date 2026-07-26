@@ -116,6 +116,32 @@ def test_dense_static_parameter_formula_and_fsdp_sharding(tmp_path) -> None:
     assert any("NCCL" in excluded for excluded in estimate.excludes)
 
 
+def test_dense_muon_inventory_replaces_adapter_second_moment_only(tmp_path) -> None:
+    config = _config(tmp_path)
+    config.optimizer = SimpleNamespace(adapter_optimizer="muon")
+    estimate = estimate_static_training_memory(config)
+    components = _components(estimate)
+
+    adapter_parameters = 24 * 2 * 1024 * 4096
+    scale_parameters = 24
+    assert "adam_first_and_second_moments" not in components
+    assert components["muon_adapter_momentum"].parameter_count == adapter_parameters
+    assert components["muon_adapter_momentum"].bytes == adapter_parameters * 4
+    assert (
+        components["adam_scale_first_and_second_moments"].parameter_count
+        == scale_parameters * 2
+    )
+    assert components["adam_scale_first_and_second_moments"].bytes == scale_parameters * 8
+    assert any("one adapter momentum" in note for note in estimate.notes)
+
+
+def test_muon_hardware_inventory_rejects_undefined_distributed_semantics(tmp_path) -> None:
+    config = _config(tmp_path)
+    config.optimizer = SimpleNamespace(adapter_optimizer="muon")
+    with pytest.raises(ValueError, match="world_size=1"):
+        estimate_static_training_memory(config, world_size=2)
+
+
 def test_sparse_static_parameter_formula_does_not_include_teacher(tmp_path) -> None:
     config = _config(tmp_path, stage="sparse")
     estimate = estimate_static_training_memory(config)

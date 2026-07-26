@@ -11,7 +11,7 @@ from torch import nn
 
 from twen.cli import build_parser
 from twen.config import LossConfig
-from twen.data import TeacherKDBatch
+from twen.data import PreparedTextBatch, TeacherKDBatch
 from twen.training.builder import BuiltModel
 from twen.training.distributed import DistributedContext
 from twen.training.engine import (
@@ -334,6 +334,55 @@ def test_dense_graph_smoke_executes_native_mtp_loss_and_student_gradient() -> No
 
     assert result["ok"] is True
     assert result["loss_components"]["mtp"] > 0
+    assert all(parameter.grad is None for parameter in mtp.parameters())
+
+
+def test_prepared_text_graph_smoke_runs_ntp_and_native_mtp_without_kd_fields() -> None:
+    torch.manual_seed(17)
+    transfer = _DenseTransfer(hidden=4)
+    model = _TinyModel(transfer, vocabulary=7, hidden=4)
+    mtp = _TinyFrozenMTP()
+    config = _config("dense-oracle")
+    config.data = SimpleNamespace(mode="prepared-text")
+    config.losses.mtp = 0.3
+    config.losses.teacher_kd = 0.0
+    config.losses.anchor_kl = 0.0
+    config.losses.hidden_alignment = 0.0
+    kd_batch = _batch()
+    batch = PreparedTextBatch(
+        input_ids=kd_batch.input_ids,
+        labels=kd_batch.labels,
+        attention_mask=kd_batch.attention_mask,
+    )
+    train_model = StreamingLossCausalLM(
+        model,
+        chunk_tokens=2,
+        checkpoint_chunks=False,
+        mtp=mtp,
+        teacher_kd_enabled=False,
+    )
+
+    result = _execute_graph_smoke_microbatch(
+        config,  # type: ignore[arg-type]
+        _report(1),  # type: ignore[arg-type]
+        _context(),
+        BuiltModel(
+            model=model,
+            transfer_modules=(transfer,),
+            student_layer_indices=(0,),
+            mtp=mtp,
+        ),
+        train_model,
+        batch,
+        dtype=torch.float32,
+        teacher=None,
+        layer_mapping=(0,),
+        data_source="prepared-text-cpu-fixture",
+    )
+
+    assert result["ok"] is True
+    assert result["data_mode"] == "prepared-text"
+    assert set(result["loss_components"]) == {"total", "ntp", "mtp"}
     assert all(parameter.grad is None for parameter in mtp.parameters())
 
 

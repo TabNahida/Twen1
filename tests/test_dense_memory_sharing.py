@@ -210,6 +210,47 @@ def test_builder_registers_the_exact_frozen_teacher_parameters() -> None:
     assert transfer.gate_weight.untyped_storage().data_ptr() == gate.untyped_storage().data_ptr()
 
 
+def test_prepared_text_builder_loads_frozen_donor_ffn_without_online_teacher() -> None:
+    config = _config()
+    config.data = SimpleNamespace(mode="prepared-text")
+    donor_weights = {
+        "gate_proj.weight": torch.randn(6, 4),
+        "up_proj.weight": torch.randn(6, 4),
+        "down_proj.weight": torch.randn(4, 6),
+    }
+
+    with (
+        patch("twen.training.builder.load_qwen35_text_causal_lm", return_value=_Student()),
+        patch("twen.training.builder.load_layer_mapping", return_value=(0,)),
+        patch(
+            "twen.training.builder.load_channel_mapping",
+            return_value=(torch.tensor([[0, 1, 2], [3, 4, 5]]),),
+        ),
+        patch(
+            "twen.training.builder._load_adapter_initialization",
+            return_value=((torch.randn(4, 3), torch.randn(3, 4)),),
+        ),
+        patch(
+            "twen.training.builder.load_donor_mlp_weights",
+            return_value=donor_weights,
+        ) as load_donor,
+    ):
+        built = build_transfer_model(
+            config,  # type: ignore[arg-type]
+            device="cpu",
+            dtype=torch.float32,
+            donor_text_model=None,
+        )
+
+    load_donor.assert_called_once_with("unused-donor", 0)
+    transfer = built.transfer_modules[0].transfer_mlp
+    assert built.donor_teacher_shared is False
+    assert all(
+        not tensor.requires_grad
+        for tensor in (transfer.gate_weight, transfer.up_weight, transfer.down_weight)
+    )
+
+
 def test_builder_loads_enabled_native_mtp_frozen_and_outside_transfer_parameters() -> None:
     teacher = _Teacher()
     freeze_module(teacher)
@@ -357,6 +398,55 @@ def test_engine_keeps_teacher_on_cpu_when_single_gpu_offload_is_enabled() -> Non
     wrap.assert_not_called()
     assert built.donor_teacher_shared
     assert actual_teacher is teacher
+
+
+def test_prepared_text_engine_never_constructs_an_online_teacher() -> None:
+    config = SimpleNamespace(
+        stage="dense-oracle",
+        data=SimpleNamespace(mode="prepared-text"),
+        losses=SimpleNamespace(
+            hidden_alignment=0.0,
+            hidden_alignment_batch_fraction=0.0,
+        ),
+        architecture=SimpleNamespace(expert_initialization="donor"),
+        runtime=SimpleNamespace(sharding="ddp", teacher_cpu_offload=False),
+        sources=SimpleNamespace(teacher=SimpleNamespace(local_path="teacher")),
+    )
+    context = DistributedContext(
+        rank=0,
+        local_rank=0,
+        world_size=1,
+        device=torch.device("cpu"),
+        initialized_here=False,
+    )
+    built = BuiltModel(
+        model=_Student(),
+        transfer_modules=(),
+        student_layer_indices=(),
+        donor_teacher_shared=False,
+    )
+
+    with (
+        patch(
+            "twen.model_loading.load_qwen35_text_model",
+            side_effect=AssertionError("prepared-text must not build an online teacher"),
+        ) as load_teacher,
+        patch(
+            "twen.training.engine.build_transfer_model",
+            return_value=built,
+        ) as build,
+    ):
+        actual_built, teacher = _build_transfer_and_teacher(
+            config,  # type: ignore[arg-type]
+            context,
+            dtype=torch.float32,
+            build_device="cpu",
+        )
+
+    assert actual_built is built
+    assert teacher is None
+    load_teacher.assert_not_called()
+    assert build.call_args.kwargs["donor_text_model"] is None
 
 
 def test_engine_rejects_teacher_cpu_offload_before_multigpu_model_load() -> None:

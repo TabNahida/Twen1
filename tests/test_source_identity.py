@@ -77,10 +77,20 @@ def test_checkpoint_metadata_records_source_tree_identity() -> None:
             hidden_alignment_dense_transfer_checkpoint_layer_count=16,
         ),
         data=SimpleNamespace(
+            mode="prepared-text",
             manifest_sha256="d" * 64,
-            teacher_kd_manifest_sha256="k" * 64,
+            teacher_kd_manifest_sha256=None,
             manifest_path="prepared.json",
-            teacher_kd_manifest_path="kd.json",
+            teacher_kd_manifest_path=None,
+        ),
+        optimizer=SimpleNamespace(
+            adapter_optimizer="muon",
+            muon_momentum=0.95,
+            muon_nesterov=True,
+            muon_ns_coefficients=(3.4445, -4.775, 2.0315),
+            muon_eps=1e-7,
+            muon_ns_steps=5,
+            muon_adjust_lr_fn="match_rms_adamw",
         ),
         sources=SimpleNamespace(
             backbone=source,
@@ -139,6 +149,23 @@ def test_checkpoint_metadata_records_source_tree_identity() -> None:
     metadata = captured["extra_metadata"]
     assert isinstance(metadata, dict)
     assert metadata["source_tree_sha256"] == "s" * 64
+    assert metadata["data_mode"] == "prepared-text"
+    assert metadata["teacher_kd_manifest_sha256"] is None
+    assert metadata["data_manifests"]["teacher_kd"] is None
+    assert metadata["optimizer"] == {
+        "adapter_optimizer": "muon",
+        "bundle": True,
+        "adapter_component": "Muon",
+        "non_adapter_component": "AdamW",
+        "muon": {
+            "momentum": 0.95,
+            "nesterov": True,
+            "ns_coefficients": [3.4445, -4.775, 2.0315],
+            "eps": 1e-7,
+            "ns_steps": 5,
+            "adjust_lr_fn": "match_rms_adamw",
+        },
+    }
     assert metadata["mtp"] == {
         "enabled": True,
         "loss_weight": 0.2,

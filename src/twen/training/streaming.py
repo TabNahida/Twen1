@@ -8,7 +8,7 @@ from typing import Any
 import torch
 from torch import nn
 
-from .losses import streaming_language_model_losses
+from .losses import streaming_language_model_losses, streaming_next_token_loss
 
 
 def native_mtp_target_mask(labels: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
@@ -154,6 +154,7 @@ class StreamingLossCausalLM(nn.Module):
         checkpoint_chunks: bool,
         compile_loss: bool = False,
         mtp: nn.Module | None = None,
+        teacher_kd_enabled: bool = True,
     ) -> None:
         super().__init__()
         if not isinstance(getattr(causal_lm, "model", None), nn.Module):
@@ -162,6 +163,8 @@ class StreamingLossCausalLM(nn.Module):
             raise TypeError("causal_lm.lm_head must be a Module")
         if not isinstance(compile_loss, bool):
             raise ValueError("compile_loss must be a boolean")
+        if not isinstance(teacher_kd_enabled, bool):
+            raise ValueError("teacher_kd_enabled must be a boolean")
         if mtp is not None and not isinstance(mtp, nn.Module):
             raise TypeError("mtp must be a torch.nn.Module or None")
         if mtp is not None and any(parameter.requires_grad for parameter in mtp.parameters()):
@@ -171,6 +174,7 @@ class StreamingLossCausalLM(nn.Module):
         self.chunk_tokens = chunk_tokens
         self.checkpoint_chunks = checkpoint_chunks
         self.compile_loss = compile_loss
+        self.teacher_kd_enabled = teacher_kd_enabled
         if self.mtp is not None:
             self.mtp.eval()
 
@@ -210,32 +214,71 @@ class StreamingLossCausalLM(nn.Module):
         if anchor_only:
             return {"anchor_hidden_states": final_hidden_states.detach()}
 
-        required = {
-            "labels": labels,
-            "teacher_indices": teacher_indices,
-            "teacher_topk_logits": teacher_topk_logits,
-            "teacher_logsumexp": teacher_logsumexp,
-            "teacher_tail_logprob": teacher_tail_logprob,
-        }
+        required = {"labels": labels}
+        if self.teacher_kd_enabled:
+            required.update(
+                {
+                    "teacher_indices": teacher_indices,
+                    "teacher_topk_logits": teacher_topk_logits,
+                    "teacher_logsumexp": teacher_logsumexp,
+                    "teacher_tail_logprob": teacher_tail_logprob,
+                }
+            )
         missing = [name for name, value in required.items() if value is None]
         if missing:
             raise ValueError(f"student loss forward is missing: {', '.join(missing)}")
 
-        losses = streaming_language_model_losses(
-            final_hidden_states,
-            self.causal_lm.lm_head,
-            labels,
-            teacher_indices,
-            teacher_topk_logits,
-            teacher_logsumexp,
-            teacher_tail_logprob,
-            temperature=temperature,
-            mask=attention_mask,
-            anchor_hidden_states=anchor_hidden_states,
-            chunk_tokens=self.chunk_tokens,
-            checkpoint_chunks=self.checkpoint_chunks,
-            compile_loss=self.compile_loss,
-        )
+        if self.teacher_kd_enabled:
+            losses = streaming_language_model_losses(
+                final_hidden_states,
+                self.causal_lm.lm_head,
+                labels,
+                teacher_indices,
+                teacher_topk_logits,
+                teacher_logsumexp,
+                teacher_tail_logprob,
+                temperature=temperature,
+                mask=attention_mask,
+                anchor_hidden_states=anchor_hidden_states,
+                chunk_tokens=self.chunk_tokens,
+                checkpoint_chunks=self.checkpoint_chunks,
+                compile_loss=self.compile_loss,
+            )
+            ntp_loss = losses.ntp
+            teacher_kd_loss = losses.teacher_kd
+            anchor_kl_loss = losses.anchor_kl
+        else:
+            supplied_teacher_fields = [
+                name
+                for name, value in {
+                    "teacher_indices": teacher_indices,
+                    "teacher_topk_logits": teacher_topk_logits,
+                    "teacher_logsumexp": teacher_logsumexp,
+                    "teacher_tail_logprob": teacher_tail_logprob,
+                }.items()
+                if value is not None
+            ]
+            if supplied_teacher_fields:
+                raise ValueError(
+                    "teacher_kd_enabled=false requires omitting teacher payload: "
+                    + ", ".join(supplied_teacher_fields)
+                )
+            if anchor_hidden_states is not None:
+                raise ValueError(
+                    "anchor_hidden_states requires teacher_kd_enabled=true; "
+                    "the prepared-text branch is NTP-only"
+                )
+            ntp_loss = streaming_next_token_loss(
+                final_hidden_states,
+                self.causal_lm.lm_head,
+                labels,
+                mask=attention_mask,
+                chunk_tokens=self.chunk_tokens,
+                checkpoint_chunks=self.checkpoint_chunks,
+                compile_loss=self.compile_loss,
+            )
+            teacher_kd_loss = None
+            anchor_kl_loss = None
         mtp_loss = None
         if self.mtp is not None:
             if input_ids.shape[-1] < 3:
@@ -306,10 +349,10 @@ class StreamingLossCausalLM(nn.Module):
                         compile_loss=self.compile_loss,
                     )
         return {
-            "ntp": losses.ntp,
+            "ntp": ntp_loss,
             "mtp": mtp_loss,
-            "teacher_kd": losses.teacher_kd,
-            "anchor_kl": losses.anchor_kl,
+            "teacher_kd": teacher_kd_loss,
+            "anchor_kl": anchor_kl_loss,
             "hidden_states": body_outputs.hidden_states if output_hidden_states else None,
         }
 

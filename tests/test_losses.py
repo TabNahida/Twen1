@@ -12,6 +12,7 @@ from twen.training.losses import (
     masked_full_kl,
     router_pair_supervision_loss,
     streaming_language_model_losses,
+    streaming_next_token_loss,
 )
 
 
@@ -200,31 +201,123 @@ def test_compiled_streaming_loss_specializations_are_lazy_and_cached(
         return object()
 
     monkeypatch.setattr(torch, "compile", fake_compile)
+    ntp_factory = loss_module._compiled_streaming_ntp_sum
     no_anchor_factory = loss_module._compiled_streaming_student_sums_no_anchor
     anchor_factory = loss_module._compiled_streaming_student_sums_with_anchor
+    ntp_factory.cache_clear()
     no_anchor_factory.cache_clear()
     anchor_factory.cache_clear()
     try:
+        ntp_first = ntp_factory()
+        ntp_second = ntp_factory()
         no_anchor_first = no_anchor_factory()
         no_anchor_second = no_anchor_factory()
         anchor_first = anchor_factory()
         anchor_second = anchor_factory()
 
+        assert ntp_first is ntp_second
         assert no_anchor_first is no_anchor_second
         assert anchor_first is anchor_second
+        assert ntp_first is not no_anchor_first
         assert no_anchor_first is not anchor_first
         assert compiled == [
+            (loss_module._streaming_ntp_sum_from_logits, True, False),
             (loss_module._streaming_student_sums_no_anchor, True, False),
             (loss_module._streaming_student_sums_with_anchor, True, False),
         ]
+        assert ntp_factory.cache_info().misses == 1
+        assert ntp_factory.cache_info().hits == 1
         assert no_anchor_factory.cache_info().misses == 1
         assert no_anchor_factory.cache_info().hits == 1
         assert anchor_factory.cache_info().misses == 1
         assert anchor_factory.cache_info().hits == 1
     finally:
         # Never retain the fake callable after monkeypatch restores torch.compile.
+        ntp_factory.cache_clear()
         no_anchor_factory.cache_clear()
         anchor_factory.cache_clear()
+
+
+@pytest.mark.parametrize("checkpoint_chunks", [False, True])
+def test_streaming_next_token_loss_matches_full_logits_and_gradients(
+    checkpoint_chunks: bool,
+) -> None:
+    torch.manual_seed(19)
+    labels = torch.tensor(
+        [[0, 1, -100, 4, 3], [2, 0, 5, -100, 1]],
+        dtype=torch.long,
+    )
+    mask = torch.tensor([[1, 1, 1, 1, 0], [1, 1, 0, 1, 1]])
+    expected_hidden = torch.randn(2, 5, 7, requires_grad=True)
+    actual_hidden = expected_hidden.detach().clone().requires_grad_(True)
+    expected_head = torch.nn.Linear(7, 13, bias=True)
+    actual_head = torch.nn.Linear(7, 13, bias=True)
+    actual_head.load_state_dict(expected_head.state_dict())
+
+    effective_labels = labels.clone()
+    effective_labels[..., 1:] = effective_labels[..., 1:].masked_fill(
+        ~mask[..., :-1].bool(),
+        -100,
+    )
+    expected = causal_language_model_loss(
+        expected_head(expected_hidden),
+        effective_labels,
+        chunk_tokens=3,
+        checkpoint_chunks=False,
+    )
+    actual = streaming_next_token_loss(
+        actual_hidden,
+        actual_head,
+        labels,
+        mask=mask,
+        chunk_tokens=3,
+        checkpoint_chunks=checkpoint_chunks,
+    )
+    expected.backward()
+    actual.backward()
+
+    torch.testing.assert_close(actual, expected, rtol=2e-6, atol=2e-6)
+    torch.testing.assert_close(actual_hidden.grad, expected_hidden.grad, rtol=2e-6, atol=2e-6)
+    torch.testing.assert_close(
+        actual_head.weight.grad,
+        expected_head.weight.grad,
+        rtol=2e-6,
+        atol=2e-6,
+    )
+    torch.testing.assert_close(
+        actual_head.bias.grad,
+        expected_head.bias.grad,
+        rtol=2e-6,
+        atol=2e-6,
+    )
+
+
+def test_streaming_next_token_loss_projects_one_bounded_chunk_and_handles_empty_mask() -> None:
+    class RecordingHead(torch.nn.Linear):
+        def __init__(self) -> None:
+            super().__init__(5, 11, bias=False)
+            self.token_counts: list[int] = []
+
+        def forward(self, value: torch.Tensor) -> torch.Tensor:
+            self.token_counts.append(value.shape[0])
+            return super().forward(value)
+
+    torch.manual_seed(21)
+    hidden = torch.randn(2, 5, 5, requires_grad=True)
+    head = RecordingHead()
+    loss = streaming_next_token_loss(
+        hidden,
+        head,
+        torch.randint(0, 11, (2, 5)),
+        mask=torch.zeros((2, 5), dtype=torch.bool),
+        chunk_tokens=3,
+        checkpoint_chunks=False,
+    )
+
+    loss.backward()
+    assert loss.item() == 0.0
+    assert head.token_counts == [3, 3, 3, 1]
+    torch.testing.assert_close(hidden.grad, torch.zeros_like(hidden))
 
 
 def test_bucketed_topk_kl_is_zero_for_identical_distribution() -> None:

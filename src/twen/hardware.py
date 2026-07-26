@@ -445,6 +445,18 @@ def estimate_static_training_memory(
 
     if isinstance(world_size, bool) or world_size < 1:
         raise ValueError("world_size must be a positive integer")
+    adapter_optimizer = str(
+        getattr(getattr(config, "optimizer", None), "adapter_optimizer", "adamw")
+    )
+    if adapter_optimizer not in {"adamw", "muon"}:
+        raise ValueError(f"unsupported adapter optimizer: {adapter_optimizer!r}")
+    if adapter_optimizer == "muon" and config.stage != "dense-oracle":
+        raise ValueError("Muon adapter memory estimation requires dense-oracle stage")
+    if adapter_optimizer == "muon" and world_size != 1:
+        raise ValueError(
+            "Muon adapter memory estimation requires world_size=1 because sharded "
+            "matrix orthogonalization is unsupported"
+        )
     architecture = config.architecture
     active_layers = len(architecture.active_layers())
     total_layers = int(architecture.student_layers)
@@ -553,9 +565,14 @@ def estimate_static_training_memory(
                 source="active_layers * donor_intermediate_size",
             )
         )
-        trainable_parameters = active_layers * (
-            2 * int(architecture.student_hidden_size) * int(architecture.donor_hidden_size) + 1
+        adapter_parameters = (
+            active_layers
+            * 2
+            * int(architecture.student_hidden_size)
+            * int(architecture.donor_hidden_size)
         )
+        scale_parameters = active_layers
+        trainable_parameters = adapter_parameters + scale_parameters
     elif config.stage == "sparse":
         folded_parameters = (
             active_layers
@@ -587,6 +604,8 @@ def estimate_static_training_memory(
         router_parameters = (
             active_layers * int(architecture.num_experts) * int(architecture.student_hidden_size)
         )
+        adapter_parameters = 0
+        scale_parameters = active_layers
         trainable_parameters = lora_parameters + router_parameters + active_layers
     else:
         raise ValueError(f"unsupported training stage: {config.stage!r}")
@@ -635,7 +654,6 @@ def estimate_static_training_memory(
     for name, multiplier, state in (
         ("trainable_parameters", 1, "FP32 parameters"),
         ("trainable_gradients", 1, "FP32 gradients"),
-        ("adam_first_and_second_moments", 2, "2 x FP32 Adam moments"),
     ):
         components.append(
             MemoryComponent(
@@ -645,6 +663,42 @@ def estimate_static_training_memory(
                 dtype_or_state=state,
                 source="exact Twen transfer-module parameter formula",
             )
+        )
+    if adapter_optimizer == "adamw":
+        components.append(
+            MemoryComponent(
+                name="adam_first_and_second_moments",
+                parameter_count=trainable_parameters * 2,
+                bytes=trainable_bytes * 2,
+                dtype_or_state="2 x FP32 Adam moments",
+                source="exact Twen transfer-module parameter formula",
+            )
+        )
+    else:
+        # Validated Muon configurations are dense-only: every adapter matrix
+        # has one FP32 momentum buffer while each scalar scale retains AdamW's
+        # two FP32 moments.
+        components.extend(
+            (
+                MemoryComponent(
+                    name="muon_adapter_momentum",
+                    parameter_count=adapter_parameters,
+                    bytes=adapter_parameters * 4,
+                    dtype_or_state="1 x FP32 Muon momentum",
+                    source="2 * active_layers * student_hidden_size * donor_hidden_size",
+                ),
+                MemoryComponent(
+                    name="adam_scale_first_and_second_moments",
+                    parameter_count=scale_parameters * 2,
+                    bytes=scale_parameters * 2 * 4,
+                    dtype_or_state="2 x FP32 Adam moments",
+                    source="2 * active_layers scalar branch-scale states",
+                ),
+            )
+        )
+        notes.append(
+            "Muon stores one adapter momentum buffer; scalar branch scales retain "
+            "two AdamW moments."
         )
 
     aggregate = sum(component.bytes for component in components)

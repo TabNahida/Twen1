@@ -108,6 +108,106 @@ def test_quality_cooldown_default_is_legacy_compatible_and_enabled_is_critical()
     assert changed_start.fingerprint() != cooldown.fingerprint()
 
 
+def test_teacher_kd_data_mode_default_preserves_legacy_canonical_and_fingerprint() -> None:
+    legacy = make_config()
+
+    assert legacy.data.mode == "teacher-kd"
+    assert "mode" not in legacy.canonical_dict()["data"]
+    assert (
+        legacy.fingerprint()
+        == "02b9a50c1ef75451417e5da04461b68692689a673f9aa03042bf5a359719c8d6"
+    )
+
+
+def test_prepared_text_data_mode_omits_kd_identity_and_is_resume_critical() -> None:
+    legacy = make_config()
+    prepared_text = copy.deepcopy(legacy)
+    prepared_text.data.mode = "prepared-text"
+    prepared_text.data.teacher_kd_manifest_path = None
+    prepared_text.data.teacher_kd_manifest_sha256 = None
+    prepared_text.losses.teacher_kd = 0.0
+    prepared_text.losses.hidden_alignment = 0.0
+    prepared_text.losses.anchor_kl = 0.0
+
+    prepared_text.validate()
+    canonical = prepared_text.canonical_dict()["data"]
+
+    assert canonical["mode"] == "prepared-text"
+    assert "teacher_kd_manifest_path" not in canonical
+    assert "teacher_kd_manifest_sha256" not in canonical
+    assert "teacher_top_k" not in canonical
+    assert prepared_text.fingerprint() != legacy.fingerprint()
+
+
+def _source_mixed_prepared_text_config() -> TrainConfig:
+    config = make_config()
+    config.data.mode = "prepared-text"
+    config.data.teacher_kd_manifest_path = None
+    config.data.teacher_kd_manifest_sha256 = None
+    config.data.source_mix_algorithm = "token-deficit-corrected-source-mix-bp-v2"
+    config.data.source_map_sha256 = "3" * 64
+    config.data.source_mix_basis_points = {"alpha": 6_000, "beta": 4_000}
+    config.losses.teacher_kd = 0.0
+    config.losses.hidden_alignment = 0.0
+    config.losses.anchor_kl = 0.0
+    return config
+
+
+def test_source_mix_weight_override_is_explicit_and_resume_critical() -> None:
+    inherited = _source_mixed_prepared_text_config()
+    inherited.validate()
+    overridden = copy.deepcopy(inherited)
+    overridden.data.source_mix_allow_weight_override = True
+    overridden.validate()
+
+    assert "source_mix_allow_weight_override" in overridden.canonical_dict()["data"]
+    assert overridden.fingerprint() != inherited.fingerprint()
+
+
+def test_source_mix_weight_override_flag_is_strictly_scoped_and_typed() -> None:
+    missing_mix = make_config()
+    missing_mix.data.source_mix_allow_weight_override = True
+    with pytest.raises(ConfigError, match="requires enabled source mixing"):
+        missing_mix.validate()
+
+    invalid = _source_mixed_prepared_text_config()
+    invalid.data.source_mix_allow_weight_override = 1  # type: ignore[assignment]
+    with pytest.raises(ConfigError, match="must be a boolean"):
+        invalid.validate()
+
+
+@pytest.mark.parametrize("mode", ["text", "kd", "", None])
+def test_data_mode_rejects_unknown_values(mode: object) -> None:
+    config = make_config()
+    config.data.mode = mode  # type: ignore[assignment]
+
+    with pytest.raises(ConfigError, match=r"data\.mode"):
+        config.validate()
+
+
+def test_data_mode_requires_exactly_the_matching_manifest_contract() -> None:
+    missing_kd = make_config()
+    missing_kd.data.teacher_kd_manifest_path = None
+    missing_kd.data.teacher_kd_manifest_sha256 = None
+    with pytest.raises(ConfigError, match="teacher-kd"):
+        missing_kd.validate()
+
+    unexpected_kd = make_config()
+    unexpected_kd.data.mode = "prepared-text"
+    with pytest.raises(ConfigError, match="must omit teacher KD"):
+        unexpected_kd.validate()
+
+
+def test_prepared_text_data_mode_rejects_teacher_side_losses() -> None:
+    config = make_config()
+    config.data.mode = "prepared-text"
+    config.data.teacher_kd_manifest_path = None
+    config.data.teacher_kd_manifest_sha256 = None
+
+    with pytest.raises(ConfigError, match="zero teacher-side losses"):
+        config.validate()
+
+
 def test_quality_cooldown_requires_complete_independent_manifest_contract() -> None:
     config = make_config()
     config.data.quality_cooldown_manifest_path = "cooldown-prepared.json"
@@ -503,6 +603,75 @@ def test_legacy_lr_schedule_preserves_v1_canonical_shape() -> None:
     assert "lr_schedule" not in optimizer
     assert "min_lr_ratio" not in optimizer
     assert "decay_tokens" not in optimizer
+
+
+def test_legacy_optimizer_preserves_canonical_shape_and_muon_is_resume_critical() -> None:
+    legacy = make_config()
+    canonical = legacy.canonical_dict()["optimizer"]
+
+    assert legacy.optimizer.adapter_optimizer == "adamw"
+    assert not any(name.startswith("muon_") for name in canonical)
+    assert "adapter_optimizer" not in canonical
+
+    muon = copy.deepcopy(legacy)
+    muon.optimizer.adapter_optimizer = "muon"
+    muon.validate()
+    muon_canonical = muon.canonical_dict()["optimizer"]
+    assert muon_canonical["adapter_optimizer"] == "muon"
+    assert muon_canonical["muon_adjust_lr_fn"] == "match_rms_adamw"
+    assert muon_canonical["muon_ns_coefficients"] == (3.4445, -4.775, 2.0315)
+    assert muon.fingerprint() != legacy.fingerprint()
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("adapter_optimizer", "sgd", "adapter_optimizer"),
+        ("muon_momentum", 1.0, "muon_momentum"),
+        ("muon_nesterov", 1, "muon_nesterov"),
+        ("muon_ns_coefficients", (1.0, 2.0), "muon_ns_coefficients"),
+        ("muon_eps", 0.0, "muon_eps"),
+        ("muon_ns_steps", True, "muon_ns_steps"),
+        ("muon_ns_steps", 100, "muon_ns_steps"),
+        ("muon_adjust_lr_fn", "unknown", "muon_adjust_lr_fn"),
+    ],
+)
+def test_muon_optimizer_fields_are_strictly_validated(
+    field: str,
+    value: object,
+    message: str,
+) -> None:
+    config = make_config()
+    config.optimizer.adapter_optimizer = "muon"
+    setattr(config.optimizer, field, value)
+    with pytest.raises(ConfigError, match=message):
+        config.validate()
+
+
+def test_muon_fields_cannot_silently_change_legacy_adamw() -> None:
+    config = make_config()
+    config.optimizer.muon_ns_steps = 3
+    with pytest.raises(ConfigError, match="require adapter_optimizer='muon'"):
+        config.validate()
+
+
+def test_muon_ns_steps_accepts_the_documented_upper_boundary() -> None:
+    config = make_config()
+    config.optimizer.adapter_optimizer = "muon"
+    config.optimizer.muon_ns_steps = 99
+
+    config.validate()
+
+
+def test_muon_adapter_optimizer_is_dense_only() -> None:
+    config = make_config()
+    config.optimizer.adapter_optimizer = "muon"
+    config.stage = "sparse"
+    config.losses.hidden_alignment = 0.0
+    config.sources.folded_experts_path = "folded.safetensors"
+    config.sources.folded_experts_sha256 = "e" * 64
+    with pytest.raises(ConfigError, match="requires stage='dense-oracle'"):
+        config.validate()
 
 
 def test_warmup_stable_decay_is_validated_and_resume_critical() -> None:

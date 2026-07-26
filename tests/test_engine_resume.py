@@ -550,9 +550,11 @@ class EngineResumeControlTest(unittest.TestCase):
             class Manager:
                 root = Path("new-run")
                 checkpoint: Path | None = None
+                stateful_keys: tuple[str, ...] | None = None
 
-                def load(self, _state: Any, checkpoint: Path) -> Any:
+                def load(self, stateful: Any, checkpoint: Path) -> Any:
                     self.checkpoint = checkpoint
+                    self.stateful_keys = tuple(stateful)
                     return None
 
             manager = Manager()
@@ -566,6 +568,7 @@ class EngineResumeControlTest(unittest.TestCase):
                 fork_from=str(relative),
             )
             self.assertEqual(manager.checkpoint, source.resolve())
+            self.assertEqual(manager.stateful_keys, ("model",))
 
 
 if __name__ == "__main__":
