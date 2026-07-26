@@ -5,6 +5,14 @@
 candidate/shared/teacher 三角色的全量 NLL 评测。评测全程为 `torch.inference_mode()` 前向:
 没有 optimizer state、没有 backward, 也没有任何参数更新。
 
+> **方法学勘误（2026-07-26）**：训练后独立代码审查确认，本轮虽然严格加载了
+> Qwen3.5 checkpoint 的 15 张原生 `mtp.*` 参数，并按
+> `h_t + embed(x_(t+1)) -> x_(t+2)` 构造辅助目标，但 MTP decoder 的 RoPE
+> `position_ids` 错用了 `t`，正确位置应为 `t+1`。因此，本报告记录的 NTP-only
+> candidate/shared/teacher validation NLL、PPL、吞吐和训练日志仍是原始实测事实；
+> 但 v3 的 MTP 路径不能再称为“完全原生对齐”，也不能据此作 MTP 增益的因果结论。
+> 该问题已在 v4 启动前由提交 `c9a08cf` 修复并加入独立位置对齐回归测试。
+
 ## 核心结论
 
 | 角色 | 预测 token | 平均 NLL | 困惑度 | wall tok/s |
@@ -226,7 +234,10 @@ shard 的精确 NLL、token 数、source ID 和 candidate 相对 shared 的改�
   如果 teacher gap closed 仍低, 并且后续同口径 validation checkpoint sweep 在更多 token 后持续改善,
   才能更有把握地支持“增加数据和 token budget”。本轮没有 validation 时间序列, 因此本次
   单个 final 点不能确定最佳停止位置, 也不能被称为 best checkpoint。
-- 本轮明确启用了 **Qwen3.5 原生 MTP**, loss 权重为 **0.1**。MTP 源头的 15 张参数保持 frozen、不进入 optimizer, 但 MTP loss 会经 student hidden state 回传到可训练适配矩阵。
+- 本轮 loss 日志中明确启用了 MTP `0.1`；15 张 checkpoint 原生参数保持
+  frozen、不进入 optimizer，MTP loss 会经 student hidden state 回传到可训练适配矩阵。
+  但其 RoPE 位置存在上述一 token 错位，因此这里只陈述实际执行路径，不再把它表述为
+  完全对齐的 Qwen3.5 原生 MTP forward。
 - 不可变 LR 日程为: 5,000,000 token 线性 warmup, 随后稳定到 250,000,000 token, 再用最后 250,000,000 token 余弦退火到峰值的 0.100 倍。数据流在 450,000,000 token 同时切换到已认证的 quality-cooldown 语料; 该边界的 loss 跳变与数据分布变化完全混杂, 不能只归因于 LR。
 
 ## 数据治理限定

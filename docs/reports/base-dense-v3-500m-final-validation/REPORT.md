@@ -5,6 +5,17 @@ This bundle evaluates the immutable final checkpoint at step 1,912
 authenticated validation corpus.  Evaluation is forward-only (`inference_mode`): no optimizer
 state, backward pass, or parameter update is involved.
 
+> **Methodology erratum (2026-07-26):** A post-training independent code audit
+> confirmed that this run strictly loaded all 15 native `mtp.*` tensors and
+> formed the auxiliary `h_t + embed(x_(t+1)) -> x_(t+2)` objective, but the MTP
+> decoder applied RoPE position `t` instead of the correct shifted position
+> `t+1`. The NTP-only candidate/shared/teacher validation NLL, perplexity,
+> throughput, and recorded training telemetry in this report remain the
+> measurements that were actually produced. However, v3's MTP path must not be
+> described as fully native-aligned or used for a causal MTP-benefit claim.
+> Commit `c9a08cf` fixed the issue and added an independent position-alignment
+> regression test before v4 launch.
+
 ## Executive result
 
 | role | predicted tokens | mean NLL | perplexity | wall tok/s |
@@ -232,7 +243,11 @@ source IDs, token counts, and candidate-over-shared deltas for downstream analys
   A low teacher-gap-closed fraction, together with continued held-out gains in a future checkpoint
   sweep, would support increasing data/token budget; this single final evaluation cannot locate the
   optimal stopping point because the run did not perform held-out validation at multiple checkpoints.
-- The immutable run enabled the native Qwen3.5 MTP objective at weight **0.1**.  Its source head remained frozen and outside the optimizer, while its loss propagated through the student hidden states.
+- The immutable run logged an MTP objective at weight **0.1**. Its 15
+  checkpoint-native parameters remained frozen and outside the optimizer, while
+  its loss propagated through the student hidden states. Because of the
+  one-token RoPE offset disclosed above, this describes the path that actually
+  ran and is not a claim of fully native-aligned Qwen3.5 MTP execution.
 - The immutable schedule used linear warmup for 5,000,000 tokens, a stable plateau through 250,000,000 tokens, then a 250,000,000-token cosine decay to 0.100× peak LR. The data stream also switches to the authenticated quality-cooldown corpus at 450,000,000 tokens; any loss discontinuity at that exact boundary is confounded with the data change and cannot be attributed to LR alone.
 - Data status is **research_only=true** and
   **ready_for_training=false**.  Pending audits:
