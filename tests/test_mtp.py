@@ -300,8 +300,8 @@ def _reference_mtp_forward(
         )
     )
     pair_mask = attention_mask[:, :-1].bool() & attention_mask[:, 1:].bool()
-    text_positions = position_ids[0, ..., :-1]
-    rope_positions = position_ids[1:, ..., :-1]
+    text_positions = position_ids[0, ..., 1:]
+    rope_positions = position_ids[1:, ..., 1:]
     causal_mask = create_causal_mask(
         config=module.config,
         inputs_embeds=fused,
@@ -320,6 +320,63 @@ def _reference_mtp_forward(
             use_cache=False,
         )
     return module.norm(fused)
+
+
+def test_mtp_positions_follow_the_shifted_known_token() -> None:
+    batch_size = 2
+    sequence_length = 5
+    expected_default = torch.arange(1, sequence_length).expand(batch_size, -1)
+
+    text_positions, rope_positions = Qwen35MTP._shift_position_ids(
+        None,
+        batch_size=batch_size,
+        sequence_length=sequence_length,
+        device=torch.device("cpu"),
+    )
+    torch.testing.assert_close(text_positions, expected_default)
+    torch.testing.assert_close(
+        rope_positions,
+        expected_default.unsqueeze(0).expand(3, -1, -1),
+    )
+
+    explicit_text = torch.tensor(
+        [
+            [10, 11, 12, 13, 14],
+            [20, 21, 22, 23, 24],
+        ]
+    )
+    text_positions, rope_positions = Qwen35MTP._shift_position_ids(
+        explicit_text,
+        batch_size=batch_size,
+        sequence_length=sequence_length,
+        device=torch.device("cpu"),
+    )
+    torch.testing.assert_close(text_positions, explicit_text[:, 1:])
+    torch.testing.assert_close(
+        rope_positions,
+        explicit_text[:, 1:].unsqueeze(0).expand(3, -1, -1),
+    )
+
+    explicit_mrope = torch.stack(
+        tuple(explicit_text + 100 * axis for axis in range(4))
+    )
+    text_positions, rope_positions = Qwen35MTP._shift_position_ids(
+        explicit_mrope,
+        batch_size=batch_size,
+        sequence_length=sequence_length,
+        device=torch.device("cpu"),
+    )
+    torch.testing.assert_close(text_positions, explicit_mrope[0, ..., 1:])
+    torch.testing.assert_close(rope_positions, explicit_mrope[1:, ..., 1:])
+
+    text_positions, rope_positions = Qwen35MTP._shift_position_ids(
+        explicit_mrope[1:],
+        batch_size=batch_size,
+        sequence_length=sequence_length,
+        device=torch.device("cpu"),
+    )
+    assert text_positions is None
+    torch.testing.assert_close(rope_positions, explicit_mrope[1:, ..., 1:])
 
 
 def test_mtp_forward_shifts_tokens_matches_reference_and_preserves_autograd() -> None:

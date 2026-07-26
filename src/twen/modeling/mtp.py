@@ -99,9 +99,16 @@ class Qwen35MTP(nn.Module):
         sequence_length: int,
         device: torch.device,
     ) -> tuple[torch.Tensor | None, torch.Tensor]:
-        mtp_length = sequence_length - 1
         if position_ids is None:
-            text_positions = torch.arange(mtp_length, device=device, dtype=torch.long)
+            # Every MTP state combines ``h_t`` with the already-known token
+            # ``x_(t+1)``.  It therefore occupies the shifted token's position,
+            # not the main hidden state's position.
+            text_positions = torch.arange(
+                1,
+                sequence_length,
+                device=device,
+                dtype=torch.long,
+            )
             text_positions = text_positions.view(1, -1).expand(batch_size, -1)
             rope_positions = text_positions.unsqueeze(0).expand(3, -1, -1)
             return text_positions, rope_positions
@@ -109,7 +116,7 @@ class Qwen35MTP(nn.Module):
         if position_ids.ndim == 2:
             if tuple(position_ids.shape) != (batch_size, sequence_length):
                 raise ValueError("2D position_ids must match [batch, sequence]")
-            text_positions = position_ids[:, :-1]
+            text_positions = position_ids[:, 1:]
             rope_positions = text_positions.unsqueeze(0).expand(3, -1, -1)
             return text_positions, rope_positions
 
@@ -117,7 +124,7 @@ class Qwen35MTP(nn.Module):
             raise ValueError("position_ids must have shape [B,L], [3,B,L], or [4,B,L]")
         if tuple(position_ids.shape[1:]) != (batch_size, sequence_length):
             raise ValueError("3D position_ids must end in [batch, sequence]")
-        shifted = position_ids[..., :-1]
+        shifted = position_ids[..., 1:]
         if shifted.shape[0] == 4:
             return shifted[0], shifted[1:]
         # Match Qwen3_5TextModel: three-axis MRoPE input has no separate text
