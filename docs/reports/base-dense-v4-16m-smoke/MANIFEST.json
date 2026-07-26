@@ -1,0 +1,50 @@
+{
+  "files": {
+    "REPORT.zh-CN.md": {
+      "sha256": "f2e7de8b70596f5666d9fbb6fc7c77c2132f19531291965923cf31a0f13cce7d",
+      "size": 6740
+    },
+    "analysis.json": {
+      "sha256": "290410706361e10e98bb785de4561f1cb14f9fee2cfbd13ac2f69073cfb71edd",
+      "size": 71940
+    },
+    "charts/gpu_memory.svg": {
+      "sha256": "137f51ee877e312146f29cc6d14bdcc4d101fc21d93de4c676ea72e528f3111e",
+      "size": 5466
+    },
+    "charts/gpu_power.svg": {
+      "sha256": "0fe23e41e0e2903fd0ae5b3edb8bc604fa83a4f2df390a4b1b51bd28b5626aa3",
+      "size": 6485
+    },
+    "charts/gpu_utilization.svg": {
+      "sha256": "c39a4d2641a484ec766bd24c3cc4dba27470e10ee21c1887e42ddc3ec0619305",
+      "size": 6503
+    },
+    "charts/gradient_norm.svg": {
+      "sha256": "f1f3d88a6f17cccd6d54b34adaecebcb8ec85629c7d96af686e6901be1fc07a1",
+      "size": 4639
+    },
+    "charts/learning_rate.svg": {
+      "sha256": "93ae2eae395034e6773e529fcdf57284b7f482b13717c252375f5da943a031fe",
+      "size": 6665
+    },
+    "charts/source_token_mix.svg": {
+      "sha256": "7f814e7911962c63ee42ea4e087f129e24485650356381df5f60db311a18b311",
+      "size": 5271
+    },
+    "charts/throughput.svg": {
+      "sha256": "807a7c37b899b5eb44ae46dae0c0e3bdd6695b8e0b2f06b55219b275d264257e",
+      "size": 5453
+    },
+    "charts/training_loss.svg": {
+      "sha256": "bc717c9b2874c8b9a54aa30edfda8e31ed47c906e3be07045f6d2edb927bd9dd",
+      "size": 9866
+    }
+  },
+  "kind": "twen_dense_training_analysis_bundle",
+  "run_id": "base-dense-v4-16m-smoke",
+  "schema_version": 1,
+  "source_checkpoint_manifest_sha256": "4af6174ff3fcf91c339e65bd508fb5e4a69dfb74f62a46e684b59e889cf180c5",
+  "source_metrics_sha256": "7420f61d89d85230f73df4b422d859320702d0445d27575ff4796613c51a3cb2",
+  "source_telemetry_sha256": "5017bcc0b30e8cebad694586221b5ea321dc427dda49678ed1bd6d3f39ba789f"
+}

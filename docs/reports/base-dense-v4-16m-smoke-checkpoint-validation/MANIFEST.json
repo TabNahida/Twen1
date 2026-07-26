@@ -1,0 +1,35 @@
+{
+  "files": {
+    "REPORT.zh-CN.md": {
+      "path": "REPORT.zh-CN.md",
+      "sha256": "4230b58675697b669d053bff7fa5dd87fe2dc0e1c2defc0329f2434efdafb1c8",
+      "size": 6373
+    },
+    "charts/overall-nll-delta.svg": {
+      "path": "charts/overall-nll-delta.svg",
+      "sha256": "2934ce7dc456e6bbd29800b709344c179637fb403eca7384a2a1e4c1cfd37095",
+      "size": 3153
+    },
+    "charts/per-source-nll-delta.svg": {
+      "path": "charts/per-source-nll-delta.svg",
+      "sha256": "27164b28e1b3f74bfd142673320c8dee1620a07bfd0c36f2396baa4d04f4a5be",
+      "size": 7194
+    },
+    "summary.json": {
+      "path": "summary.json",
+      "sha256": "63d48570029f577406d4eef8fe70a4761dff5f30ae8b1e19a58c6861220a421e",
+      "size": 31410
+    }
+  },
+  "inputs_sha256": "4ca1d4c42da96a2d08f1be950a0fb93b1f0848c03f70294175c922a5c3ff8acc",
+  "kind": "twen_v4_checkpoint_validation_sweep_bundle",
+  "schema_version": 1,
+  "selection": {
+    "checkpoint_step": 60,
+    "committed_tokens": 15673704,
+    "criterion": "lowest authenticated candidate-role mean NLL",
+    "label": "step60",
+    "mean_nll": 2.3846920981610835,
+    "nll_delta_candidate_minus_baseline": 0.008023294963872996
+  }
+}

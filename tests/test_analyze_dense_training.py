@@ -5,6 +5,7 @@ import importlib.util
 import json
 import math
 from collections import Counter
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -159,9 +160,7 @@ def _build_completed_run(tmp_path: Path) -> tuple[Path, Path]:
         source_map = cooldown_sources if phase == "cooldown" else primary_sources
         shard_ids = replay.plan(global_batch_samples)
         counts = Counter(source_map[shard_id] for shard_id in shard_ids)
-        fractions = {
-            source: count / global_batch_samples for source, count in counts.items()
-        }
+        fractions = {source: count / global_batch_samples for source, count in counts.items()}
         tokens = step * tokens_per_step
         progress = tokens / 100_000_000
         noise = 0.003 * math.sin(step * 0.41)
@@ -193,11 +192,7 @@ def _build_completed_run(tmp_path: Path) -> tuple[Path, Path]:
         else:
             cooldown_step = step - 210
             lr = peak_lr * (1.0 - 0.9 * cooldown_step / 30)
-        grad_norm = (
-            0.58
-            + 0.25 * fractions.get("gamma_corpus", 0.0)
-            + 0.04 * (step % 5)
-        )
+        grad_norm = 0.58 + 0.25 * fractions.get("gamma_corpus", 0.0) + 0.04 * (step % 5)
         alignment = step % 20 == 0
         compute_seconds = 190.0 if alignment else 95.0
         wall_seconds = compute_seconds + 1.5
@@ -409,6 +404,290 @@ def _build_completed_run(tmp_path: Path) -> tuple[Path, Path]:
     return run_dir, state_path
 
 
+def _convert_to_prepared_text_source_mix(run_dir: Path) -> None:
+    config_path = run_dir / "resolved_config.yaml"
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config["data"]["mode"] = "prepared-text"
+    for key in (
+        "quality_cooldown_manifest_path",
+        "quality_cooldown_manifest_sha256",
+        "quality_cooldown_start_tokens",
+    ):
+        config["data"].pop(key, None)
+    config["losses"].update(
+        {
+            "ntp": 1.0,
+            "teacher_kd": 0.0,
+            "mtp": 0.1,
+            "anchor_kl": 0.0,
+            "hidden_alignment": 0.0,
+        }
+    )
+    config["optimizer"].update(
+        {
+            "adapter_optimizer": "muon",
+            "muon_adjust_lr_fn": "match_rms_adamw",
+            "muon_momentum": 0.95,
+            "muon_nesterov": True,
+            "muon_ns_steps": 5,
+        }
+    )
+    config_path.write_text(
+        yaml.safe_dump(config, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    metrics_path = run_dir / "metrics.jsonl"
+    metrics = [json.loads(line) for line in metrics_path.read_text(encoding="utf-8").splitlines()]
+    cumulative = {
+        "alpha_corpus": 0,
+        "beta_corpus": 0,
+        "gamma_corpus": 0,
+    }
+    for row in metrics:
+        step = int(row["step"])
+        row["data_phase"] = "primary"
+        row["loss"] = row["ntp"] + 0.1 * row["mtp"]
+        for key in ("teacher_kd", "anchor_kl", "hidden_alignment"):
+            row.pop(key, None)
+        row["lr/adapters"] = row["lr"]
+        row["lr/scale"] = row["lr"] * 3
+        row["lr_adjustment_factor/adapters"] = 12.8
+        row["lr_adjusted/adapters"] = row["lr"] * 12.8
+        alpha = 295_000 + (step * 7_919) % 13_000
+        beta = 245_000 + (step * 3_571) % 11_000
+        source_tokens = {
+            "alpha_corpus": alpha,
+            "beta_corpus": beta,
+            "gamma_corpus": int(row["tokens_this_step"]) - alpha - beta,
+        }
+        for source, tokens in source_tokens.items():
+            cumulative[source] += tokens
+            row[f"source_tokens_this_step/{source}"] = tokens
+            row[f"source_tokens/{source}"] = cumulative[source]
+    _write_jsonl(metrics_path, metrics)
+
+    telemetry_path = run_dir / "telemetry.jsonl"
+    telemetry = [
+        json.loads(line) for line in telemetry_path.read_text(encoding="utf-8").splitlines()
+    ]
+    for row in telemetry:
+        row["data_phase"] = "primary"
+    _write_jsonl(telemetry_path, telemetry)
+
+    events_path = run_dir / "events.jsonl"
+    events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]
+    session_start = next(row for row in events if row["event"] == "session_start")
+    session_start.update(
+        {
+            "data_mode": "prepared-text",
+            "source_mix_enabled": True,
+            "source_mix_algorithm": "fixture-token-deficit-source-mix",
+            "source_mix_effective_basis_points": {
+                "alpha_corpus": 3000,
+                "beta_corpus": 2500,
+                "gamma_corpus": 4500,
+            },
+            "source_mix_dataset_fingerprint": "fixture-source-mix",
+            "source_map_sha256": "f" * 64,
+        }
+    )
+    _write_jsonl(events_path, events)
+
+    checkpoint = run_dir / (run_dir / "latest").read_text(encoding="utf-8").strip()
+    metadata_path = checkpoint / "metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["data_cursor"]["extra"] = {
+        "kind": "deterministic-source-mix",
+        "committed_samples_by_source": {
+            "alpha_corpus": 288,
+            "beta_corpus": 240,
+            "gamma_corpus": 432,
+        },
+        "committed_tokens_by_source": cumulative,
+    }
+    _write_json(metadata_path, metadata)
+    checkpoint_manifest_path = checkpoint / "manifest.json"
+    checkpoint_manifest = json.loads(checkpoint_manifest_path.read_text(encoding="utf-8"))
+    checkpoint_manifest["files"]["metadata.json"] = _sha256(metadata_path)
+    _write_json(checkpoint_manifest_path, checkpoint_manifest)
+    (checkpoint / "COMPLETE").write_text(
+        f"{_sha256(checkpoint_manifest_path)}\n",
+        encoding="utf-8",
+    )
+
+
+def _convert_to_prepared_text_phase_source_mix(run_dir: Path) -> None:
+    config_path = run_dir / "resolved_config.yaml"
+    original_config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    cooldown_fields = {
+        key: original_config["data"][key]
+        for key in (
+            "quality_cooldown_manifest_path",
+            "quality_cooldown_manifest_sha256",
+            "quality_cooldown_start_tokens",
+        )
+    }
+    _convert_to_prepared_text_source_mix(run_dir)
+
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config["data"].update(cooldown_fields)
+    project_root = run_dir.parents[1]
+    cooldown_path = project_root / cooldown_fields["quality_cooldown_manifest_path"]
+    cooldown_manifest = json.loads(cooldown_path.read_text(encoding="utf-8"))
+    quality_sources = ("quality_a", "quality_b")
+    for index, shard in enumerate(cooldown_manifest["shards"]):
+        source = quality_sources[index % len(quality_sources)]
+        shard["source_path"] = f"/fixture/{source}-{index:06d}.jsonl"
+        shard["token_count"] = 1_000_000
+    _write_json(cooldown_path, cooldown_manifest)
+    config["data"]["quality_cooldown_manifest_sha256"] = _sha256(cooldown_path)
+    config_path.write_text(
+        yaml.safe_dump(config, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    primary_weights = {
+        "alpha_corpus": 3_000,
+        "beta_corpus": 2_500,
+        "gamma_corpus": 4_500,
+    }
+    cooldown_weights = {"quality_a": 4_000, "quality_b": 6_000}
+    all_sources = sorted(set(primary_weights) | set(cooldown_weights))
+    cooldown_start_tokens = int(cooldown_fields["quality_cooldown_start_tokens"])
+    metrics_path = run_dir / "metrics.jsonl"
+    metrics = [
+        json.loads(line)
+        for line in metrics_path.read_text(encoding="utf-8").splitlines()
+    ]
+    cumulative = dict.fromkeys(all_sources, 0)
+    phase_tokens = {
+        "primary": dict.fromkeys(all_sources, 0),
+        "cooldown": dict.fromkeys(all_sources, 0),
+    }
+    for row in metrics:
+        for key in tuple(row):
+            if key.startswith(analyzer.SOURCE_TOKENS_STEP_PREFIX) or key.startswith(
+                analyzer.SOURCE_TOKENS_TOTAL_PREFIX
+            ):
+                row.pop(key)
+        phase = (
+            "cooldown"
+            if int(row["tokens"]) > cooldown_start_tokens
+            else "primary"
+        )
+        row["data_phase"] = phase
+        weights = cooldown_weights if phase == "cooldown" else primary_weights
+        for source in all_sources:
+            tokens = weights.get(source, 0) * 100
+            cumulative[source] += tokens
+            phase_tokens[phase][source] += tokens
+            row[f"{analyzer.SOURCE_TOKENS_STEP_PREFIX}{source}"] = tokens
+            row[f"{analyzer.SOURCE_TOKENS_TOTAL_PREFIX}{source}"] = cumulative[
+                source
+            ]
+    _write_jsonl(metrics_path, metrics)
+
+    telemetry_path = run_dir / "telemetry.jsonl"
+    telemetry = [
+        json.loads(line)
+        for line in telemetry_path.read_text(encoding="utf-8").splitlines()
+    ]
+    for row in telemetry:
+        row["data_phase"] = (
+            "cooldown"
+            if int(row["tokens"]) > cooldown_start_tokens
+            else "primary"
+        )
+    _write_jsonl(telemetry_path, telemetry)
+
+    def phase_contract(
+        phase: str,
+        weights: dict[str, int],
+    ) -> dict[str, Any]:
+        return {
+            "enabled": True,
+            "algorithm": "token-deficit-corrected-source-mix-bp-v2",
+            "source_map_sha256": ("a" if phase == "primary" else "b") * 64,
+            "dataset_fingerprint": ("c" if phase == "primary" else "d") * 64,
+            "basis_points": weights,
+            "lineage_basis_points": weights,
+            "effective_basis_points": weights,
+            "weight_override": False,
+            "seed": 3407,
+        }
+
+    primary_contract = phase_contract("primary", primary_weights)
+    cooldown_contract = phase_contract("cooldown", cooldown_weights)
+    events_path = run_dir / "events.jsonl"
+    events = [
+        json.loads(line)
+        for line in events_path.read_text(encoding="utf-8").splitlines()
+    ]
+    session_start = next(row for row in events if row["event"] == "session_start")
+    session_start.update(
+        {
+            "source_mix_algorithm": primary_contract["algorithm"],
+            "source_mix_effective_basis_points": primary_weights,
+            "source_mix_dataset_fingerprint": primary_contract[
+                "dataset_fingerprint"
+            ],
+            "source_map_sha256": primary_contract["source_map_sha256"],
+            "source_mix": {
+                **primary_contract,
+                "cooldown_start_tokens": cooldown_start_tokens,
+                "phases": {
+                    "primary": primary_contract,
+                    "cooldown": cooldown_contract,
+                },
+            },
+        }
+    )
+    _write_jsonl(events_path, events)
+
+    checkpoint = run_dir / (run_dir / "latest").read_text(encoding="utf-8").strip()
+    metadata_path = checkpoint / "metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    primary_samples = {
+        source: weight * 840 // 10_000
+        for source, weight in primary_weights.items()
+    }
+    cooldown_samples = {
+        source: weight * 120 // 10_000
+        for source, weight in cooldown_weights.items()
+    }
+    committed_samples = dict.fromkeys(all_sources, 0)
+    for source, count in (*primary_samples.items(), *cooldown_samples.items()):
+        committed_samples[source] += count
+    metadata["data_cursor"]["extra"] = {
+        "kind": "deterministic-source-mix-quality-cooldown",
+        "committed_samples_by_source": committed_samples,
+        "committed_tokens_by_source": cumulative,
+        "phase_committed_samples_by_source": {
+            "primary": {
+                source: primary_samples.get(source, 0)
+                for source in all_sources
+            },
+            "cooldown": {
+                source: cooldown_samples.get(source, 0)
+                for source in all_sources
+            },
+        },
+        "phase_committed_tokens_by_source": phase_tokens,
+    }
+    _write_json(metadata_path, metadata)
+    checkpoint_manifest_path = checkpoint / "manifest.json"
+    checkpoint_manifest = json.loads(
+        checkpoint_manifest_path.read_text(encoding="utf-8")
+    )
+    checkpoint_manifest["files"]["metadata.json"] = _sha256(metadata_path)
+    _write_json(checkpoint_manifest_path, checkpoint_manifest)
+    (checkpoint / "COMPLETE").write_text(
+        f"{_sha256(checkpoint_manifest_path)}\n",
+        encoding="utf-8",
+    )
+
+
 def test_completed_run_analysis_is_authenticated_read_only_and_atomic(tmp_path: Path) -> None:
     run_dir, _state_path = _build_completed_run(tmp_path)
     before = _snapshot(run_dir)
@@ -429,12 +708,11 @@ def test_completed_run_analysis_is_authenticated_read_only_and_atomic(tmp_path: 
     assert analysis["phases"]["primary_decay"] is None
     assert analysis["phases"]["analysis_phase"]["kind"] == "post_warmup_primary"
     assert analysis["source_adjusted"]["phase"]["kind"] == "post_warmup_primary"
-    assert analysis["source_adjusted"]["phase"]["points"] == analysis["phases"][
-        "analysis_phase"
-    ]["points"]
-    slope = analysis["source_adjusted"]["common_slopes"]["loss"]["coefficients"][
-        "tokens_per_100m"
-    ]
+    assert (
+        analysis["source_adjusted"]["phase"]["points"]
+        == analysis["phases"]["analysis_phase"]["points"]
+    )
+    slope = analysis["source_adjusted"]["common_slopes"]["loss"]["coefficients"]["tokens_per_100m"]
     assert slope["estimate"] < -0.05
     assert analysis["clipping"]["configured_threshold"] == pytest.approx(0.75)
     assert analysis["loss_formula"]["passed"] is True
@@ -471,8 +749,32 @@ def test_completed_run_analysis_is_authenticated_read_only_and_atomic(tmp_path: 
     assert "Dashboard GPU telemetry" in report
     assert "last rank0 session" in report
     assert "primary cosine decay" not in report
+    assert "![Loss、NTP 与 MTP](charts/training_loss.svg)" in report
     assert "## 后续版本建议 (v4)" in report
     assert "## v3 建议" not in report
+    chart_paths = sorted((output_dir / "charts").glob("*.svg"))
+    assert {path.name for path in chart_paths} == {
+        "gpu_memory.svg",
+        "gpu_power.svg",
+        "gpu_utilization.svg",
+        "gradient_norm.svg",
+        "learning_rate.svg",
+        "source_token_mix.svg",
+        "throughput.svg",
+        "training_loss.svg",
+    }
+    manifest_path = output_dir / "MANIFEST.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["kind"] == "twen_dense_training_analysis_bundle"
+    assert set(manifest["files"]) == {
+        "REPORT.zh-CN.md",
+        "analysis.json",
+        *(f"charts/{path.name}" for path in chart_paths),
+    }
+    for relative, identity in manifest["files"].items():
+        path = output_dir / relative
+        assert identity == {"size": path.stat().st_size, "sha256": _sha256(path)}
+    assert (output_dir / "COMPLETE").read_text(encoding="utf-8").strip() == (_sha256(manifest_path))
     assert "next_version_priority" in analysis["interpretation"]
     assert "v3_priority" not in analysis["interpretation"]
     assert not list(output_dir.glob(".*.tmp"))
@@ -485,6 +787,227 @@ def test_completed_run_analysis_is_authenticated_read_only_and_atomic(tmp_path: 
             run_dir=run_dir,
         )
     assert not (run_dir / "forbidden-analysis").exists()
+
+
+def test_prepared_text_ntp_mtp_run_uses_dynamic_metrics_and_logged_source_tokens(
+    tmp_path: Path,
+) -> None:
+    run_dir, _state_path = _build_completed_run(tmp_path)
+    _convert_to_prepared_text_source_mix(run_dir)
+
+    analysis = analyzer.analyze_dense_training(run_dir)
+
+    assert analysis["integrity"]["active_loss_components"] == ["ntp", "mtp"]
+    assert analysis["integrity"]["required_metric_fields"] == [
+        "loss",
+        "ntp",
+        "mtp",
+        "grad_norm",
+        "lr",
+    ]
+    assert analysis["loss_formula"]["formula"] == "1*ntp + 0.1*mtp"
+    assert analysis["loss_formula"]["max_abs_error"] == 0
+    replay = analysis["source_replay"]
+    assert replay["contract"]["composition_source"] == ("logged_source_tokens_this_step")
+    assert replay["contract"]["composition_unit"] == "valid_tokens"
+    assert replay["sources"] == [
+        "alpha_corpus",
+        "beta_corpus",
+        "gamma_corpus",
+    ]
+    assert replay["validation"]["source_tokens_sum_to_step_tokens"] is True
+    assert replay["validation"]["cumulative_source_tokens_exact"] is True
+    assert (
+        sum(replay["token_mix"]["committed_tokens_by_source"].values())
+        == (analysis["run"]["terminal_tokens"])
+    )
+    assert analysis["source_adjusted"]["model_kind"] == ("mixed_batch_centered_source_fractions")
+    assert analysis["source_adjusted"]["source_interaction_identifiability"]["available"] is False
+    assert analysis["lr_dose"]["optimizer"]["adapter_optimizer"] == "muon"
+    assert analysis["lr_dose"]["optimizer"]["muon"]["observed_adjustment_factor"] == pytest.approx(
+        12.8
+    )
+
+    output = tmp_path / "prepared-text-analysis"
+    analyzer.write_analysis(analysis, output=output, run_dir=run_dir)
+    report = (output / "REPORT.zh-CN.md").read_text(encoding="utf-8")
+    assert "loss = 1*ntp + 0.1*mtp" in report
+    assert "batch loss 不能拆成可信的逐来源 NLL" in report
+    assert "| alpha_corpus | 30.00%" in report
+
+
+@pytest.mark.parametrize(
+    ("cooldown_weights", "expected_global"),
+    [
+        (
+            {"quality": 10_000},
+            {"alpha": 3_000.0, "beta": 2_000.0, "quality": 5_000.0},
+        ),
+        (
+            {"alpha": 2_000, "beta": 8_000},
+            {"alpha": 4_000.0, "beta": 6_000.0},
+        ),
+    ],
+)
+def test_logged_source_mix_cooldown_uses_phase_contracts_and_union_zero_fill(
+    tmp_path: Path,
+    cooldown_weights: dict[str, int],
+    expected_global: dict[str, float],
+) -> None:
+    primary_weights = {"alpha": 6_000, "beta": 4_000}
+    phase_weights = {
+        "primary": primary_weights,
+        "cooldown": cooldown_weights,
+    }
+    all_sources = sorted(set(primary_weights) | set(cooldown_weights))
+
+    def phase_contract(
+        phase: str,
+        weights: dict[str, int],
+    ) -> dict[str, Any]:
+        return {
+            "enabled": True,
+            "algorithm": "token-deficit-corrected-source-mix-bp-v2",
+            "source_map_sha256": ("a" if phase == "primary" else "b") * 64,
+            "dataset_fingerprint": ("c" if phase == "primary" else "d") * 64,
+            "basis_points": weights,
+            "lineage_basis_points": weights,
+            "effective_basis_points": weights,
+            "weight_override": False,
+            "seed": 73,
+        }
+
+    primary_contract = phase_contract("primary", primary_weights)
+    cooldown_contract = phase_contract("cooldown", cooldown_weights)
+    events = [
+        {
+            "event": "session_start",
+            "gradient_accumulation_steps": 1,
+            "micro_batch_size": 2,
+            "world_size": 1,
+            "source_mix_enabled": True,
+            "source_mix_algorithm": primary_contract["algorithm"],
+            "source_mix_effective_basis_points": primary_weights,
+            "source_mix_dataset_fingerprint": primary_contract[
+                "dataset_fingerprint"
+            ],
+            "source_map_sha256": primary_contract["source_map_sha256"],
+            "source_mix": {
+                **primary_contract,
+                "cooldown_start_tokens": 20_000,
+                "phases": {
+                    "primary": primary_contract,
+                    "cooldown": cooldown_contract,
+                },
+            },
+        }
+    ]
+    cumulative = dict.fromkeys(all_sources, 0)
+    metrics: list[dict[str, Any]] = []
+    for step, phase in enumerate(
+        ("primary", "primary", "cooldown", "cooldown"),
+        start=1,
+    ):
+        step_tokens = {
+            source: phase_weights[phase].get(source, 0)
+            for source in all_sources
+        }
+        row: dict[str, Any] = {
+            "step": step,
+            "tokens": step * 10_000,
+            "tokens_this_step": 10_000,
+            "data_phase": phase,
+        }
+        for source, tokens in step_tokens.items():
+            cumulative[source] += tokens
+            row[f"source_tokens_this_step/{source}"] = tokens
+            row[f"source_tokens/{source}"] = cumulative[source]
+        metrics.append(row)
+
+    def manifest(sources: Sequence[str], phase: str) -> dict[str, Any]:
+        return {
+            "shards": [
+                {
+                    "shard_id": f"{phase}-{index}",
+                    "sequence_count": 100,
+                    "token_count": 400_000,
+                    "source_path": f"/fixture/{source}-000000.jsonl",
+                }
+                for index, source in enumerate(sources)
+            ]
+        }
+
+    primary_manifest = manifest(sorted(primary_weights), "primary")
+    cooldown_manifest = manifest(sorted(cooldown_weights), "cooldown")
+    replay = analyzer._logged_source_token_replay(
+        manifest=primary_manifest,
+        manifest_path=tmp_path / "primary.json",
+        cooldown_manifest=cooldown_manifest,
+        cooldown_manifest_path=tmp_path / "cooldown.json",
+        cooldown_start_tokens=20_000,
+        metrics=metrics,
+        events=events,
+    )
+
+    assert replay["sources"] == all_sources
+    assert replay["contract"]["expected_basis_points"] == expected_global
+    assert replay["contract"]["cooldown_start_tokens"] == 20_000
+    assert replay["validation"]["phase_source_contracts_exact"] is True
+    phase_mix = replay["token_mix"]["phases"]
+    assert phase_mix["primary"]["observed_basis_points"] == {
+        source: float(primary_weights.get(source, 0))
+        for source in all_sources
+    }
+    assert phase_mix["cooldown"]["observed_basis_points"] == {
+        source: float(cooldown_weights.get(source, 0))
+        for source in all_sources
+    }
+    assert sum(replay["token_mix"]["committed_tokens_by_source"].values()) == (
+        40_000
+    )
+
+
+def test_prepared_text_phase_source_mix_cooldown_report_closes_end_to_end(
+    tmp_path: Path,
+) -> None:
+    run_dir, _state_path = _build_completed_run(tmp_path)
+    _convert_to_prepared_text_phase_source_mix(run_dir)
+
+    analysis = analyzer.analyze_dense_training(run_dir)
+
+    replay = analysis["source_replay"]
+    assert replay["validation"]["phase_source_contracts_exact"] is True
+    assert replay["contract"]["cooldown_start_tokens"] == 210_000_000
+    assert replay["contract"]["quality_cooldown_manifest"].endswith(
+        "artifacts/cooldown/manifest.json"
+    )
+    assert replay["contract"]["expected_basis_points"] == {
+        "alpha_corpus": 2_625.0,
+        "beta_corpus": 2_187.5,
+        "gamma_corpus": 3_937.5,
+        "quality_a": 500.0,
+        "quality_b": 750.0,
+    }
+    assert set(replay["token_mix"]["phases"]) == {"primary", "cooldown"}
+    assert analysis["cooldown_lr_separation"]["boundary"]["window_steps"] == 20
+    assert analysis["data_consumption"]["committed_tokens_by_source"] is not None
+
+    output = tmp_path / "phase-source-mix-analysis"
+    analyzer.write_analysis(analysis, output=output, run_dir=run_dir)
+    assert (output / "analysis.json").is_file()
+    assert (output / "REPORT.zh-CN.md").is_file()
+
+
+def test_prepared_text_missing_nonzero_mtp_metric_fails_closed(tmp_path: Path) -> None:
+    run_dir, _state_path = _build_completed_run(tmp_path)
+    _convert_to_prepared_text_source_mix(run_dir)
+    metrics_path = run_dir / "metrics.jsonl"
+    metrics = [json.loads(line) for line in metrics_path.read_text(encoding="utf-8").splitlines()]
+    metrics[0].pop("mtp")
+    _write_jsonl(metrics_path, metrics)
+
+    with pytest.raises(analyzer.AnalysisError, match=r"metrics\[1\]\.mtp"):
+        analyzer.analyze_dense_training(run_dir)
 
 
 def test_phase_rows_separate_decay_but_use_all_post_warmup_primary_for_regression() -> None:

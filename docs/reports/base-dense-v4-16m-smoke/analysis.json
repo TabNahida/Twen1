@@ -1,0 +1,2040 @@
+{
+  "clipping": {
+    "configured_threshold": 1.0,
+    "cooldown": null,
+    "phase_reference": {
+      "kind": "post_warmup_primary",
+      "points": 43,
+      "steps": [
+        20,
+        62
+      ],
+      "tokens": [
+        5226343,
+        16197992
+      ]
+    },
+    "primary_decay": {
+      "gt_1_fraction": 0.0,
+      "gt_2_fraction": 0.0,
+      "gt_5_fraction": 0.0,
+      "gt_configured_fraction": 0.0,
+      "points": 42
+    },
+    "primary_stable": {
+      "gt_1_fraction": 0.0,
+      "gt_2_fraction": 0.0,
+      "gt_5_fraction": 0.0,
+      "gt_configured_fraction": 0.0,
+      "points": 1
+    },
+    "warmup": {
+      "gt_1_fraction": 0.0,
+      "gt_2_fraction": 0.0,
+      "gt_5_fraction": 0.0,
+      "gt_configured_fraction": 0.0,
+      "points": 19
+    }
+  },
+  "cooldown_lr_separation": null,
+  "data_consumption": {
+    "admission": {
+      "completed_without_source_wrap": false,
+      "manifest_covers_max_tokens": true
+    },
+    "committed_samples_by_source": {
+      "chinese_fineweb2_cmn_hani": 776,
+      "code_github_clean_allowlisted": 300,
+      "code_stackv2_edu_permissive": 184,
+      "education_libretexts_permissive": 318,
+      "english_fineweb_edu_dedup": 1130,
+      "math_finemath_4plus": 514,
+      "multilingual_common_corpus_permissive": 319,
+      "public_domain_project_gutenberg": 72,
+      "public_domain_usgpo": 2,
+      "science_arxiv_open_permissive": 114,
+      "science_cosmopedia_openstax": 128,
+      "science_cosmopedia_stanford": 111
+    },
+    "committed_tokens_by_source": {
+      "chinese_fineweb2_cmn_hani": 3171808,
+      "code_github_clean_allowlisted": 1226210,
+      "code_stackv2_edu_permissive": 749639,
+      "education_libretexts_permissive": 1297035,
+      "english_fineweb_edu_dedup": 4616294,
+      "math_finemath_4plus": 2095364,
+      "multilingual_common_corpus_permissive": 1303248,
+      "public_domain_project_gutenberg": 292614,
+      "public_domain_usgpo": 6873,
+      "science_arxiv_open_permissive": 464176,
+      "science_cosmopedia_openstax": 523013,
+      "science_cosmopedia_stanford": 451718
+    },
+    "manifest_capacity": {
+      "samples": 3923,
+      "tokens": 16013672,
+      "tokens_minus_max_tokens": 13672
+    },
+    "max_tokens": 16000000,
+    "max_tokens_overshoot": 197992,
+    "repeated_sample_fraction": 0.011340725806451613,
+    "repeated_samples": 45,
+    "repeated_samples_by_source": {
+      "chinese_fineweb2_cmn_hani": 9,
+      "code_github_clean_allowlisted": 3,
+      "code_stackv2_edu_permissive": 2,
+      "education_libretexts_permissive": 3,
+      "english_fineweb_edu_dedup": 13,
+      "math_finemath_4plus": 6,
+      "multilingual_common_corpus_permissive": 4,
+      "public_domain_project_gutenberg": 1,
+      "public_domain_usgpo": 0,
+      "science_arxiv_open_permissive": 1,
+      "science_cosmopedia_openstax": 2,
+      "science_cosmopedia_stanford": 1
+    },
+    "repeated_token_fraction": 0.01137918823518372,
+    "repeated_tokens": 184320,
+    "repeated_tokens_by_source": {
+      "chinese_fineweb2_cmn_hani": 36864,
+      "code_github_clean_allowlisted": 12288,
+      "code_stackv2_edu_permissive": 8192,
+      "education_libretexts_permissive": 12288,
+      "english_fineweb_edu_dedup": 53248,
+      "math_finemath_4plus": 24576,
+      "multilingual_common_corpus_permissive": 16384,
+      "public_domain_project_gutenberg": 4096,
+      "public_domain_usgpo": 0,
+      "science_arxiv_open_permissive": 4096,
+      "science_cosmopedia_openstax": 8192,
+      "science_cosmopedia_stanford": 4096
+    },
+    "source_wrap_detected": true,
+    "terminal_samples": 3968,
+    "terminal_tokens": 16197992
+  },
+  "inputs": {
+    "dashboard_gpu_telemetry_current": {
+      "path": "/media/data1/Project/AI/Twen1/.twen/dashboard/gpu-telemetry.jsonl",
+      "sha256": "4f1650385f2a6671cf2f38d2c43f4ace6443699dbbf3632d199f27190ba67708",
+      "size": 2235837
+    },
+    "dashboard_gpu_telemetry_rotated": {
+      "path": "/media/data1/Project/AI/Twen1/.twen/dashboard/gpu-telemetry.jsonl.1",
+      "sha256": "78834ca808c0bd720323fa31e7e93c71c3666fbfcc0e553e8a461cd08c3a220a",
+      "size": 16775865
+    },
+    "events": {
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-16m-smoke/events.jsonl",
+      "sha256": "ad7afffead2bef05042ecd1b3c0a6655c25eff4efaadfad51448fb2fbb3a6057",
+      "size": 13694
+    },
+    "latest": {
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-16m-smoke/latest",
+      "sha256": "f2f27c9c9047fc9439fbf3b6ae8e15469683e5df442710f842746c1708fdf619",
+      "size": 37
+    },
+    "metrics": {
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-16m-smoke/metrics.jsonl",
+      "sha256": "7420f61d89d85230f73df4b422d859320702d0445d27575ff4796613c51a3cb2",
+      "size": 150994
+    },
+    "primary_manifest": {
+      "path": "/media/data1/Project/AI/Twen1/artifacts/data/base-v4-smoke-r3-filtered-train/manifest.json",
+      "sha256": "61afef2502d4703edb8ac44c0c7f74c4e75ee9335b9596fb2d3101ac282641b5",
+      "size": 139551
+    },
+    "rank0_session": {
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-16m-smoke/rank0-session.json",
+      "sha256": "b6706cff1a23f6b0aebc4af9654eb52db31e4c82b778c1cede9696f85b024406",
+      "size": 1989
+    },
+    "resolved_config": {
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-16m-smoke/resolved_config.yaml",
+      "sha256": "899c9b62c808a86a3a082e83fa0669b253c0f1327b45f74a23abe5ebc3e4e5e2",
+      "size": 4123
+    },
+    "telemetry": {
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-16m-smoke/telemetry.jsonl",
+      "sha256": "5017bcc0b30e8cebad694586221b5ea321dc427dda49678ed1bd6d3f39ba789f",
+      "size": 101127
+    }
+  },
+  "integrity": {
+    "active_loss_components": [
+      "ntp",
+      "mtp"
+    ],
+    "all_required_values_finite": true,
+    "available_metric_components": [
+      "loss",
+      "ntp",
+      "mtp",
+      "grad_norm"
+    ],
+    "checkpoint_cursor_kind": "deterministic-source-mix",
+    "final_tokens": 16197992,
+    "metrics_points": 62,
+    "metrics_telemetry_step_token_match": true,
+    "required_metric_fields": [
+      "loss",
+      "ntp",
+      "mtp",
+      "grad_norm",
+      "lr"
+    ],
+    "source_replay_matches_checkpoint_cursor": true,
+    "step_range": [
+      1,
+      62
+    ],
+    "steps_contiguous": true,
+    "telemetry_points": 62,
+    "tokens_strictly_increasing": true,
+    "tokens_this_step_exact": true
+  },
+  "interpretation": {
+    "cooldown": "No quality cooldown boundary is configured.",
+    "next_version_priority": "Require enough unique prepared tokens for the complete formal run and reject any source cursor wrap before interpreting quality.",
+    "raw_loss_plateau": "Every optimizer batch mixes sources at nearly fixed token ratios; raw loss still contains finite-batch content noise, but it is not confounded by the source-pure batch ordering used by earlier runs."
+  },
+  "kind": "twen_dense_training_analysis",
+  "loss_formula": {
+    "formula": "1*ntp + 0.1*mtp",
+    "max_abs_error": 0.0,
+    "passed": true,
+    "rows_reconstructed": 62,
+    "weights": {
+      "anchor_kl": 0.0,
+      "dense_oracle": 0.0,
+      "hidden_alignment": 0.0,
+      "load_balance": 0.0,
+      "mtp": 0.1,
+      "ntp": 1.0,
+      "router_supervision": 0.0,
+      "router_z": 0.0,
+      "teacher_kd": 0.0
+    }
+  },
+  "lr_dose": {
+    "configured": {
+      "analytical_average_ratio": 0.534375,
+      "analytical_peak_equivalent_tokens": 8550000.0,
+      "decay_tokens": null,
+      "max_tokens": 16000000,
+      "min_lr_ratio": 0.1,
+      "observed_average_ratio": 0.5287015231041329,
+      "observed_peak_equivalent_tokens": 8563903.04162856,
+      "peak_rates": {
+        "adapter_lr": 0.0001,
+        "lora_lr": 0.0001,
+        "router_lr": 0.0003,
+        "scale_lr": 0.0003
+      },
+      "schedule": "cosine",
+      "warmup_tokens": 5000000
+    },
+    "full_cosine": {
+      "peak_minus_10pct_relative_to_configured": 0.9,
+      "peak_minus_25pct_relative_to_configured": 0.75,
+      "same_peak_equivalent_tokens": 8550000.0,
+      "same_peak_relative_to_configured": 1.0
+    },
+    "optimizer": {
+      "adapter_optimizer": "muon",
+      "muon": {
+        "adjust_lr_fn": "match_rms_adamw",
+        "configured_nominal_adapter_lr": 0.0001,
+        "momentum": 0.95,
+        "nesterov": true,
+        "ns_steps": 5,
+        "observed_adjusted_adapter_lr_peak": 0.001278796933154677,
+        "observed_adjustment_factor": 12.8,
+        "observed_nominal_adapter_lr_peak": 9.990601040270913e-05
+      },
+      "observed_learning_rates": {
+        "lr": {
+          "max": 9.990601040270913e-05,
+          "mean": 5.2824649909696936e-05,
+          "median": 5.2243167008765786e-05,
+          "min": 0.0,
+          "p10": 1.1407242496753998e-05,
+          "p90": 9.56040692964452e-05,
+          "sample_sd": 3.157913053740495e-05
+        },
+        "lr/adapters": {
+          "max": 9.990601040270913e-05,
+          "mean": 5.2824649909696936e-05,
+          "median": 5.2243167008765786e-05,
+          "min": 0.0,
+          "p10": 1.1407242496753998e-05,
+          "p90": 9.56040692964452e-05,
+          "sample_sd": 3.157913053740495e-05
+        },
+        "lr/scale": {
+          "max": 0.0002997180312081273,
+          "mean": 0.00015847394972909082,
+          "median": 0.00015672950102629734,
+          "min": 0.0,
+          "p10": 3.422172749026199e-05,
+          "p90": 0.0002868122078893356,
+          "sample_sd": 9.473739161221484e-05
+        },
+        "lr_adjusted/adapters": {
+          "max": 0.001278796933154677,
+          "mean": 0.0006761555188441209,
+          "median": 0.0006687125377122021,
+          "min": 0.0,
+          "p10": 0.00014601270395845118,
+          "p90": 0.0012237320869944988,
+          "sample_sd": 0.00040421287087878346
+        },
+        "lr_adjustment_factor/adapters": {
+          "max": 12.8,
+          "mean": 12.799999999999995,
+          "median": 12.8,
+          "min": 12.8,
+          "p10": 12.8,
+          "p90": 12.8,
+          "sample_sd": 5.372573856495292e-15
+        }
+      }
+    },
+    "same_budget_recommendation": {
+      "decay_tokens": 8000000,
+      "lr_schedule": "warmup-stable-decay",
+      "min_lr_ratio": 0.1,
+      "peak_rates_minus_10pct": {
+        "adapter_lr": 9e-05,
+        "lora_lr": 9e-05,
+        "router_lr": 0.00027,
+        "scale_lr": 0.00027
+      },
+      "reason": "Avoid combining a large peak reduction with full-run cosine when source-adjusted stable loss is still decreasing.",
+      "relative_dose_to_configured": 1.0421052631578946,
+      "warmup_tokens": 5000000
+    }
+  },
+  "performance": {
+    "alignment": {
+      "fraction_steps": 0.0,
+      "points": 0,
+      "step_interval": []
+    },
+    "dashboard_gpu_last_session": {
+      "aggregation": {
+        "bucket_mean_nearest_rank_p95": "nearest-rank ceil(0.95 * available_bucket_count) - 1",
+        "weighted_mean": "sum(bucket field mean * available_sample_count) / sum(available_sample_count)"
+      },
+      "available": true,
+      "coverage": {
+        "bucket_duration_fraction_of_session": 0.9824049907096278,
+        "bucket_duration_seconds": 2115.838989,
+        "coverage_fraction_of_session": 0.9790902874365174,
+        "gap_definition": "Internal gaps are wall-clock gaps between adjacent aggregate windows, including normal collector spacing.",
+        "internal_gap_seconds": 21.596384,
+        "leading_gap_seconds": 4.908982,
+        "reaches_session_end": false,
+        "sampled_seconds": 2108.700000000008,
+        "session_duration_seconds": 2153.733958,
+        "trailing_gap_seconds": 11.389603
+      },
+      "fields": {
+        "gpu_utilization_percent": {
+          "bucket_mean_nearest_rank_p95": 97.4040404040404,
+          "max": 100.0,
+          "min": 0.0,
+          "weighted_mean": 91.0835111680182
+        },
+        "memory_utilization_percent": {
+          "bucket_mean_nearest_rank_p95": 37.03030303030303,
+          "max": 100.0,
+          "min": 0.0,
+          "weighted_mean": 34.26494996917532
+        },
+        "power_draw_w": {
+          "bucket_mean_nearest_rank_p95": 600.0641414141414,
+          "max": 610.32,
+          "min": 33.93,
+          "weighted_mean": 562.9243903826999
+        },
+        "power_limit_w": {
+          "bucket_mean_nearest_rank_p95": 600.0,
+          "max": 600.0,
+          "min": 600.0,
+          "weighted_mean": 600.0
+        },
+        "temperature_c": {
+          "bucket_mean_nearest_rank_p95": 74.8989898989899,
+          "max": 76.0,
+          "min": 41.0,
+          "weighted_mean": 70.58609569877176
+        },
+        "vram_used_mib": {
+          "bucket_mean_nearest_rank_p95": 27444.23232323232,
+          "max": 27520.0,
+          "min": 933.0,
+          "weighted_mean": 26603.24574382321
+        }
+      },
+      "samples": {
+        "available_sample_count": 21087,
+        "raw_sample_interval_ms_values": [
+          100
+        ],
+        "sample_count": 21087,
+        "unavailable_sample_count": 0
+      },
+      "scope": {
+        "caveat": "Dashboard telemetry is filtered to the last rank0 session and does not represent earlier resumed sessions or the entire run.",
+        "ended_at_utc": "2026-07-26T16:33:21.674704+00:00",
+        "kind": "last_rank0_session_only",
+        "session_id": "5e8814ec34b449688033477a0ac9dff9",
+        "started_at_utc": "2026-07-26T15:57:27.940746+00:00"
+      },
+      "selection": {
+        "condition": "window_started_at_utc >= session_start and window_ended_at_utc <= session_end",
+        "first_window_started_at_utc": "2026-07-26T15:57:32.849728+00:00",
+        "last_window_ended_at_utc": "2026-07-26T16:33:10.285101+00:00",
+        "rows_by_input": {
+          "dashboard_gpu_telemetry_current": 214,
+          "dashboard_gpu_telemetry_rotated": 0
+        },
+        "selected_bucket_count": 214
+      }
+    },
+    "memory": {
+      "gpu_total_bytes": 34190458880,
+      "gpu_total_gib": 31.84234619140625,
+      "peak_allocated_gib": 25.46662425994873,
+      "peak_reserved_gib": 25.75390625,
+      "reserved_headroom_gib": 6.08843994140625
+    },
+    "power": {
+      "dashboard_last_session_available": true,
+      "note": "Training-step telemetry has no power fields; authenticated Dashboard aggregates are reported separately for the last rank0 session only.",
+      "telemetry_fields": [],
+      "time_series_available": false
+    },
+    "segments": {
+      "all": {
+        "aggregate_active_wall_tokens_per_second": 7836.672741074497,
+        "aggregate_compute_tokens_per_second": 8091.264191559835,
+        "compute_step_seconds": {
+          "max": 41.08994433202315,
+          "mean": 32.28888951078801,
+          "median": 32.06374677349231,
+          "min": 31.847312124969903,
+          "p10": 31.942068400006974,
+          "p90": 32.46298821848468,
+          "sample_sd": 1.1644358374547221
+        },
+        "compute_tokens_per_second": {
+          "max": 8231.27549889731,
+          "mean": 8099.553727626274,
+          "median": 8165.559062760683,
+          "min": 6379.76040760172,
+          "p10": 8003.527875494056,
+          "p90": 8206.857402866157,
+          "sample_sd": 240.42052843291685
+        },
+        "data_wait_fraction": {
+          "max": 0.003716884123037337,
+          "mean": 0.0004469472640105065,
+          "median": 0.0003675286730758548,
+          "min": 0.0002873385301269102,
+          "p10": 0.0003136782332187044,
+          "p90": 0.000516540861783863,
+          "sample_sd": 0.0004305951683828652
+        },
+        "gpu_peak_allocated_gib": {
+          "max": 25.46662425994873,
+          "mean": 25.30407780216586,
+          "median": 25.23225498199463,
+          "min": 25.232253551483154,
+          "p10": 25.23225498199463,
+          "p90": 25.46662425994873,
+          "sample_sd": 0.10893087939954127
+        },
+        "gpu_peak_reserved_gib": {
+          "max": 25.75390625,
+          "mean": 25.725554435483872,
+          "median": 25.75390625,
+          "min": 25.4609375,
+          "p10": 25.75390625,
+          "p90": 25.75390625,
+          "sample_sd": 0.08732330702204456
+        },
+        "points": 62,
+        "sum_active_wall_seconds": 2066.947610954987,
+        "sum_compute_seconds": 2001.9111496688565,
+        "tokens": 16197992,
+        "wall_clock_step_seconds": {
+          "max": 45.756077703030314,
+          "mean": 33.33786469282237,
+          "median": 32.12849842052674,
+          "min": 31.915926711983047,
+          "p10": 32.024124718370146,
+          "p90": 39.87076780068454,
+          "sample_sd": 3.2290277432959154
+        },
+        "wall_clock_tokens_per_second": {
+          "max": 8213.579457229931,
+          "mean": 7894.814406875639,
+          "median": 8110.78730191237,
+          "min": 5729.162401143462,
+          "p10": 6584.715772451138,
+          "p90": 8185.828724642472,
+          "sample_sd": 613.4698338452012
+        },
+        "wall_over_compute_percent": 3.2487186705008497
+      },
+      "cooldown_ordinary": {
+        "aggregate_active_wall_tokens_per_second": null,
+        "aggregate_compute_tokens_per_second": null,
+        "points": 0,
+        "sum_active_wall_seconds": 0.0,
+        "sum_compute_seconds": 0.0,
+        "tokens": 0,
+        "wall_over_compute_percent": null
+      },
+      "ordinary": {
+        "aggregate_active_wall_tokens_per_second": 7836.672741074497,
+        "aggregate_compute_tokens_per_second": 8091.264191559835,
+        "compute_step_seconds": {
+          "max": 41.08994433202315,
+          "mean": 32.28888951078801,
+          "median": 32.06374677349231,
+          "min": 31.847312124969903,
+          "p10": 31.942068400006974,
+          "p90": 32.46298821848468,
+          "sample_sd": 1.1644358374547221
+        },
+        "compute_tokens_per_second": {
+          "max": 8231.27549889731,
+          "mean": 8099.553727626274,
+          "median": 8165.559062760683,
+          "min": 6379.76040760172,
+          "p10": 8003.527875494056,
+          "p90": 8206.857402866157,
+          "sample_sd": 240.42052843291685
+        },
+        "data_wait_fraction": {
+          "max": 0.003716884123037337,
+          "mean": 0.0004469472640105065,
+          "median": 0.0003675286730758548,
+          "min": 0.0002873385301269102,
+          "p10": 0.0003136782332187044,
+          "p90": 0.000516540861783863,
+          "sample_sd": 0.0004305951683828652
+        },
+        "gpu_peak_allocated_gib": {
+          "max": 25.46662425994873,
+          "mean": 25.30407780216586,
+          "median": 25.23225498199463,
+          "min": 25.232253551483154,
+          "p10": 25.23225498199463,
+          "p90": 25.46662425994873,
+          "sample_sd": 0.10893087939954127
+        },
+        "gpu_peak_reserved_gib": {
+          "max": 25.75390625,
+          "mean": 25.725554435483872,
+          "median": 25.75390625,
+          "min": 25.4609375,
+          "p10": 25.75390625,
+          "p90": 25.75390625,
+          "sample_sd": 0.08732330702204456
+        },
+        "points": 62,
+        "sum_active_wall_seconds": 2066.947610954987,
+        "sum_compute_seconds": 2001.9111496688565,
+        "tokens": 16197992,
+        "wall_clock_step_seconds": {
+          "max": 45.756077703030314,
+          "mean": 33.33786469282237,
+          "median": 32.12849842052674,
+          "min": 31.915926711983047,
+          "p10": 32.024124718370146,
+          "p90": 39.87076780068454,
+          "sample_sd": 3.2290277432959154
+        },
+        "wall_clock_tokens_per_second": {
+          "max": 8213.579457229931,
+          "mean": 7894.814406875639,
+          "median": 8110.78730191237,
+          "min": 5729.162401143462,
+          "p10": 6584.715772451138,
+          "p90": 8185.828724642472,
+          "sample_sd": 613.4698338452012
+        },
+        "wall_over_compute_percent": 3.2487186705008497
+      },
+      "primary_ordinary": {
+        "aggregate_active_wall_tokens_per_second": 7836.672741074497,
+        "aggregate_compute_tokens_per_second": 8091.264191559835,
+        "compute_step_seconds": {
+          "max": 41.08994433202315,
+          "mean": 32.28888951078801,
+          "median": 32.06374677349231,
+          "min": 31.847312124969903,
+          "p10": 31.942068400006974,
+          "p90": 32.46298821848468,
+          "sample_sd": 1.1644358374547221
+        },
+        "compute_tokens_per_second": {
+          "max": 8231.27549889731,
+          "mean": 8099.553727626274,
+          "median": 8165.559062760683,
+          "min": 6379.76040760172,
+          "p10": 8003.527875494056,
+          "p90": 8206.857402866157,
+          "sample_sd": 240.42052843291685
+        },
+        "data_wait_fraction": {
+          "max": 0.003716884123037337,
+          "mean": 0.0004469472640105065,
+          "median": 0.0003675286730758548,
+          "min": 0.0002873385301269102,
+          "p10": 0.0003136782332187044,
+          "p90": 0.000516540861783863,
+          "sample_sd": 0.0004305951683828652
+        },
+        "gpu_peak_allocated_gib": {
+          "max": 25.46662425994873,
+          "mean": 25.30407780216586,
+          "median": 25.23225498199463,
+          "min": 25.232253551483154,
+          "p10": 25.23225498199463,
+          "p90": 25.46662425994873,
+          "sample_sd": 0.10893087939954127
+        },
+        "gpu_peak_reserved_gib": {
+          "max": 25.75390625,
+          "mean": 25.725554435483872,
+          "median": 25.75390625,
+          "min": 25.4609375,
+          "p10": 25.75390625,
+          "p90": 25.75390625,
+          "sample_sd": 0.08732330702204456
+        },
+        "points": 62,
+        "sum_active_wall_seconds": 2066.947610954987,
+        "sum_compute_seconds": 2001.9111496688565,
+        "tokens": 16197992,
+        "wall_clock_step_seconds": {
+          "max": 45.756077703030314,
+          "mean": 33.33786469282237,
+          "median": 32.12849842052674,
+          "min": 31.915926711983047,
+          "p10": 32.024124718370146,
+          "p90": 39.87076780068454,
+          "sample_sd": 3.2290277432959154
+        },
+        "wall_clock_tokens_per_second": {
+          "max": 8213.579457229931,
+          "mean": 7894.814406875639,
+          "median": 8110.78730191237,
+          "min": 5729.162401143462,
+          "p10": 6584.715772451138,
+          "p90": 8185.828724642472,
+          "sample_sd": 613.4698338452012
+        },
+        "wall_over_compute_percent": 3.2487186705008497
+      }
+    }
+  },
+  "phases": {
+    "analysis_phase": {
+      "kind": "post_warmup_primary",
+      "points": 43,
+      "steps": [
+        20,
+        62
+      ],
+      "tokens": [
+        5226343,
+        16197992
+      ]
+    },
+    "cooldown": null,
+    "primary_decay": {
+      "applied_lr": [
+        9.93229e-05,
+        1.0007552750619142e-05
+      ],
+      "metrics": {
+        "grad_norm": {
+          "max": 0.2830885946750641,
+          "mean": 0.14140066123079686,
+          "median": 0.1293705776333809,
+          "min": 0.05993596091866493,
+          "p10": 0.07784135416150093,
+          "p90": 0.2218358486890793,
+          "sample_sd": 0.05965801504267234
+        },
+        "loss": {
+          "max": 2.9415146032343227,
+          "mean": 2.7048068892095323,
+          "median": 2.7015886610580404,
+          "min": 2.497680364175302,
+          "p10": 2.5952810091893674,
+          "p90": 2.8005725698588373,
+          "sample_sd": 0.08956033891129517
+        },
+        "mtp": {
+          "max": 3.045512304121833,
+          "mean": 2.8158804589046187,
+          "median": 2.80812770702165,
+          "min": 2.616381728596727,
+          "p10": 2.7123458033851007,
+          "p90": 2.9089427506335492,
+          "sample_sd": 0.0863614943101701
+        },
+        "ntp": {
+          "max": 2.636963372822139,
+          "mean": 2.4232188433190704,
+          "median": 2.420775890355875,
+          "min": 2.236042191315629,
+          "p10": 2.3240761717864036,
+          "p90": 2.509819902319902,
+          "sample_sd": 0.08095122379385677
+        }
+      },
+      "points": 42,
+      "rolling": {
+        "window_100": {
+          "grad_norm": null,
+          "loss": null,
+          "mtp": null,
+          "ntp": null
+        },
+        "window_152": {
+          "grad_norm": null,
+          "loss": null,
+          "mtp": null,
+          "ntp": null
+        }
+      },
+      "steps": [
+        20,
+        62
+      ],
+      "tokens": [
+        5226343,
+        16197992
+      ]
+    },
+    "primary_stable": {
+      "applied_lr": [
+        9.990601040270913e-05,
+        9.990601040270913e-05
+      ],
+      "metrics": {
+        "grad_norm": {
+          "max": 0.2928621470928192,
+          "mean": 0.2928621470928192,
+          "median": 0.2928621470928192,
+          "min": 0.2928621470928192,
+          "p10": 0.2928621470928192,
+          "p90": 0.2928621470928192,
+          "sample_sd": 0.0
+        },
+        "loss": {
+          "max": 2.5566860091623367,
+          "mean": 2.5566860091623367,
+          "median": 2.5566860091623367,
+          "min": 2.5566860091623367,
+          "p10": 2.5566860091623367,
+          "p90": 2.5566860091623367,
+          "sample_sd": 0.0
+        },
+        "mtp": {
+          "max": 2.6709814476978506,
+          "mean": 2.6709814476978506,
+          "median": 2.6709814476978506,
+          "min": 2.6709814476978506,
+          "p10": 2.6709814476978506,
+          "p90": 2.6709814476978506,
+          "sample_sd": 0.0
+        },
+        "ntp": {
+          "max": 2.289587864392552,
+          "mean": 2.289587864392552,
+          "median": 2.289587864392552,
+          "min": 2.289587864392552,
+          "p10": 2.289587864392552,
+          "p90": 2.289587864392552,
+          "sample_sd": 0.0
+        }
+      },
+      "points": 1,
+      "rolling": {
+        "window_100": {
+          "grad_norm": null,
+          "loss": null,
+          "mtp": null,
+          "ntp": null
+        },
+        "window_152": {
+          "grad_norm": null,
+          "loss": null,
+          "mtp": null,
+          "ntp": null
+        }
+      },
+      "steps": [
+        21,
+        21
+      ],
+      "tokens": [
+        5488487,
+        5488487
+      ]
+    },
+    "warmup": {
+      "applied_lr": [
+        0.0,
+        9.414492000000001e-05
+      ],
+      "metrics": {
+        "grad_norm": {
+          "max": 0.7549998164176941,
+          "mean": 0.49422219866200495,
+          "median": 0.5177841186523438,
+          "min": 0.27614879608154297,
+          "p10": 0.3300937950611115,
+          "p90": 0.5964601039886475,
+          "sample_sd": 0.11464277195098864
+        },
+        "loss": {
+          "max": 2.835004784436451,
+          "mean": 2.7066925382829883,
+          "median": 2.725331819659825,
+          "min": 2.587445906822097,
+          "p10": 2.593956105895983,
+          "p90": 2.776090069558522,
+          "sample_sd": 0.07248226186627142
+        },
+        "mtp": {
+          "max": 2.9342039226612115,
+          "mean": 2.8172973184221877,
+          "median": 2.8383936490278385,
+          "min": 2.7001309122598656,
+          "p10": 2.713966903834058,
+          "p90": 2.8855478291402052,
+          "sample_sd": 0.06903249122498538
+        },
+        "ntp": {
+          "max": 2.54158439217033,
+          "mean": 2.424962806440769,
+          "median": 2.4406646026732406,
+          "min": 2.317432815596111,
+          "p10": 2.3225594155125773,
+          "p90": 2.4879974149114776,
+          "sample_sd": 0.06561372190403617
+        }
+      },
+      "points": 19,
+      "rolling": {
+        "window_100": {
+          "grad_norm": null,
+          "loss": null,
+          "mtp": null,
+          "ntp": null
+        },
+        "window_152": {
+          "grad_norm": null,
+          "loss": null,
+          "mtp": null,
+          "ntp": null
+        }
+      },
+      "steps": [
+        1,
+        19
+      ],
+      "tokens": [
+        262144,
+        4966145
+      ]
+    }
+  },
+  "run": {
+    "run_dir": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-16m-smoke",
+    "run_id": "base-dense-v4-16m-smoke",
+    "stage": "dense-oracle",
+    "terminal_step": 62,
+    "terminal_timestamp_utc": "2026-07-26T16:33:21.632893+00:00",
+    "terminal_tokens": 16197992,
+    "track": "base"
+  },
+  "schema_version": 1,
+  "source_adjusted": {
+    "common_slopes": {
+      "grad_norm": {
+        "coefficients": {
+          "mean_mixture_intercept": {
+            "confidence_95": [
+              0.1375486447878311,
+              0.15229739794641486
+            ],
+            "estimate": 0.14492302136712298,
+            "hac_standard_error": 0.003762437030250959
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:chinese_fineweb2_cmn_hani": {
+            "confidence_95": [
+              0.2982426570027732,
+              2.7861870492548495
+            ],
+            "estimate": 1.5422148531288113,
+            "hac_standard_error": 0.6346796919010399
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:code_github_clean_allowlisted": {
+            "confidence_95": [
+              -2.4135870952261516,
+              1.8566276723758917
+            ],
+            "estimate": -0.27847971142513,
+            "hac_standard_error": 1.0893405019392968
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:code_stackv2_edu_permissive": {
+            "confidence_95": [
+              -1.1278413323988545,
+              0.7055593795105894
+            ],
+            "estimate": -0.2111409764441326,
+            "hac_standard_error": 0.4677042632422051
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:education_libretexts_permissive": {
+            "confidence_95": [
+              0.2592535443216253,
+              2.3015188053201467
+            ],
+            "estimate": 1.280386174820886,
+            "hac_standard_error": 0.5209860359690106
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:math_finemath_4plus": {
+            "confidence_95": [
+              0.2680827798052595,
+              1.4082055234819761
+            ],
+            "estimate": 0.8381441516436178,
+            "hac_standard_error": 0.2908476386930399
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:multilingual_common_corpus_permissive": {
+            "confidence_95": [
+              -0.05908550113486999,
+              1.269488159621634
+            ],
+            "estimate": 0.605201329243382,
+            "hac_standard_error": 0.33892185223380206
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:public_domain_project_gutenberg": {
+            "confidence_95": [
+              -1.0492584945314416,
+              2.1040097754463862
+            ],
+            "estimate": 0.5273756404574723,
+            "hac_standard_error": 0.8044051709127112
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:public_domain_usgpo": {
+            "confidence_95": [
+              -2.817924244797406,
+              0.7455947288167857
+            ],
+            "estimate": -1.0361647579903102,
+            "hac_standard_error": 0.9090609626566816
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:science_arxiv_open_permissive": {
+            "confidence_95": [
+              0.03520385769341172,
+              1.5967667924417746
+            ],
+            "estimate": 0.8159853250675931,
+            "hac_standard_error": 0.3983578915174395
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:science_cosmopedia_openstax": {
+            "confidence_95": [
+              -2.815389049908225,
+              -0.060099604422664266
+            ],
+            "estimate": -1.4377443271654444,
+            "hac_standard_error": 0.7028799605830511
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:science_cosmopedia_stanford": {
+            "confidence_95": [
+              -0.6508601049535535,
+              1.709880381740243
+            ],
+            "estimate": 0.5295101383933448,
+            "hac_standard_error": 0.6022297159933154
+          },
+          "tokens_per_100m": {
+            "confidence_95": [
+              -1.870782294598176,
+              -1.103431046504283
+            ],
+            "estimate": -1.4871066705512295,
+            "hac_standard_error": 0.19575286941170747
+          }
+        },
+        "hac_lag": 42,
+        "r_squared": 0.6724951989571553,
+        "rank": 13,
+        "raw_sample_sd": 0.06330750894145537,
+        "residual_sample_sd": 0.03622964348785174,
+        "rows": 43,
+        "width": 13
+      },
+      "loss": {
+        "coefficients": {
+          "mean_mixture_intercept": {
+            "confidence_95": [
+              2.6889298513921354,
+              2.713794583768922
+            ],
+            "estimate": 2.7013622175805287,
+            "hac_standard_error": 0.006343043973670005
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:chinese_fineweb2_cmn_hani": {
+            "confidence_95": [
+              1.3613196253092825,
+              5.253517954798951
+            ],
+            "estimate": 3.3074187900541165,
+            "hac_standard_error": 0.9929077371147113
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:code_github_clean_allowlisted": {
+            "confidence_95": [
+              -6.311492062250613,
+              -1.080032082077746
+            ],
+            "estimate": -3.6957620721641797,
+            "hac_standard_error": 1.3345561173910376
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:code_stackv2_edu_permissive": {
+            "confidence_95": [
+              -6.6146946338113946,
+              -2.1523463124680764
+            ],
+            "estimate": -4.383520473139735,
+            "hac_standard_error": 1.1383541636079892
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:education_libretexts_permissive": {
+            "confidence_95": [
+              -6.089015846756243,
+              -0.526119309780392
+            ],
+            "estimate": -3.3075675782683174,
+            "hac_standard_error": 1.419106259432615
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:math_finemath_4plus": {
+            "confidence_95": [
+              -1.333297459748842,
+              1.7163803227150072
+            ],
+            "estimate": 0.19154143148308256,
+            "hac_standard_error": 0.777979026138737
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:multilingual_common_corpus_permissive": {
+            "confidence_95": [
+              -2.746568921392737,
+              0.831770447966653
+            ],
+            "estimate": -0.9573992367130422,
+            "hac_standard_error": 0.9128416758569874
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:public_domain_project_gutenberg": {
+            "confidence_95": [
+              -4.183256703640076,
+              2.397650196504716
+            ],
+            "estimate": -0.8928032535676798,
+            "hac_standard_error": 1.6788027806491816
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:public_domain_usgpo": {
+            "confidence_95": [
+              5.878432210200252,
+              8.350977380127311
+            ],
+            "estimate": 7.114704795163782,
+            "hac_standard_error": 0.6307513188589436
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:science_arxiv_open_permissive": {
+            "confidence_95": [
+              -4.394612033057956,
+              0.5154282270227852
+            ],
+            "estimate": -1.9395919030175854,
+            "hac_standard_error": 1.252561290836924
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:science_cosmopedia_openstax": {
+            "confidence_95": [
+              -0.6007460092663233,
+              4.080945554325838
+            ],
+            "estimate": 1.7400997725297573,
+            "hac_standard_error": 1.194309072344939
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:science_cosmopedia_stanford": {
+            "confidence_95": [
+              -3.3256311663528315,
+              -0.5027212195875161
+            ],
+            "estimate": -1.9141761929701737,
+            "hac_standard_error": 0.7201300884605396
+          },
+          "tokens_per_100m": {
+            "confidence_95": [
+              -1.5460195290602692,
+              -0.46514122184243434
+            ],
+            "estimate": -1.0055803754513517,
+            "hac_standard_error": 0.275734262045366
+          }
+        },
+        "hac_lag": 42,
+        "r_squared": 0.380344310280022,
+        "rank": 13,
+        "raw_sample_sd": 0.09132526822076055,
+        "residual_sample_sd": 0.07188961822857684,
+        "rows": 43,
+        "width": 13
+      },
+      "mtp": {
+        "coefficients": {
+          "mean_mixture_intercept": {
+            "confidence_95": [
+              2.800669278506968,
+              2.8243521504089317
+            ],
+            "estimate": 2.8125107144579498,
+            "hac_standard_error": 0.006041548954582571
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:chinese_fineweb2_cmn_hani": {
+            "confidence_95": [
+              1.6353554576842524,
+              5.108936170342224
+            ],
+            "estimate": 3.3721458140132383,
+            "hac_standard_error": 0.8861175287392785
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:code_github_clean_allowlisted": {
+            "confidence_95": [
+              -6.233817432120503,
+              -1.1843772156532282
+            ],
+            "estimate": -3.7090973238868656,
+            "hac_standard_error": 1.2881225042008355
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:code_stackv2_edu_permissive": {
+            "confidence_95": [
+              -6.1364306700445255,
+              -2.015745889781565
+            ],
+            "estimate": -4.076088279913045,
+            "hac_standard_error": 1.051195097005857
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:education_libretexts_permissive": {
+            "confidence_95": [
+              -5.794669567610153,
+              -0.8615084220690328
+            ],
+            "estimate": -3.328088994839593,
+            "hac_standard_error": 1.2584594759033472
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:math_finemath_4plus": {
+            "confidence_95": [
+              -1.2804935264096176,
+              1.724047140721213
+            ],
+            "estimate": 0.22177680715579762,
+            "hac_standard_error": 0.7664644559007221
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:multilingual_common_corpus_permissive": {
+            "confidence_95": [
+              -2.494450047436635,
+              0.6676820026941511
+            ],
+            "estimate": -0.913384022371242,
+            "hac_standard_error": 0.8066663393190782
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:public_domain_project_gutenberg": {
+            "confidence_95": [
+              -3.7973067942257988,
+              2.4335590611616116
+            ],
+            "estimate": -0.6818738665320936,
+            "hac_standard_error": 1.5895065957620944
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:public_domain_usgpo": {
+            "confidence_95": [
+              5.1336657043313325,
+              7.601999486535493
+            ],
+            "estimate": 6.367832595433413,
+            "hac_standard_error": 0.6296769852561636
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:science_arxiv_open_permissive": {
+            "confidence_95": [
+              -4.354203441517555,
+              0.07378639316376479
+            ],
+            "estimate": -2.140208524176895,
+            "hac_standard_error": 1.129589243541153
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:science_cosmopedia_openstax": {
+            "confidence_95": [
+              -0.48059112505914037,
+              3.713746462145753
+            ],
+            "estimate": 1.6165776685433064,
+            "hac_standard_error": 1.0699840783685952
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:science_cosmopedia_stanford": {
+            "confidence_95": [
+              -3.128865302157914,
+              -0.6654311503754371
+            ],
+            "estimate": -1.8971482262666755,
+            "hac_standard_error": 0.6284270795363461
+          },
+          "tokens_per_100m": {
+            "confidence_95": [
+              -1.425228719635803,
+              -0.43033901960878124
+            ],
+            "estimate": -0.9277838696222922,
+            "hac_standard_error": 0.2537983928640362
+          }
+        },
+        "hac_lag": 42,
+        "r_squared": 0.3921273900198696,
+        "rank": 13,
+        "raw_sample_sd": 0.08814193997795673,
+        "residual_sample_sd": 0.06872090853041178,
+        "rows": 43,
+        "width": 13
+      },
+      "ntp": {
+        "coefficients": {
+          "mean_mixture_intercept": {
+            "confidence_95": [
+              2.408860865446858,
+              2.4313614268226083
+            ],
+            "estimate": 2.420111146134733,
+            "hac_standard_error": 0.005739939126466917
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:chinese_fineweb2_cmn_hani": {
+            "confidence_95": [
+              1.1975034340283275,
+              4.742904983277216
+            ],
+            "estimate": 2.970204208652772,
+            "hac_standard_error": 0.9044391707267573
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:code_github_clean_allowlisted": {
+            "confidence_95": [
+              -5.688434267551145,
+              -0.961270411999843
+            ],
+            "estimate": -3.324852339775494,
+            "hac_standard_error": 1.2059091468243117
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:code_stackv2_edu_permissive": {
+            "confidence_95": [
+              -6.002718362237566,
+              -1.9491049280593162
+            ],
+            "estimate": -3.9759116451484413,
+            "hac_standard_error": 1.0340850597393496
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:education_libretexts_permissive": {
+            "confidence_95": [
+              -5.510153805183546,
+              -0.4393635523852506
+            ],
+            "estimate": -2.9747586787843985,
+            "hac_standard_error": 1.2935689420403815
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:math_finemath_4plus": {
+            "confidence_95": [
+              -1.2057072965271434,
+              1.544434798062148
+            ],
+            "estimate": 0.16936375076750232,
+            "hac_standard_error": 0.7015668608646152
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:multilingual_common_corpus_permissive": {
+            "confidence_95": [
+              -2.497703459448951,
+              0.7655817904971252
+            ],
+            "estimate": -0.8660608344759129,
+            "hac_standard_error": 0.8324707270270603
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:public_domain_project_gutenberg": {
+            "confidence_95": [
+              -3.8037891324421644,
+              2.1545573986132154
+            ],
+            "estimate": -0.8246158669144746,
+            "hac_standard_error": 1.5199863599631072
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:public_domain_usgpo": {
+            "confidence_95": [
+              5.364567746344754,
+              7.591275324896094
+            ],
+            "estimate": 6.477921535620424,
+            "hac_standard_error": 0.5680376475896275
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:science_arxiv_open_permissive": {
+            "confidence_95": [
+              -3.959815679698317,
+              0.5086735784984875
+            ],
+            "estimate": -1.7255710505999147,
+            "hac_standard_error": 1.1399207291318378
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:science_cosmopedia_openstax": {
+            "confidence_95": [
+              -0.5536134015426679,
+              3.7104974128934867
+            ],
+            "estimate": 1.5784420056754094,
+            "hac_standard_error": 1.0877833710296312
+          },
+          "source_delta_vs_english_fineweb_edu_dedup:science_cosmopedia_stanford": {
+            "confidence_95": [
+              -3.0132267855322286,
+              -0.43569595515480986
+            ],
+            "estimate": -1.7244613703435192,
+            "hac_standard_error": 0.6575333750962803
+          },
+          "tokens_per_100m": {
+            "confidence_95": [
+              -1.4036171649835554,
+              -0.4219868119946783
+            ],
+            "estimate": -0.9128019884891169,
+            "hac_standard_error": 0.25041590637471356
+          }
+        },
+        "hac_lag": 42,
+        "r_squared": 0.37904917457985055,
+        "rank": 13,
+        "raw_sample_sd": 0.08253701621156699,
+        "residual_sample_sd": 0.06503952622919794,
+        "rows": 43,
+        "width": 13
+      }
+    },
+    "composition_unit": "valid_tokens",
+    "design": "X=[intercept, centered source-token fractions excluding reference english_fineweb_edu_dedup, centered(tokens/1e8)]; OLS with Newey-West/Bartlett lag 50",
+    "model_kind": "mixed_batch_centered_source_fractions",
+    "phase": {
+      "excludes": [
+        "warmup",
+        "cooldown"
+      ],
+      "includes": [
+        "primary_stable",
+        "primary_decay"
+      ],
+      "kind": "post_warmup_primary",
+      "points": 43,
+      "steps": [
+        20,
+        62
+      ],
+      "tokens": [
+        5226343,
+        16197992
+      ]
+    },
+    "raw_loss_autocorrelation": {
+      "1": 0.14360758353473344,
+      "20": -0.40231243339364947
+    },
+    "raw_trends": {
+      "grad_norm": {
+        "coefficients": {
+          "intercept_at_mid_token": {
+            "confidence_95": [
+              0.13734317976704447,
+              0.1525028629672015
+            ],
+            "estimate": 0.14492302136712298,
+            "hac_standard_error": 0.0038672661224890383
+          },
+          "tokens_per_100m": {
+            "confidence_95": [
+              -1.9228076547382045,
+              -1.128550720989563
+            ],
+            "estimate": -1.5256791878638838,
+            "hac_standard_error": 0.2026165647317963
+          }
+        },
+        "hac_lag": 42,
+        "r_squared": 0.6244890685843755,
+        "rank": 2,
+        "raw_sample_sd": 0.06330750894145537,
+        "residual_sample_sd": 0.03879417468971569,
+        "rows": 43,
+        "width": 2
+      },
+      "loss": {
+        "coefficients": {
+          "intercept_at_mid_token": {
+            "confidence_95": [
+              2.6882307263344636,
+              2.714493708826594
+            ],
+            "estimate": 2.7013622175805287,
+            "hac_standard_error": 0.006699740431665972
+          },
+          "tokens_per_100m": {
+            "confidence_95": [
+              -1.360259213476668,
+              -0.2790204113673048
+            ],
+            "estimate": -0.8196398124219865,
+            "hac_standard_error": 0.27582622502789883
+          }
+        },
+        "hac_lag": 42,
+        "r_squared": 0.08661099431335195,
+        "rank": 2,
+        "raw_sample_sd": 0.09132526822076055,
+        "residual_sample_sd": 0.08728082572914302,
+        "rows": 43,
+        "width": 2
+      },
+      "mtp": {
+        "coefficients": {
+          "intercept_at_mid_token": {
+            "confidence_95": [
+              2.799880608290247,
+              2.8251408206256525
+            ],
+            "estimate": 2.8125107144579498,
+            "hac_standard_error": 0.006443931718215704
+          },
+          "tokens_per_100m": {
+            "confidence_95": [
+              -1.2499583317719698,
+              -0.23614684223107618
+            ],
+            "estimate": -0.743052587001523,
+            "hac_standard_error": 0.25862537998492185
+          }
+        },
+        "hac_lag": 42,
+        "r_squared": 0.07641572500090654,
+        "rank": 2,
+        "raw_sample_sd": 0.08814193997795673,
+        "residual_sample_sd": 0.08470730602830934,
+        "rows": 43,
+        "width": 2
+      },
+      "ntp": {
+        "coefficients": {
+          "intercept_at_mid_token": {
+            "confidence_95": [
+              2.4082399022650867,
+              2.4319823900043795
+            ],
+            "estimate": 2.420111146134733,
+            "hac_standard_error": 0.0060567570763501374
+          },
+          "tokens_per_100m": {
+            "confidence_95": [
+              -1.2353941748232093,
+              -0.2552749326204456
+            ],
+            "estimate": -0.7453345537218274,
+            "hac_standard_error": 0.25003041892927647
+          }
+        },
+        "hac_lag": 42,
+        "r_squared": 0.08768268264254842,
+        "rank": 2,
+        "raw_sample_sd": 0.08253701621156699,
+        "residual_sample_sd": 0.07883548140849482,
+        "rows": 43,
+        "width": 2
+      }
+    },
+    "reference_source": "english_fineweb_edu_dedup",
+    "source_interaction_identifiability": {
+      "available": false,
+      "fallback": "Each optimizer batch mixes nearly the same source proportions. The report therefore estimates one source-adjusted common token slope and source-composition deltas, not per-source loss curves.",
+      "rank": null,
+      "width": null
+    },
+    "source_interactions": {},
+    "source_only_loss": {
+      "coefficients": {
+        "mean_mixture_intercept": {
+          "confidence_95": [
+            2.669147564476167,
+            2.7335768706848906
+          ],
+          "estimate": 2.7013622175805287,
+          "hac_standard_error": 0.0164360475022254
+        },
+        "source_delta_vs_english_fineweb_edu_dedup:chinese_fineweb2_cmn_hani": {
+          "confidence_95": [
+            1.7687521191854707,
+            5.537039439015143
+          ],
+          "estimate": 3.652895779100307,
+          "hac_standard_error": 0.9612977856708348
+        },
+        "source_delta_vs_english_fineweb_edu_dedup:code_github_clean_allowlisted": {
+          "confidence_95": [
+            -5.491534343220305,
+            -1.1428264501857957
+          ],
+          "estimate": -3.3171803967030504,
+          "hac_standard_error": 1.1093642584271708
+        },
+        "source_delta_vs_english_fineweb_edu_dedup:code_stackv2_edu_permissive": {
+          "confidence_95": [
+            -5.697821244440371,
+            -2.0375117746055995
+          ],
+          "estimate": -3.8676665095229854,
+          "hac_standard_error": 0.9337524157741764
+        },
+        "source_delta_vs_english_fineweb_edu_dedup:education_libretexts_permissive": {
+          "confidence_95": [
+            -4.533492928391883,
+            0.5641937460054209
+          ],
+          "estimate": -1.9846495911932314,
+          "hac_standard_error": 1.300430274080945
+        },
+        "source_delta_vs_english_fineweb_edu_dedup:math_finemath_4plus": {
+          "confidence_95": [
+            -1.1140791774215995,
+            1.494525912232965
+          ],
+          "estimate": 0.1902233674056829,
+          "hac_standard_error": 0.6654604820547358
+        },
+        "source_delta_vs_english_fineweb_edu_dedup:multilingual_common_corpus_permissive": {
+          "confidence_95": [
+            -2.5754260069303045,
+            0.9737397304525419
+          ],
+          "estimate": -0.8008431382388814,
+          "hac_standard_error": 0.9053994228017466
+        },
+        "source_delta_vs_english_fineweb_edu_dedup:public_domain_project_gutenberg": {
+          "confidence_95": [
+            -3.9061463202416813,
+            2.3411829253961245
+          ],
+          "estimate": -0.7824816974227785,
+          "hac_standard_error": 1.593706440213726
+        },
+        "source_delta_vs_english_fineweb_edu_dedup:public_domain_usgpo": {
+          "confidence_95": [
+            2.8906526347352672,
+            5.902851620217345
+          ],
+          "estimate": 4.396752127476306,
+          "hac_standard_error": 0.7684181085413465
+        },
+        "source_delta_vs_english_fineweb_edu_dedup:science_arxiv_open_permissive": {
+          "confidence_95": [
+            -3.7264448193254225,
+            1.2624877682200164
+          ],
+          "estimate": -1.2319785255527032,
+          "hac_standard_error": 1.2726868845779182
+        },
+        "source_delta_vs_english_fineweb_edu_dedup:science_cosmopedia_openstax": {
+          "confidence_95": [
+            -0.6492102068944776,
+            4.841363592048513
+          ],
+          "estimate": 2.0960766925770176,
+          "hac_standard_error": 1.4006565813630079
+        },
+        "source_delta_vs_english_fineweb_edu_dedup:science_cosmopedia_stanford": {
+          "confidence_95": [
+            -2.7049403748286154,
+            -0.05766384058405993
+          ],
+          "estimate": -1.3813021077063377,
+          "hac_standard_error": 0.675325646490958
+        }
+      },
+      "hac_lag": 42,
+      "r_squared": 0.258254530700496,
+      "rank": 12,
+      "raw_sample_sd": 0.09132526822076055,
+      "residual_sample_sd": 0.07865356419892543,
+      "rows": 43,
+      "width": 12
+    },
+    "sources": {
+      "chinese_fineweb2_cmn_hani": {
+        "equivalent_rows": 8.423669290650556,
+        "loss_at_mid_token": null,
+        "loss_effect_vs_reference_at_mid_token": 3.3074187900541165,
+        "loss_slope_kind": "source_adjusted_common_slope",
+        "loss_slope_per_100m": -1.0055803754513517,
+        "mid_token": 10713670,
+        "mtp_at_mid_token": null,
+        "mtp_effect_vs_reference_at_mid_token": 3.3721458140132383,
+        "mtp_slope_kind": "source_adjusted_common_slope",
+        "mtp_slope_per_100m": -0.9277838696222922,
+        "ntp_at_mid_token": null,
+        "ntp_effect_vs_reference_at_mid_token": 2.970204208652772,
+        "ntp_slope_kind": "source_adjusted_common_slope",
+        "ntp_slope_per_100m": -0.9128019884891169,
+        "pure_rows": 0,
+        "sample_fraction": 0.1958992858290827
+      },
+      "code_github_clean_allowlisted": {
+        "equivalent_rows": 3.2520067959887524,
+        "loss_at_mid_token": null,
+        "loss_effect_vs_reference_at_mid_token": -3.6957620721641797,
+        "loss_slope_kind": "source_adjusted_common_slope",
+        "loss_slope_per_100m": -1.0055803754513517,
+        "mid_token": 10713670,
+        "mtp_at_mid_token": null,
+        "mtp_effect_vs_reference_at_mid_token": -3.7090973238868656,
+        "mtp_slope_kind": "source_adjusted_common_slope",
+        "mtp_slope_per_100m": -0.9277838696222922,
+        "ntp_at_mid_token": null,
+        "ntp_effect_vs_reference_at_mid_token": -3.324852339775494,
+        "ntp_slope_kind": "source_adjusted_common_slope",
+        "ntp_slope_per_100m": -0.9128019884891169,
+        "pure_rows": 0,
+        "sample_fraction": 0.07562806502299424
+      },
+      "code_stackv2_edu_permissive": {
+        "equivalent_rows": 1.991516153971263,
+        "loss_at_mid_token": null,
+        "loss_effect_vs_reference_at_mid_token": -4.383520473139735,
+        "loss_slope_kind": "source_adjusted_common_slope",
+        "loss_slope_per_100m": -1.0055803754513517,
+        "mid_token": 10713670,
+        "mtp_at_mid_token": null,
+        "mtp_effect_vs_reference_at_mid_token": -4.076088279913045,
+        "mtp_slope_kind": "source_adjusted_common_slope",
+        "mtp_slope_per_100m": -0.9277838696222922,
+        "ntp_at_mid_token": null,
+        "ntp_effect_vs_reference_at_mid_token": -3.9759116451484413,
+        "ntp_slope_kind": "source_adjusted_common_slope",
+        "ntp_slope_per_100m": -0.9128019884891169,
+        "pure_rows": 0,
+        "sample_fraction": 0.04631432916212239
+      },
+      "education_libretexts_permissive": {
+        "equivalent_rows": 3.456691984942103,
+        "loss_at_mid_token": null,
+        "loss_effect_vs_reference_at_mid_token": -3.3075675782683174,
+        "loss_slope_kind": "source_adjusted_common_slope",
+        "loss_slope_per_100m": -1.0055803754513517,
+        "mid_token": 10713670,
+        "mtp_at_mid_token": null,
+        "mtp_effect_vs_reference_at_mid_token": -3.328088994839593,
+        "mtp_slope_kind": "source_adjusted_common_slope",
+        "mtp_slope_per_100m": -0.9277838696222922,
+        "ntp_at_mid_token": null,
+        "ntp_effect_vs_reference_at_mid_token": -2.9747586787843985,
+        "ntp_slope_kind": "source_adjusted_common_slope",
+        "ntp_slope_per_100m": -0.9128019884891169,
+        "pure_rows": 0,
+        "sample_fraction": 0.08038818569632798
+      },
+      "english_fineweb_edu_dedup": {
+        "equivalent_rows": 12.2563968677227,
+        "loss_at_mid_token": null,
+        "loss_effect_vs_reference_at_mid_token": 0.0,
+        "loss_slope_kind": "source_adjusted_common_slope",
+        "loss_slope_per_100m": -1.0055803754513517,
+        "mid_token": 10713670,
+        "mtp_at_mid_token": null,
+        "mtp_effect_vs_reference_at_mid_token": 0.0,
+        "mtp_slope_kind": "source_adjusted_common_slope",
+        "mtp_slope_per_100m": -0.9277838696222922,
+        "ntp_at_mid_token": null,
+        "ntp_effect_vs_reference_at_mid_token": 0.0,
+        "ntp_slope_kind": "source_adjusted_common_slope",
+        "ntp_slope_per_100m": -0.9128019884891169,
+        "pure_rows": 0,
+        "sample_fraction": 0.2850324852958767
+      },
+      "math_finemath_4plus": {
+        "equivalent_rows": 5.558486854880562,
+        "loss_at_mid_token": null,
+        "loss_effect_vs_reference_at_mid_token": 0.19154143148308256,
+        "loss_slope_kind": "source_adjusted_common_slope",
+        "loss_slope_per_100m": -1.0055803754513517,
+        "mid_token": 10713670,
+        "mtp_at_mid_token": null,
+        "mtp_effect_vs_reference_at_mid_token": 0.22177680715579762,
+        "mtp_slope_kind": "source_adjusted_common_slope",
+        "mtp_slope_per_100m": -0.9277838696222922,
+        "ntp_at_mid_token": null,
+        "ntp_effect_vs_reference_at_mid_token": 0.16936375076750232,
+        "ntp_slope_kind": "source_adjusted_common_slope",
+        "ntp_slope_per_100m": -0.9128019884891169,
+        "pure_rows": 0,
+        "sample_fraction": 0.12926713616001306
+      },
+      "multilingual_common_corpus_permissive": {
+        "equivalent_rows": 3.4525173011190162,
+        "loss_at_mid_token": null,
+        "loss_effect_vs_reference_at_mid_token": -0.9573992367130422,
+        "loss_slope_kind": "source_adjusted_common_slope",
+        "loss_slope_per_100m": -1.0055803754513517,
+        "mid_token": 10713670,
+        "mtp_at_mid_token": null,
+        "mtp_effect_vs_reference_at_mid_token": -0.913384022371242,
+        "mtp_slope_kind": "source_adjusted_common_slope",
+        "mtp_slope_per_100m": -0.9277838696222922,
+        "ntp_at_mid_token": null,
+        "ntp_effect_vs_reference_at_mid_token": -0.8660608344759129,
+        "ntp_slope_kind": "source_adjusted_common_slope",
+        "ntp_slope_per_100m": -0.9128019884891169,
+        "pure_rows": 0,
+        "sample_fraction": 0.08029110002602363
+      },
+      "public_domain_project_gutenberg": {
+        "equivalent_rows": 0.7750644131125195,
+        "loss_at_mid_token": null,
+        "loss_effect_vs_reference_at_mid_token": -0.8928032535676798,
+        "loss_slope_kind": "source_adjusted_common_slope",
+        "loss_slope_per_100m": -1.0055803754513517,
+        "mid_token": 10713670,
+        "mtp_at_mid_token": null,
+        "mtp_effect_vs_reference_at_mid_token": -0.6818738665320936,
+        "mtp_slope_kind": "source_adjusted_common_slope",
+        "mtp_slope_per_100m": -0.9277838696222922,
+        "ntp_at_mid_token": null,
+        "ntp_effect_vs_reference_at_mid_token": -0.8246158669144746,
+        "ntp_slope_kind": "source_adjusted_common_slope",
+        "ntp_slope_per_100m": -0.9128019884891169,
+        "pure_rows": 0,
+        "sample_fraction": 0.018024753793314408
+      },
+      "public_domain_usgpo": {
+        "equivalent_rows": 0.010646985526694144,
+        "loss_at_mid_token": null,
+        "loss_effect_vs_reference_at_mid_token": 7.114704795163782,
+        "loss_slope_kind": "source_adjusted_common_slope",
+        "loss_slope_per_100m": -1.0055803754513517,
+        "mid_token": 10713670,
+        "mtp_at_mid_token": null,
+        "mtp_effect_vs_reference_at_mid_token": 6.367832595433413,
+        "mtp_slope_kind": "source_adjusted_common_slope",
+        "mtp_slope_per_100m": -0.9277838696222922,
+        "ntp_at_mid_token": null,
+        "ntp_effect_vs_reference_at_mid_token": 6.477921535620424,
+        "ntp_slope_kind": "source_adjusted_common_slope",
+        "ntp_slope_per_100m": -0.9128019884891169,
+        "pure_rows": 0,
+        "sample_fraction": 0.00024760431457428243
+      },
+      "science_arxiv_open_permissive": {
+        "equivalent_rows": 1.2362224659951662,
+        "loss_at_mid_token": null,
+        "loss_effect_vs_reference_at_mid_token": -1.9395919030175854,
+        "loss_slope_kind": "source_adjusted_common_slope",
+        "loss_slope_per_100m": -1.0055803754513517,
+        "mid_token": 10713670,
+        "mtp_at_mid_token": null,
+        "mtp_effect_vs_reference_at_mid_token": -2.140208524176895,
+        "mtp_slope_kind": "source_adjusted_common_slope",
+        "mtp_slope_per_100m": -0.9277838696222922,
+        "ntp_at_mid_token": null,
+        "ntp_effect_vs_reference_at_mid_token": -1.7255710505999147,
+        "ntp_slope_kind": "source_adjusted_common_slope",
+        "ntp_slope_per_100m": -0.9128019884891169,
+        "pure_rows": 0,
+        "sample_fraction": 0.02874935967430619
+      },
+      "science_cosmopedia_openstax": {
+        "equivalent_rows": 1.3906281951041854,
+        "loss_at_mid_token": null,
+        "loss_effect_vs_reference_at_mid_token": 1.7400997725297573,
+        "loss_slope_kind": "source_adjusted_common_slope",
+        "loss_slope_per_100m": -1.0055803754513517,
+        "mid_token": 10713670,
+        "mtp_at_mid_token": null,
+        "mtp_effect_vs_reference_at_mid_token": 1.6165776685433064,
+        "mtp_slope_kind": "source_adjusted_common_slope",
+        "mtp_slope_per_100m": -0.9277838696222922,
+        "ntp_at_mid_token": null,
+        "ntp_effect_vs_reference_at_mid_token": 1.5784420056754094,
+        "ntp_slope_kind": "source_adjusted_common_slope",
+        "ntp_slope_per_100m": -0.9128019884891169,
+        "pure_rows": 0,
+        "sample_fraction": 0.03234019058381827
+      },
+      "science_cosmopedia_stanford": {
+        "equivalent_rows": 1.1961526909864824,
+        "loss_at_mid_token": null,
+        "loss_effect_vs_reference_at_mid_token": -1.9141761929701737,
+        "loss_slope_kind": "source_adjusted_common_slope",
+        "loss_slope_per_100m": -1.0055803754513517,
+        "mid_token": 10713670,
+        "mtp_at_mid_token": null,
+        "mtp_effect_vs_reference_at_mid_token": -1.8971482262666755,
+        "mtp_slope_kind": "source_adjusted_common_slope",
+        "mtp_slope_per_100m": -0.9277838696222922,
+        "ntp_at_mid_token": null,
+        "ntp_effect_vs_reference_at_mid_token": -1.7244613703435192,
+        "ntp_slope_kind": "source_adjusted_common_slope",
+        "ntp_slope_per_100m": -0.9128019884891169,
+        "pure_rows": 0,
+        "sample_fraction": 0.0278175044415461
+      }
+    }
+  },
+  "source_replay": {
+    "contract": {
+      "algorithm": "token-deficit-corrected-source-mix-bp-v2",
+      "composition_source": "logged_source_tokens_this_step",
+      "composition_unit": "valid_tokens",
+      "dataset_fingerprint": "2926dc762a3b395ba8e70718f330980d9d326f0063e853c4d09debc65fbffc92",
+      "expected_basis_points": {
+        "chinese_fineweb2_cmn_hani": 1958,
+        "code_github_clean_allowlisted": 758,
+        "code_stackv2_edu_permissive": 463,
+        "education_libretexts_permissive": 802,
+        "english_fineweb_edu_dedup": 2849,
+        "math_finemath_4plus": 1293,
+        "multilingual_common_corpus_permissive": 804,
+        "public_domain_project_gutenberg": 180,
+        "public_domain_usgpo": 4,
+        "science_arxiv_open_permissive": 287,
+        "science_cosmopedia_openstax": 322,
+        "science_cosmopedia_stanford": 280
+      },
+      "global_batch_samples": 64,
+      "gradient_accumulation_steps": 64,
+      "micro_batch_size": 1,
+      "primary_manifest": "/media/data1/Project/AI/Twen1/artifacts/data/base-v4-smoke-r3-filtered-train/manifest.json",
+      "quality_cooldown_manifest": null,
+      "source_map_sha256": "40d24b13d3f3e4a8a5f9108f9a004db46a7ec1a8778cef63d2952a3630318cf1",
+      "world_size": 1
+    },
+    "manifest_capacity": {
+      "samples_by_source": {
+        "chinese_fineweb2_cmn_hani": 767,
+        "code_github_clean_allowlisted": 297,
+        "code_stackv2_edu_permissive": 182,
+        "education_libretexts_permissive": 315,
+        "english_fineweb_edu_dedup": 1117,
+        "math_finemath_4plus": 508,
+        "multilingual_common_corpus_permissive": 315,
+        "public_domain_project_gutenberg": 71,
+        "public_domain_usgpo": 2,
+        "science_arxiv_open_permissive": 113,
+        "science_cosmopedia_openstax": 126,
+        "science_cosmopedia_stanford": 110
+      },
+      "source_mapping_complete": true,
+      "tokens_by_source": {
+        "chinese_fineweb2_cmn_hani": 3134944,
+        "code_github_clean_allowlisted": 1213922,
+        "code_stackv2_edu_permissive": 741447,
+        "education_libretexts_permissive": 1284747,
+        "english_fineweb_edu_dedup": 4563046,
+        "math_finemath_4plus": 2070788,
+        "multilingual_common_corpus_permissive": 1286864,
+        "public_domain_project_gutenberg": 288518,
+        "public_domain_usgpo": 6873,
+        "science_arxiv_open_permissive": 460080,
+        "science_cosmopedia_openstax": 514821,
+        "science_cosmopedia_stanford": 447622
+      },
+      "total_samples": 3923,
+      "total_tokens": 16013672,
+      "unmapped_shards": []
+    },
+    "phase_purity": {
+      "primary": {
+        "pure_fraction": 0.0,
+        "pure_rows": 0,
+        "rows": 62
+      }
+    },
+    "sources": [
+      "chinese_fineweb2_cmn_hani",
+      "code_github_clean_allowlisted",
+      "code_stackv2_edu_permissive",
+      "education_libretexts_permissive",
+      "english_fineweb_edu_dedup",
+      "math_finemath_4plus",
+      "multilingual_common_corpus_permissive",
+      "public_domain_project_gutenberg",
+      "public_domain_usgpo",
+      "science_arxiv_open_permissive",
+      "science_cosmopedia_openstax",
+      "science_cosmopedia_stanford"
+    ],
+    "token_mix": {
+      "committed_tokens_by_source": {
+        "chinese_fineweb2_cmn_hani": 3171808,
+        "code_github_clean_allowlisted": 1226210,
+        "code_stackv2_edu_permissive": 749639,
+        "education_libretexts_permissive": 1297035,
+        "english_fineweb_edu_dedup": 4616294,
+        "math_finemath_4plus": 2095364,
+        "multilingual_common_corpus_permissive": 1303248,
+        "public_domain_project_gutenberg": 292614,
+        "public_domain_usgpo": 6873,
+        "science_arxiv_open_permissive": 464176,
+        "science_cosmopedia_openstax": 523013,
+        "science_cosmopedia_stanford": 451718
+      },
+      "deviation_basis_points": {
+        "chinese_fineweb2_cmn_hani": 0.14888660273436471,
+        "code_github_clean_allowlisted": -0.9864146123791215,
+        "code_stackv2_edu_permissive": -0.20251250895790918,
+        "education_libretexts_permissive": -1.2618591242667208,
+        "english_fineweb_edu_dedup": 0.9174465575733848,
+        "math_finemath_4plus": 0.5949097888183132,
+        "multilingual_common_corpus_permissive": 0.5738014934196372,
+        "public_domain_project_gutenberg": 0.648317396378502,
+        "public_domain_usgpo": 0.24311852975356452,
+        "science_arxiv_open_permissive": -0.43608516413638654,
+        "science_cosmopedia_openstax": 0.8875529757021923,
+        "science_cosmopedia_stanford": -1.127161934639787
+      },
+      "observed_basis_points": {
+        "chinese_fineweb2_cmn_hani": 1958.1488866027344,
+        "code_github_clean_allowlisted": 757.0135853876209,
+        "code_stackv2_edu_permissive": 462.7974874910421,
+        "education_libretexts_permissive": 800.7381408757333,
+        "english_fineweb_edu_dedup": 2849.9174465575734,
+        "math_finemath_4plus": 1293.5949097888183,
+        "multilingual_common_corpus_permissive": 804.5738014934196,
+        "public_domain_project_gutenberg": 180.6483173963785,
+        "public_domain_usgpo": 4.2431185297535645,
+        "science_arxiv_open_permissive": 286.5639148358636,
+        "science_cosmopedia_openstax": 322.8875529757022,
+        "science_cosmopedia_stanford": 278.8728380653602
+      }
+    },
+    "validation": {
+      "all_phase_predictions_match": true,
+      "cumulative_source_tokens_exact": true,
+      "final_phase": "primary",
+      "final_samples": 3968,
+      "final_tokens": 16197992,
+      "source_token_fields_complete": true,
+      "source_tokens_sum_to_step_tokens": true
+    }
+  },
+  "terminal_validation": {
+    "authenticated_payload_bytes": 1611067349,
+    "authenticated_payload_files": {
+      "metadata.json": {
+        "sha256": "bed7278a61b27570f8bd9b6c242186f3acb9d87ed3fb85f374c6a9c22b3af10a",
+        "size": 26526
+      },
+      "runtime/rank-00000.pkl": {
+        "sha256": "281ebce1d7f847ebfe457cba6f3b2af6e8927d17d16928563e98c0f1f47f27d0",
+        "size": 22406
+      },
+      "state/.metadata": {
+        "sha256": "90f37ea136f76eb797316edb1dfaa2ca564bae297fe680a738dcec3844aa2c6c",
+        "size": 64306
+      },
+      "state/__0_0.distcp": {
+        "sha256": "22c49d91dd9e8e23150fcfb1575e7ef0793e0a79ab7843fcd8af8aa311a9fa93",
+        "size": 1610954111
+      }
+    },
+    "checkpoint": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-16m-smoke/step-000000000062-milestone-complete",
+    "checkpoint_name": "step-000000000062-milestone-complete",
+    "complete_marker": {
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-16m-smoke/step-000000000062-milestone-complete/COMPLETE",
+      "sha256": "101e2a687623b7871960ba6770bb519feb5dd8a9359290a4867324d4e5f4844a",
+      "size": 65
+    },
+    "latest_pointer_matches": true,
+    "manifest": {
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-16m-smoke/step-000000000062-milestone-complete/manifest.json",
+      "sha256": "4af6174ff3fcf91c339e65bd508fb5e4a69dfb74f62a46e684b59e889cf180c5",
+      "size": 433
+    },
+    "max_tokens_reached": true,
+    "metadata": {
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-16m-smoke/step-000000000062-milestone-complete/metadata.json",
+      "sha256": "bed7278a61b27570f8bd9b6c242186f3acb9d87ed3fb85f374c6a9c22b3af10a",
+      "size": 26526
+    },
+    "metadata_state": {
+      "committed_tokens": 16197992,
+      "global_step": 62,
+      "kind": "milestone",
+      "run_id": "base-dense-v4-16m-smoke",
+      "stage": "dense-oracle",
+      "tag": "complete"
+    },
+    "passed": true,
+    "rank0_ended_at_utc": "2026-07-26T16:33:21.674704+00:00",
+    "rank0_status": "completed",
+    "train_complete": {
+      "checkpoint": "runs/base-dense-v4-16m-smoke/step-000000000062-milestone-complete",
+      "event": "train_complete",
+      "session_id": "5e8814ec34b449688033477a0ac9dff9",
+      "step": 62,
+      "timestamp_utc": "2026-07-26T16:33:21.632893+00:00",
+      "tokens": 16197992
+    }
+  },
+  "training_windows": {
+    "first_steps": [
+      1,
+      10
+    ],
+    "last_steps": [
+      53,
+      62
+    ],
+    "metrics": {
+      "grad_norm": {
+        "delta": -0.47862765751779074,
+        "first_mean": 0.5762876689434051,
+        "last_mean": 0.09766001142561435,
+        "percent_delta": -83.05360036513203
+      },
+      "loss": {
+        "delta": -0.06657102000292614,
+        "first_mean": 2.722982380528279,
+        "last_mean": 2.656411360525353,
+        "percent_delta": -2.444783355153801
+      },
+      "mtp": {
+        "delta": -0.06126377845515352,
+        "first_mean": 2.8340565915311466,
+        "last_mean": 2.772792813075993,
+        "percent_delta": -2.1616991925364037
+      },
+      "ntp": {
+        "delta": -0.06044464215741119,
+        "first_mean": 2.4395767213751647,
+        "last_mean": 2.3791320792177535,
+        "percent_delta": -2.4776692459722693
+      }
+    },
+    "window_steps": 10
+  }
+}
