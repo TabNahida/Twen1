@@ -1,0 +1,33 @@
+{
+  "profiles": [
+    {
+      "config": "configs/base/dense-oracle.yaml",
+      "fork_from": null,
+      "id": "base-dense-v1",
+      "label": "Base Dense v1 (completed, monitor only)",
+      "launch_enabled": false,
+      "resume": "auto"
+    },
+    {
+      "config": "configs/base/dense-v2-500m.yaml",
+      "config_sha256": "ce8b171b1257d59e9ff5366dff768488ea53873c6d49268d40b7323ea066ea9b",
+      "fork_from": "runs/base-dense-v1/step-000000000383-milestone-complete",
+      "id": "base-dense-v2-500m",
+      "label": "Base Dense v2 500M (finalized fork)",
+      "launch_enabled": false,
+      "resume": "none"
+    },
+    {
+      "config": "configs/base/dense-v3-500m.yaml",
+      "config_sha256": "c44934dab4639befcc95aa1b505649a48d45c0c48b6a14ffcd0ec29bd1243de9",
+      "fork_from": "runs/base-dense-v1/step-000000000383-milestone-complete",
+      "id": "base-dense-v3-500m",
+      "label": "Base Dense v3 500M (completed, lower peak LR)",
+      "launch_enabled": false,
+      "resume": "none"
+    }
+  ],
+  "project_root": "../..",
+  "schema_version": 1,
+  "state_dir": ".twen/dashboard"
+}

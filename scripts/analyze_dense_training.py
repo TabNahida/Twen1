@@ -772,40 +772,61 @@ def _regression(
 
 def _phase_rows(
     metrics: Sequence[Mapping[str, Any]],
+    *,
+    warmup_tokens: int,
 ) -> tuple[dict[str, list[Mapping[str, Any]]], list[Mapping[str, Any]]]:
+    if warmup_tokens < 0:
+        raise AnalysisError("optimizer.warmup_tokens must be non-negative")
     learning_rates = [_finite(row.get("lr"), label="metrics.lr") for row in metrics]
     peak = max(learning_rates)
     peak_tolerance = max(abs(peak) * 1e-12, 1e-18)
-    first_peak = next(
-        index
-        for index, value in enumerate(learning_rates)
-        if abs(value - peak) <= peak_tolerance
-    )
-    warmup = list(metrics[:first_peak])
+    warmup = [
+        row
+        for row in metrics
+        if _integer(row.get("tokens"), label="metrics.tokens") <= warmup_tokens
+    ]
+    post_warmup_primary = [
+        row
+        for row in metrics
+        if row.get("data_phase", "primary") == "primary"
+        and _integer(row.get("tokens"), label="metrics.tokens") > warmup_tokens
+    ]
+    if not post_warmup_primary:
+        raise AnalysisError("run has no post-warmup primary metrics")
+    post_warmup_primary_steps = {
+        _integer(row.get("step"), label="metrics.step") for row in post_warmup_primary
+    }
     stable = [
         row
         for row, value in zip(metrics, learning_rates, strict=True)
-        if row.get("data_phase", "primary") == "primary"
+        if _integer(row.get("step"), label="metrics.step") in post_warmup_primary_steps
         and abs(value - peak) <= peak_tolerance
+    ]
+    decay = [
+        row
+        for row, value in zip(metrics, learning_rates, strict=True)
+        if _integer(row.get("step"), label="metrics.step") in post_warmup_primary_steps
+        and value < peak - peak_tolerance
     ]
     cooldown = [row for row in metrics if row.get("data_phase") == "cooldown"]
     primary = [row for row in metrics if row.get("data_phase", "primary") == "primary"]
-    analysis_phase = stable if len(stable) >= 100 else primary[first_peak:]
     return {
         "warmup": warmup,
         "primary_stable": stable,
+        "primary_decay": decay,
+        "post_warmup_primary": post_warmup_primary,
         "cooldown": cooldown,
         "primary": primary,
-    }, analysis_phase
+    }, post_warmup_primary
 
 
 def _phase_statistics(
-    metrics: Sequence[Mapping[str, Any]],
+    metrics: Sequence[Mapping[str, Any]], *, warmup_tokens: int
 ) -> tuple[dict[str, Any], list[Mapping[str, Any]]]:
-    phases, analysis_phase = _phase_rows(metrics)
+    phases, analysis_phase = _phase_rows(metrics, warmup_tokens=warmup_tokens)
     result: dict[str, Any] = {}
     available = [key for key in METRIC_COMPONENTS if key in metrics[0]]
-    for name in ("warmup", "primary_stable", "cooldown"):
+    for name in ("warmup", "primary_stable", "primary_decay", "cooldown"):
         rows = phases[name]
         if not rows:
             result[name] = None
@@ -827,7 +848,7 @@ def _phase_statistics(
             },
         }
     result["analysis_phase"] = {
-        "kind": "primary_stable" if analysis_phase is phases["primary_stable"] else "primary",
+        "kind": "post_warmup_primary",
         "points": len(analysis_phase),
         "steps": [analysis_phase[0]["step"], analysis_phase[-1]["step"]],
         "tokens": [analysis_phase[0]["tokens"], analysis_phase[-1]["tokens"]],
@@ -1087,6 +1108,9 @@ def _source_fixed_effects(
             )
     return {
         "phase": {
+            "kind": "post_warmup_primary",
+            "includes": ["primary_stable", "primary_decay"],
+            "excludes": ["warmup", "cooldown"],
             "points": len(analysis_phase),
             "steps": [analysis_phase[0]["step"], analysis_phase[-1]["step"]],
             "tokens": [analysis_phase[0]["tokens"], analysis_phase[-1]["tokens"]],
@@ -1218,10 +1242,11 @@ def _clip_statistics(
     phase_statistics: Mapping[str, Any],
     *,
     configured_threshold: float,
+    warmup_tokens: int,
 ) -> dict[str, Any]:
-    phases, _ = _phase_rows(metrics)
+    phases, _ = _phase_rows(metrics, warmup_tokens=warmup_tokens)
     result: dict[str, Any] = {"configured_threshold": configured_threshold}
-    for name in ("warmup", "primary_stable", "cooldown"):
+    for name in ("warmup", "primary_stable", "primary_decay", "cooldown"):
         rows = phases[name]
         if not rows:
             result[name] = None
@@ -1745,7 +1770,6 @@ def analyze_dense_training(run_dir: Path) -> dict[str, Any]:
         config=config,
     )
     checkpoint_metadata = terminal.pop("_metadata")
-    phases, analysis_phase = _phase_statistics(metrics)
     replay = _source_replay(
         config=config,
         run_dir=resolved_run,
@@ -1756,6 +1780,14 @@ def analyze_dense_training(run_dir: Path) -> dict[str, Any]:
     )
     replay_cursor = replay.pop("_cursor")
     grad_clip_norm = _configured_grad_clip(config)
+    warmup_tokens = _integer(
+        config.get("optimizer", {}).get("warmup_tokens"),
+        label="optimizer.warmup_tokens",
+    )
+    phases, analysis_phase = _phase_statistics(
+        metrics,
+        warmup_tokens=warmup_tokens,
+    )
     source_fixed_effects = _source_fixed_effects(
         metrics=metrics,
         analysis_phase=analysis_phase,
@@ -1767,6 +1799,7 @@ def analyze_dense_training(run_dir: Path) -> dict[str, Any]:
         metrics,
         phases,
         configured_threshold=grad_clip_norm,
+        warmup_tokens=warmup_tokens,
     )
     performance = _performance_analysis(telemetry, events)
     dashboard_gpu = _dashboard_gpu_telemetry(
@@ -1834,7 +1867,7 @@ def analyze_dense_training(run_dir: Path) -> dict[str, Any]:
                 if isinstance(cooldown_start_tokens, int)
                 else "No quality cooldown boundary is configured."
             ),
-            "v3_priority": (
+            "next_version_priority": (
                 "Mix sources within optimizer batches and retain source-conditioned "
                 "metrics before making a large LR reduction."
             ),
@@ -1866,7 +1899,6 @@ def _markdown(analysis: Mapping[str, Any], json_name: str) -> str:
     source_adjusted = analysis["source_adjusted"]
     cooldown = analysis["cooldown_lr_separation"]
     performance = analysis["performance"]
-    dose = analysis["lr_dose"]
     lines = [
         "# Dense 训练终态分析",
         "",
@@ -1888,6 +1920,7 @@ def _markdown(analysis: Mapping[str, Any], json_name: str) -> str:
     for key, label in (
         ("warmup", "warmup"),
         ("primary_stable", "primary stable"),
+        ("primary_decay", "primary cosine decay"),
         ("cooldown", "cooldown"),
     ):
         phase = phases.get(key)
@@ -1904,6 +1937,9 @@ def _markdown(analysis: Mapping[str, Any], json_name: str) -> str:
     lines += [
         "",
         "## Source-adjusted 学习趋势",
+        "",
+        "正式回归窗口固定为 warmup 后的全部 primary batch, 包含 stable 与 cosine decay, "
+        "排除 warmup 和 quality cooldown; 因此不同 decay 长度的 run 使用同一数据阶段口径。",
         "",
         f"source composition 单独解释 raw loss 方差的 `{_fmt_percent(source_only_r2)}`。"
         f"控制 source 后, loss slope 为 `{loss_slope['estimate']:.5f}/100M tokens`, "
@@ -1992,19 +2028,20 @@ def _markdown(analysis: Mapping[str, Any], json_name: str) -> str:
         lines.append(dashboard_gpu["note"])
     lines += [
         "",
-        "## v3 建议",
+        "## 后续版本建议 (v4)",
         "",
-        "优先在 optimizer batch 内按目标比例混合 source, 并记录 source-conditioned "
-        "loss/KD/MTP/grad norm。相同 token 预算下不建议同时大幅降低峰值并使用全程 "
-        "cosine。",
+        "v3 已经使用 `1.8e-4` Adapter 峰值和 250M-token cosine decay; 因此不能再把 "
+        "“降峰值 10% / 扩展到 250M decay”写成下一轮建议。v4 先在 optimizer batch 内"
+        "按目标比例混合 source, 并记录 source-conditioned NTP/MTP/grad norm。",
         "",
-        f"建议峰值先降低 10%, 将 cosine decay 扩展至 "
-        f"`{dose['same_budget_recommendation']['decay_tokens']:,}` tokens; "
-        f"估算累计 LR 为本次配置的 "
-        f"`{dose['same_budget_recommendation']['relative_dose_to_configured']:.2%}`。",
+        "按当前 v4 设计, 二维 Adapter 使用 Muon (`match_rms_adamw`) 的 nominal peak "
+        "`1.0e-4`, 一维 scale 使用 AdamW `3.0e-4`, 5M-token warmup 后做全程 cosine, "
+        "min LR ratio `0.1`。Muon 的矩阵正交更新与 AdamW 不同, 这是一轮 optimizer + "
+        "objective 的联合 pilot, 不能把 nominal LR 当作 v3 AdamW LR 的单变量 A/B。",
         "",
-        "本轮 v3 为保持同一 v1 起点的 schedule-only A/B, 不改 cursor 或 source "
-        "顺序; source-stratified block mixer 留作 v4, 并需独立的恢复语义与性能门。",
+        "v4 纯文本路径关闭 teacher logits KD、anchor KL 和 hidden alignment, 保留冻结的 "
+        "9B donor FFN 与 Qwen3.5 原生 MTP; 先用 20M token 验证数值、吞吐、显存、Muon "
+        "step 开销和精确恢复, 再进入更长预算。",
         "",
         "本报告不包含图表; 全部统计及输入 SHA256 见 JSON。",
         "",

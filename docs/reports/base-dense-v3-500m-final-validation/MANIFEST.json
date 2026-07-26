@@ -1,0 +1,102 @@
+{
+  "files": {
+    "REPORT.md": {
+      "sha256": "078e18ef29528ea1a6cf1f1f0015ec47682f258571f86596371d252a48b135cf",
+      "size": 14882
+    },
+    "REPORT.zh-CN.md": {
+      "sha256": "83f1f12d05f76bd207566f5dde5205a96c79a9371ec825895814615efdf7e27c",
+      "size": 14635
+    },
+    "charts/checkpoint_duration.svg": {
+      "sha256": "6b2e6b458f760d5cca70cd09c57c496d64a1f8454e7a2962aa518743fe5c49b8",
+      "size": 3564
+    },
+    "charts/gpu_memory.svg": {
+      "sha256": "b7ae64a1b7d98b72d1571bb9d4cefc9eb61bcfb510ee58820bcca701e61cb330",
+      "size": 109685
+    },
+    "charts/gradient_norm.svg": {
+      "sha256": "0bfe6aa83ce813e8c9926ff057d4606df532a42331f7a465bafb843358be93db",
+      "size": 29934
+    },
+    "charts/learning_rate.svg": {
+      "sha256": "a7c029c09ad6343418f4516da8fac88250bcacb7484762256e08c6546734995d",
+      "size": 55990
+    },
+    "charts/throughput.svg": {
+      "sha256": "149dc4924c7fff9e2cc62bef76cf4f30df51d116158dc246d7be513e45cae13a",
+      "size": 111395
+    },
+    "charts/training_loss.svg": {
+      "sha256": "fb6c04f671c069107d31f8f957367ce44a5a6367a860302c66125593105234d9",
+      "size": 165817
+    },
+    "charts/training_loss_by_source.svg": {
+      "sha256": "e36c9ab53dd9553054f9d58b7cde004d7183285af1053daa90060439287ff56a",
+      "size": 2788
+    },
+    "charts/training_loss_smoothed.svg": {
+      "sha256": "f724354d0ca91af5f94c433fe455c609b62c57fbfc487cdc850056d419d6e5d5",
+      "size": 135163
+    },
+    "charts/training_source_adjusted_loss.svg": {
+      "sha256": "3efe8e800252d556526209ea8b1344d9c853ec1447d8d036cc5373843eee4a62",
+      "size": 52504
+    },
+    "charts/validation_candidate_nll_history.svg": {
+      "sha256": "e82cdb4207788014826721c1cd1cd96d95e7183522d0e361ccfd31b6e5af6bf8",
+      "size": 2265
+    },
+    "charts/validation_gpu_power.svg": {
+      "sha256": "82fa2429e0296a9ff31e46101dd2478637a7965ccb7db5d4189fa06d1d4cfc27",
+      "size": 69349
+    },
+    "charts/validation_gpu_utilization.svg": {
+      "sha256": "bd18f7a7a1683e50df06fdf14afb4efabb64f316a2a9a4d9b80eb8f891f79655",
+      "size": 135136
+    },
+    "charts/validation_nll.svg": {
+      "sha256": "24be1a3608e49d0b0a923d4d9924eba676a34a0622ce9815320b5c547ff2bcc4",
+      "size": 2199
+    },
+    "charts/validation_perplexity.svg": {
+      "sha256": "fcfe1a662a4a64696178fd7dd3087319b6792efd00099bc579774d49ce3a8cc4",
+      "size": 2207
+    },
+    "charts/validation_role_throughput.svg": {
+      "sha256": "d0040a6fb8ad553bf3528a4cce7d2ecb8b7b846ad84f6710f435dd385f994058",
+      "size": 2220
+    },
+    "charts/validation_shard_nll.svg": {
+      "sha256": "409ef2948a4782a78bd1cced031ad21c3776dc48b3f189be8e956bd84048cbcf",
+      "size": 8342
+    },
+    "charts/validation_source_nll.svg": {
+      "sha256": "a56463100c3dcc33931e6db68eb4f999cbf0902d00b2e76b58d81b8ab9c3a775",
+      "size": 4021
+    },
+    "charts/validation_source_tokens.svg": {
+      "sha256": "9db92e8a8aa39572c6493bb96d6ec0f71d1dfe0432dc7878b9a7894972f344ec",
+      "size": 2768
+    },
+    "charts/validation_teacher_gap_closed_history.svg": {
+      "sha256": "56caa77ee722211f7e356e52c716c1894ef484753bb3d342226c9d0d297e8d6c",
+      "size": 2259
+    },
+    "runtime-gpu-sample.csv": {
+      "sha256": "a26ce774dfd799acec90945b00959faa4fd627340a2b6d72fefd1cd56452e2aa",
+      "size": 627478
+    },
+    "summary.json": {
+      "sha256": "d6be5d33165b444ca627602e2bb12299ecadd75fc4b481a327f08b0fe9ead330",
+      "size": 3198733
+    }
+  },
+  "kind": "twen_report_bundle",
+  "schema_version": 1,
+  "source_baseline_report_manifest_sha256": "4798a5dc4ef0b456c2ac979976e44f0058b8c707e2b4a68f94d8bf59cba49dc4",
+  "source_baseline_summary_sha256": "3bc9a9246dbe4fd46e431f9b0e7f3b27e9e97d72d6557e450b9fa2542dc140b8",
+  "source_checkpoint_manifest_sha256": "ef43670d7c1cbc8ed3908b258659c7426b4cfe10e14c9b7db54968e2481b0e9a",
+  "source_evaluation_manifest_sha256": "97b9f59d968fef1aa3a9a0234cac542391151645650969283cd449ac0056dd3f"
+}

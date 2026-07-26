@@ -111,7 +111,7 @@ def _run_fixture(root: Path, checkpoint: Path) -> Path:
         ],
     )
     config = {
-        "run_id": "fixture-v1",
+        "run_id": "fixture-v3-current",
         "track": "base",
         "stage": "dense-oracle",
         "optimizer": {
@@ -239,21 +239,36 @@ def _baseline_report_fixture(
     prepared: Path,
     *,
     prepared_sha256: str | None = None,
-    report_kind: str = "twen_v1_final_validation_report",
+    report_kind: str = "twen_dense_final_validation_report",
+    nested_current_candidate_mean_nll: float | None = None,
 ) -> Path:
     report = root / "baseline-report"
     checkpoint_manifest_sha256 = "a" * 64
     evaluation_manifest_sha256 = "b" * 64
+    prior_checkpoint_manifest_sha256 = "c" * 64
+    prior_evaluation_manifest_sha256 = "d" * 64
     role_nll = {
         "candidate": 2.5,
-        "shared": 3.2,
-        "teacher": 1.2,
+        "shared": 3.1,
+        "teacher": 1.1,
+    }
+    prior_role_nll = {
+        "candidate": 2.7,
+        "shared": 3.1,
+        "teacher": 1.1,
+    }
+    prepared_identity = {
+        "sha256": prepared_sha256 or _sha(prepared),
+        "dataset_fingerprint": "dataset-fixture",
+        "sequence_count": 2,
+        "input_token_count": 20,
+        "shard_count": 2,
     }
     summary = {
         "schema_version": 1,
         "kind": report_kind,
         "training": {
-            "run_id": "fixture-v1-baseline",
+            "run_id": "fixture-v2-baseline",
             "checkpoint": {
                 "manifest_sha256": checkpoint_manifest_sha256,
             },
@@ -262,13 +277,7 @@ def _baseline_report_fixture(
             "identity": {
                 "manifest_sha256": evaluation_manifest_sha256,
             },
-            "prepared_manifest": {
-                "sha256": prepared_sha256 or _sha(prepared),
-                "dataset_fingerprint": "dataset-fixture",
-                "sequence_count": 2,
-                "input_token_count": 20,
-                "shard_count": 2,
-            },
+            "prepared_manifest": prepared_identity,
             "roles": {
                 role: {
                     "mean_nll": mean_nll,
@@ -280,6 +289,56 @@ def _baseline_report_fixture(
             "acceptance": {
                 "teacher_gap_closed_fraction": 0.3,
             },
+        },
+        "baseline_comparison": {
+            "baseline": {
+                "run_id": "fixture-v1-baseline",
+                "checkpoint_manifest_sha256": prior_checkpoint_manifest_sha256,
+                "evaluation_manifest_sha256": prior_evaluation_manifest_sha256,
+                "prepared_manifest": dict(prepared_identity),
+            },
+            "current": {
+                "run_id": "fixture-v2-baseline",
+                "checkpoint_manifest_sha256": checkpoint_manifest_sha256,
+                "evaluation_manifest_sha256": evaluation_manifest_sha256,
+                "prepared_manifest": dict(prepared_identity),
+            },
+            "comparability": {
+                "same_prepared_manifest_sha256": True,
+                "same_dataset_fingerprint": True,
+                "same_sequence_input_token_and_shard_counts": True,
+                "same_role_predicted_token_counts": True,
+            },
+            "roles": {
+                role: {
+                    "predicted_tokens": {
+                        "baseline": 18,
+                        "current": 18,
+                        "match": True,
+                    },
+                    "mean_nll": reporting._metric_change(
+                        baseline=prior_role_nll[role],
+                        current=(
+                            nested_current_candidate_mean_nll
+                            if role == "candidate"
+                            and nested_current_candidate_mean_nll is not None
+                            else role_nll[role]
+                        ),
+                        lower_is_better=True,
+                    ),
+                    "perplexity": reporting._metric_change(
+                        baseline=reporting.math.exp(prior_role_nll[role]),
+                        current=reporting.math.exp(role_nll[role]),
+                        lower_is_better=True,
+                    ),
+                }
+                for role in ("candidate", "shared", "teacher")
+            },
+            "teacher_gap_closed_fraction": reporting._metric_change(
+                baseline=0.2,
+                current=0.3,
+                lower_is_better=False,
+            ),
         },
     }
     summary_path = report / "summary.json"
@@ -393,7 +452,7 @@ def test_gpu_sample_rejects_wrong_units_and_non_finite_values(
         reporting._summarize_gpu_sample(sample)
 
 
-def test_report_generator_compares_authenticated_v1_baseline(tmp_path: Path) -> None:
+def test_report_generator_compares_authenticated_version_history(tmp_path: Path) -> None:
     checkpoint = _checkpoint(tmp_path / "checkpoints", steps=3, tokens=300)
     run = _run_fixture(tmp_path, checkpoint)
     prepared = tmp_path / "prepared" / "manifest.json"
@@ -401,7 +460,7 @@ def test_report_generator_compares_authenticated_v1_baseline(tmp_path: Path) -> 
     baseline = _baseline_report_fixture(tmp_path, prepared)
     output = tmp_path / "report"
 
-    reporting.generate_report(
+    result = reporting.generate_report(
         run_dir=run,
         evaluation_dir=evaluation,
         prepared_manifest=prepared,
@@ -418,12 +477,36 @@ def test_report_generator_compares_authenticated_v1_baseline(tmp_path: Path) -> 
     assert gap["absolute_change"] == pytest.approx(0.2)
     assert gap["relative_change_fraction"] == pytest.approx(2 / 3)
     assert all(comparison["comparability"].values())
+    history = comparison["cross_version_history"]
+    assert [row["run_id"] for row in history] == [
+        "fixture-v1-baseline",
+        "fixture-v2-baseline",
+        "fixture-v3-current",
+    ]
+    assert [row["candidate_mean_nll"] for row in history] == pytest.approx(
+        [2.7, 2.5, 2.1]
+    )
+    assert [row["teacher_gap_closed_fraction"] for row in history] == pytest.approx(
+        [0.2, 0.3, 0.5]
+    )
+    assert history[0]["provenance"] == "authenticated_nested_baseline_comparison"
+    assert history[1]["provenance"] == "authenticated_baseline_report_summary"
+    figure_names = {Path(path).name for path in result["figures"]}
+    assert "validation_candidate_nll_history.svg" in figure_names
+    assert "validation_teacher_gap_closed_history.svg" in figure_names
+    assert len(result["figures"]) == 14
     report = (output / "REPORT.md").read_text()
     report_zh = (output / "REPORT.zh-CN.md").read_text()
-    assert "Authenticated v1 baseline comparison" in report
+    assert "Authenticated baseline comparison" in report
     assert "NLL absolute Δ" in report
-    assert "已认证的 v1 baseline 对照" in report_zh
+    assert "Cross-version history on the same held-out set" in report
+    assert "charts/validation_candidate_nll_history.svg" in report
+    assert "charts/validation_teacher_gap_closed_history.svg" in report
+    assert "已认证的 baseline 对照" in report_zh
     assert "NLL 绝对变化" in report_zh
+    assert "同一 held-out 集的跨版本历史" in report_zh
+    assert "charts/validation_candidate_nll_history.svg" in report_zh
+    assert "charts/validation_teacher_gap_closed_history.svg" in report_zh
     manifest = json.loads((output / "MANIFEST.json").read_text())
     assert manifest["source_baseline_summary_sha256"] == _sha(baseline)
     assert manifest["source_baseline_report_manifest_sha256"] == _sha(
@@ -455,6 +538,30 @@ def test_baseline_with_different_validation_manifest_fails_closed(
     )
 
     with pytest.raises(ValueError, match="prepared-manifest sha256 mismatch"):
+        reporting.generate_report(
+            run_dir=run,
+            evaluation_dir=evaluation,
+            prepared_manifest=prepared,
+            output_dir=tmp_path / "report",
+            baseline_summary=baseline,
+        )
+
+
+def test_nested_baseline_current_metric_tamper_fails_closed(tmp_path: Path) -> None:
+    checkpoint = _checkpoint(tmp_path / "checkpoints", steps=3, tokens=300)
+    run = _run_fixture(tmp_path, checkpoint)
+    prepared = tmp_path / "prepared" / "manifest.json"
+    evaluation = _evaluation_fixture(tmp_path, prepared)
+    baseline = _baseline_report_fixture(
+        tmp_path,
+        prepared,
+        nested_current_candidate_mean_nll=2.4,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="nested baseline current candidate mean_nll differs",
+    ):
         reporting.generate_report(
             run_dir=run,
             evaluation_dir=evaluation,

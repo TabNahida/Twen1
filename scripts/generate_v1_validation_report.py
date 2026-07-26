@@ -382,24 +382,29 @@ def _source_conditioned_training_analysis(
             token_count=int(row["tokens_this_step"]),
         )
     warmup_tokens = int(config["optimizer"]["warmup_tokens"])
-    stable = [
+    post_warmup_primary = [
         row
         for row in metrics
         if row.get("data_phase", "primary") == "primary" and int(row["tokens"]) > warmup_tokens
     ]
     regressions = {
         metric: _source_fixed_effect_regression(
-            stable,
+            post_warmup_primary,
             metric=metric,
             sources=all_sources,
         )
         for metric in ("loss", "ntp", "teacher_kd", "mtp", "anchor_kl")
-        if any(_finite(row.get(metric)) is not None for row in stable)
+        if any(_finite(row.get(metric)) is not None for row in post_warmup_primary)
     }
-    stable_pure_batches = sum(len(row["_source_fractions"]) == 1 for row in stable)
+    post_warmup_pure_batches = sum(
+        len(row["_source_fractions"]) == 1 for row in post_warmup_primary
+    )
     source_means: dict[str, dict[str, Any]] = {}
     for source in all_sources:
-        weights = [float(row["_source_fractions"].get(source, 0.0)) for row in stable]
+        weights = [
+            float(row["_source_fractions"].get(source, 0.0))
+            for row in post_warmup_primary
+        ]
         total_weight = sum(weights)
         if total_weight <= 0:
             continue
@@ -408,12 +413,15 @@ def _source_conditioned_training_analysis(
             {
                 metric: sum(
                     float(row[metric]) * weight
-                    for row, weight in zip(stable, weights, strict=True)
+                    for row, weight in zip(post_warmup_primary, weights, strict=True)
                     if _finite(row.get(metric)) is not None
                 )
                 / total_weight
                 for metric in ("loss", "ntp", "teacher_kd", "mtp", "anchor_kl")
-                if any(_finite(row.get(metric)) is not None for row in stable)
+                if any(
+                    _finite(row.get(metric)) is not None
+                    for row in post_warmup_primary
+                )
             }
         )
         source_means[source] = values
@@ -424,9 +432,17 @@ def _source_conditioned_training_analysis(
         "steps": len(metrics),
         "pure_source_batches": pure_batches,
         "pure_source_batch_fraction": pure_batches / len(metrics),
-        "stable_primary_rows": len(stable),
-        "stable_primary_pure_source_batches": stable_pure_batches,
-        "stable_primary_pure_source_batch_fraction": stable_pure_batches / len(stable),
+        "analysis_phase": {
+            "kind": "post_warmup_primary",
+            "includes": ["primary_stable", "primary_decay"],
+            "excludes": ["warmup", "cooldown"],
+            "rows": len(post_warmup_primary),
+        },
+        "post_warmup_primary_rows": len(post_warmup_primary),
+        "post_warmup_primary_pure_source_batches": post_warmup_pure_batches,
+        "post_warmup_primary_pure_source_batch_fraction": (
+            post_warmup_pure_batches / len(post_warmup_primary)
+        ),
         "sources": all_sources,
         "source_weighted_means": source_means,
         "regressions": regressions,
@@ -712,6 +728,75 @@ def _validate_checkpoint(checkpoint: Path) -> dict[str, Any]:
     }
 
 
+def _summarize_training_lifecycle(
+    events: Sequence[Mapping[str, Any]],
+    *,
+    elapsed_wall_seconds: float,
+    canonical_step_wall_seconds: float,
+) -> dict[str, Any]:
+    lifecycle_names = {
+        "session_start",
+        "initialized",
+        "resume",
+        "train_start",
+        "graceful_stop",
+        "train_complete",
+    }
+    retained_fields = (
+        "event",
+        "session_id",
+        "timestamp_utc",
+        "step",
+        "tokens",
+        "checkpoint",
+        "checkpoint_kind",
+        "checkpoint_tag",
+        "fork_from",
+        "reason",
+    )
+    lifecycle_events = [
+        {key: event[key] for key in retained_fields if key in event}
+        for event in events
+        if event.get("event") in lifecycle_names
+    ]
+    train_starts = [event for event in events if event.get("event") == "train_start"]
+    session_starts = [event for event in events if event.get("event") == "session_start"]
+    resumes = [event for event in events if event.get("event") == "resume"]
+    graceful_stops = [event for event in events if event.get("event") == "graceful_stop"]
+    terminal_session_ids = {
+        str(event["session_id"])
+        for event in events
+        if event.get("event") in {"graceful_stop", "train_complete"}
+        and isinstance(event.get("session_id"), str)
+    }
+    started_session_ids = {
+        str(event["session_id"])
+        for event in session_starts
+        if isinstance(event.get("session_id"), str)
+    }
+    outside_canonical = max(0.0, elapsed_wall_seconds - canonical_step_wall_seconds)
+    return {
+        "elapsed_wall_seconds": elapsed_wall_seconds,
+        "canonical_committed_step_wall_seconds": canonical_step_wall_seconds,
+        "outside_canonical_committed_step_wall_seconds": outside_canonical,
+        "elapsed_includes_resume_intervals": bool(resumes or len(train_starts) > 1),
+        "session_count": len(session_starts) if session_starts else len(train_starts),
+        "train_start_count": len(train_starts),
+        "resume_count": len(resumes),
+        "graceful_stop_count": len(graceful_stops),
+        "sessions_without_terminal_event_count": len(
+            started_session_ids - terminal_session_ids
+        ),
+        "events": lifecycle_events,
+        "accounting_caveat": (
+            "Elapsed wall spans the first train_start through train_complete. The canonical "
+            "committed-step wall sum excludes checkpoint writes, model construction/preflight, "
+            "inter-session pauses, and compute replayed after rollback; their difference must "
+            "not be interpreted as idle time alone."
+        ),
+    }
+
+
 def _summarize_training(run_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     metrics = _read_jsonl(run_dir / "metrics.jsonl")
     telemetry = _read_jsonl(run_dir / "telemetry.jsonl")
@@ -758,6 +843,11 @@ def _summarize_training(run_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     compute_seconds = sum(float(row["compute_step_seconds"]) for row in telemetry)
     wall_step_seconds = sum(float(row["wall_clock_step_seconds"]) for row in telemetry)
     data_wait_seconds = sum(float(row["data_wait_seconds"]) for row in telemetry)
+    lifecycle = _summarize_training_lifecycle(
+        events,
+        elapsed_wall_seconds=wall_duration,
+        canonical_step_wall_seconds=wall_step_seconds,
+    )
     summary = {
         "run_id": config.get("run_id"),
         "track": config.get("track"),
@@ -771,6 +861,7 @@ def _summarize_training(run_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
         "aggregate_compute_tokens_per_second": total_tokens / compute_seconds,
         "aggregate_wall_step_tokens_per_second": total_tokens / wall_step_seconds,
         "end_to_end_tokens_per_second": int(metrics[-1]["tokens"]) / wall_duration,
+        "lifecycle": lifecycle,
         "data_wait_seconds": data_wait_seconds,
         "data_wait_fraction_of_compute": data_wait_seconds / compute_seconds,
         "ordinary_steps": len(metrics) - len(alignment_rows),
@@ -1155,6 +1246,194 @@ def _metric_change(*, baseline: float, current: float, lower_is_better: bool) ->
     }
 
 
+def _cross_version_history_from_authenticated_baseline(
+    *,
+    baseline_summary: Mapping[str, Any],
+    baseline_identity: Mapping[str, Any],
+    training: Mapping[str, Any],
+    validation: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    baseline_training = baseline_summary["training"]
+    baseline_validation = baseline_summary["validation"]
+    baseline_run_id = str(baseline_training["run_id"])
+    authenticated_by = str(baseline_identity["summary_sha256"])
+    history: list[dict[str, Any]] = []
+    nested = baseline_summary.get("baseline_comparison")
+    if isinstance(nested, Mapping):
+        nested_baseline = nested.get("baseline")
+        nested_current = nested.get("current")
+        nested_roles = nested.get("roles")
+        nested_gap = nested.get("teacher_gap_closed_fraction")
+        nested_comparability = nested.get("comparability")
+        if not all(
+            isinstance(value, Mapping)
+            for value in (
+                nested_baseline,
+                nested_current,
+                nested_roles,
+                nested_gap,
+                nested_comparability,
+            )
+        ):
+            raise ValueError("authenticated baseline has malformed nested baseline comparison")
+        assert isinstance(nested_baseline, Mapping)
+        assert isinstance(nested_current, Mapping)
+        assert isinstance(nested_roles, Mapping)
+        assert isinstance(nested_gap, Mapping)
+        assert isinstance(nested_comparability, Mapping)
+        if not nested_comparability or not all(
+            value is True for value in nested_comparability.values()
+        ):
+            raise ValueError("nested baseline comparison is not fully comparable")
+        if nested_current.get("run_id") != baseline_run_id:
+            raise ValueError("nested baseline current run differs from authenticated baseline")
+        if (
+            nested_current.get("checkpoint_manifest_sha256")
+            != baseline_training["checkpoint"]["manifest_sha256"]
+            or nested_current.get("evaluation_manifest_sha256")
+            != baseline_validation["identity"]["manifest_sha256"]
+        ):
+            raise ValueError("nested baseline current lineage differs from authenticated baseline")
+        nested_current_prepared = nested_current.get("prepared_manifest")
+        if not isinstance(nested_current_prepared, Mapping):
+            raise ValueError("nested baseline current prepared-manifest is missing")
+        for field in (
+            "sha256",
+            "dataset_fingerprint",
+            "sequence_count",
+            "input_token_count",
+            "shard_count",
+        ):
+            if nested_current_prepared.get(field) != baseline_validation[
+                "prepared_manifest"
+            ].get(field):
+                raise ValueError(
+                    "nested baseline current prepared-manifest differs from "
+                    f"authenticated baseline: {field}"
+                )
+        for role in ("candidate", "shared", "teacher"):
+            role_comparison = nested_roles.get(role)
+            if not isinstance(role_comparison, Mapping):
+                raise ValueError(f"nested baseline comparison is missing role {role}")
+            direct_role = baseline_validation["roles"][role]
+            for metric in ("mean_nll", "perplexity"):
+                metric_comparison = role_comparison.get(metric)
+                if not isinstance(metric_comparison, Mapping):
+                    raise ValueError(
+                        f"nested baseline comparison is missing {role} {metric}"
+                    )
+                nested_current_value = _require_finite_number(
+                    metric_comparison.get("current"),
+                    field=f"nested.roles.{role}.{metric}.current",
+                )
+                if not math.isclose(
+                    nested_current_value,
+                    float(direct_role[metric]),
+                    rel_tol=1e-12,
+                    abs_tol=1e-12,
+                ):
+                    raise ValueError(
+                        f"nested baseline current {role} {metric} differs from "
+                        "authenticated baseline"
+                    )
+            token_comparison = role_comparison.get("predicted_tokens")
+            if (
+                not isinstance(token_comparison, Mapping)
+                or int(token_comparison.get("current", -1))
+                != int(direct_role["predicted_tokens"])
+                or token_comparison.get("match") is not True
+            ):
+                raise ValueError(
+                    f"nested baseline current {role} token count is inconsistent"
+                )
+        nested_gap_current = _require_finite_number(
+            nested_gap.get("current"),
+            field="nested.teacher_gap_closed_fraction.current",
+        )
+        direct_gap = float(
+            baseline_validation["acceptance"]["teacher_gap_closed_fraction"]
+        )
+        if not math.isclose(
+            nested_gap_current,
+            direct_gap,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        ):
+            raise ValueError(
+                "nested baseline current teacher-gap-closed differs from "
+                "authenticated baseline"
+            )
+        prior_candidate = _require_finite_number(
+            nested_roles["candidate"]["mean_nll"].get("baseline"),
+            field="nested.roles.candidate.mean_nll.baseline",
+        )
+        prior_gap = _require_finite_number(
+            nested_gap.get("baseline"),
+            field="nested.teacher_gap_closed_fraction.baseline",
+        )
+        prior_run_id = nested_baseline.get("run_id")
+        if not isinstance(prior_run_id, str) or not prior_run_id:
+            raise ValueError("nested baseline run_id is missing")
+        history.append(
+            {
+                "run_id": prior_run_id,
+                "candidate_mean_nll": prior_candidate,
+                "teacher_gap_closed_fraction": prior_gap,
+                "checkpoint_manifest_sha256": nested_baseline.get(
+                    "checkpoint_manifest_sha256"
+                ),
+                "evaluation_manifest_sha256": nested_baseline.get(
+                    "evaluation_manifest_sha256"
+                ),
+                "provenance": "authenticated_nested_baseline_comparison",
+                "authenticated_by_summary_sha256": authenticated_by,
+            }
+        )
+    history.extend(
+        (
+            {
+                "run_id": baseline_run_id,
+                "candidate_mean_nll": float(
+                    baseline_validation["roles"]["candidate"]["mean_nll"]
+                ),
+                "teacher_gap_closed_fraction": float(
+                    baseline_validation["acceptance"][
+                        "teacher_gap_closed_fraction"
+                    ]
+                ),
+                "checkpoint_manifest_sha256": baseline_training["checkpoint"][
+                    "manifest_sha256"
+                ],
+                "evaluation_manifest_sha256": baseline_validation["identity"][
+                    "manifest_sha256"
+                ],
+                "provenance": "authenticated_baseline_report_summary",
+                "authenticated_by_summary_sha256": authenticated_by,
+            },
+            {
+                "run_id": str(training["run_id"]),
+                "candidate_mean_nll": float(
+                    validation["roles"]["candidate"]["mean_nll"]
+                ),
+                "teacher_gap_closed_fraction": float(
+                    validation["acceptance"]["teacher_gap_closed_fraction"]
+                ),
+                "checkpoint_manifest_sha256": training["checkpoint"][
+                    "manifest_sha256"
+                ],
+                "evaluation_manifest_sha256": validation["identity"][
+                    "manifest_sha256"
+                ],
+                "provenance": "current_authenticated_evaluation",
+            },
+        )
+    )
+    run_ids = [row["run_id"] for row in history]
+    if len(run_ids) != len(set(run_ids)):
+        raise ValueError("cross-version history contains duplicate run IDs")
+    return history
+
+
 def _build_baseline_comparison(
     *,
     baseline_summary: Mapping[str, Any],
@@ -1208,6 +1487,12 @@ def _build_baseline_comparison(
         validation["acceptance"].get("teacher_gap_closed_fraction"),
         field="current validation acceptance.teacher_gap_closed_fraction",
     )
+    cross_version_history = _cross_version_history_from_authenticated_baseline(
+        baseline_summary=baseline_summary,
+        baseline_identity=baseline_identity,
+        training=training,
+        validation=validation,
+    )
     return {
         "baseline": {
             "run_id": baseline_training["run_id"],
@@ -1252,7 +1537,38 @@ def _build_baseline_comparison(
             current=current_gap,
             lower_is_better=False,
         ),
+        "cross_version_history": cross_version_history,
     }
+
+
+def _validated_cross_version_history(
+    comparison: Mapping[str, Any],
+) -> list[tuple[str, float, float]]:
+    raw_history = comparison.get("cross_version_history")
+    if not isinstance(raw_history, list) or not raw_history:
+        raise ValueError("baseline comparison has no cross-version history")
+    history: list[tuple[str, float, float]] = []
+    for index, raw_row in enumerate(raw_history):
+        if not isinstance(raw_row, Mapping):
+            raise ValueError(f"cross-version history row {index} is not an object")
+        run_id = raw_row.get("run_id")
+        candidate_nll = _finite(raw_row.get("candidate_mean_nll"))
+        gap_closed = _finite(raw_row.get("teacher_gap_closed_fraction"))
+        if not isinstance(run_id, str) or not run_id:
+            raise ValueError(f"cross-version history row {index} has no run_id")
+        if candidate_nll is None or candidate_nll < 0:
+            raise ValueError(
+                f"cross-version history row {index} has invalid candidate mean NLL"
+            )
+        if gap_closed is None:
+            raise ValueError(
+                f"cross-version history row {index} has invalid teacher-gap-closed"
+            )
+        history.append((run_id, candidate_nll, gap_closed))
+    run_ids = [run_id for run_id, _, _ in history]
+    if len(run_ids) != len(set(run_ids)):
+        raise ValueError("cross-version history contains duplicate run IDs")
+    return history
 
 
 def _make_charts(
@@ -1260,6 +1576,7 @@ def _make_charts(
     training: Mapping[str, Any],
     training_raw: Mapping[str, Any],
     validation: Mapping[str, Any],
+    baseline_comparison: Mapping[str, Any] | None = None,
 ) -> list[Path]:
     charts = output_dir / "charts"
     charts.mkdir(parents=True, exist_ok=True)
@@ -1374,7 +1691,7 @@ def _make_charts(
                 path = charts / "training_loss_by_source.svg"
                 _write_grouped_bar_chart(
                     path,
-                    title=f"{training['run_id']} stable-primary loss by source",
+                    title=f"{training['run_id']} post-warmup primary loss by source",
                     groups=names,
                     series={"total loss": [float(source_means[name]["loss"]) for name in names]},
                     y_label="Mean training loss",
@@ -1540,6 +1857,35 @@ def _make_charts(
             y_label="Utilization (%)",
         )
         paths.append(path)
+    if baseline_comparison is not None:
+        history = _validated_cross_version_history(baseline_comparison)
+        run_ids = [run_id for run_id, _, _ in history]
+        path = charts / "validation_candidate_nll_history.svg"
+        _write_grouped_bar_chart(
+            path,
+            title="Candidate validation NLL across authenticated versions",
+            groups=run_ids,
+            series={
+                "candidate mean NLL": [
+                    candidate_nll for _, candidate_nll, _ in history
+                ]
+            },
+            y_label="Mean NLL (lower is better)",
+        )
+        paths.append(path)
+        path = charts / "validation_teacher_gap_closed_history.svg"
+        _write_grouped_bar_chart(
+            path,
+            title="Teacher gap closed across authenticated versions",
+            groups=run_ids,
+            series={
+                "teacher gap closed": [
+                    gap_closed * 100.0 for _, _, gap_closed in history
+                ]
+            },
+            y_label="Teacher gap closed (%)",
+        )
+        paths.append(path)
     return paths
 
 
@@ -1593,10 +1939,19 @@ def _build_baseline_comparison_section(comparison: Mapping[str, Any] | None, *, 
             _fmt_signed_percent(gap["relative_change_percent"]),
         )
     ]
+    history = _validated_cross_version_history(comparison)
+    history_rows = [
+        (
+            run_id,
+            _fmt(candidate_nll, 6),
+            f"{gap_closed * 100.0:.3f}%",
+        )
+        for run_id, candidate_nll, gap_closed in history
+    ]
     report_identity = baseline["report"]
     if zh_cn:
         return f"""
-## 已认证的 v1 baseline 对照
+## 已认证的 baseline 对照
 
 Baseline 为 `{baseline["run_id"]}`, 当前结果为 `{current["run_id"]}`。对照只在以下条件全部
 严格相等后才生成: validation prepared-manifest SHA256、dataset fingerprint、序列/输入
@@ -1627,6 +1982,22 @@ token/shard 数, 以及 candidate/shared/teacher 的预测 token 数。因此这
             )
         }
 
+### 同一 held-out 集的跨版本历史
+
+下表与两张图仅使用已认证 lineage 中记录的版本; 每一行都对应完全相同的 prepared
+validation manifest 和三角色预测 token 口径。
+
+{
+            _markdown_table(
+                ("run_id", "candidate mean NLL", "teacher gap closed"),
+                history_rows,
+            )
+        }
+
+![跨版本 candidate NLL](charts/validation_candidate_nll_history.svg)
+
+![跨版本 teacher gap closed](charts/validation_teacher_gap_closed_history.svg)
+
 NLL/困惑度的负变化表示改善; teacher-gap-closed 的正变化表示改善。Baseline 的
 `summary.json` 由相邻 `MANIFEST.json` 清单认证, 该 manifest 再由 `COMPLETE` 认证:
 
@@ -1636,7 +2007,7 @@ NLL/困惑度的负变化表示改善; teacher-gap-closed 的正变化表示改�
 - Baseline evaluation manifest SHA256: `{baseline["evaluation_manifest_sha256"]}`
 """
     return f"""
-## Authenticated v1 baseline comparison
+## Authenticated baseline comparison
 
 The baseline is `{baseline["run_id"]}` and the current result is `{current["run_id"]}`.  This
 comparison is emitted only after exact matches on validation prepared-manifest SHA256, dataset
@@ -1667,6 +2038,22 @@ The absolute and relative changes therefore use the same held-out task and label
         )
     }
 
+### Cross-version history on the same held-out set
+
+The table and figures include only versions carried by the authenticated lineage.  Every row uses
+the identical prepared validation manifest and predicted-token accounting for all three roles.
+
+{
+        _markdown_table(
+            ("run_id", "candidate mean NLL", "teacher gap closed"),
+            history_rows,
+        )
+    }
+
+![Candidate NLL across versions](charts/validation_candidate_nll_history.svg)
+
+![Teacher gap closed across versions](charts/validation_teacher_gap_closed_history.svg)
+
 Negative NLL/perplexity changes are improvements; a positive teacher-gap-closed change is an
 improvement.  The baseline `summary.json` is inventoried by its adjacent `MANIFEST.json`, which is
 itself authenticated by `COMPLETE`:
@@ -1675,6 +2062,96 @@ itself authenticated by `COMPLETE`:
 - Baseline report manifest SHA256: `{report_identity["bundle_manifest_sha256"]}`
 - Baseline checkpoint manifest SHA256: `{baseline["checkpoint_manifest_sha256"]}`
 - Baseline evaluation manifest SHA256: `{baseline["evaluation_manifest_sha256"]}`
+"""
+
+
+def _build_training_lifecycle_section(
+    training: Mapping[str, Any], *, zh_cn: bool
+) -> str:
+    lifecycle = training.get("lifecycle")
+    if not isinstance(lifecycle, Mapping):
+        return ""
+    rows = []
+    raw_events = lifecycle.get("events")
+    if isinstance(raw_events, Sequence) and not isinstance(raw_events, (str, bytes)):
+        for event in raw_events:
+            if not isinstance(event, Mapping):
+                continue
+            detail = ""
+            if isinstance(event.get("checkpoint"), str):
+                detail = f"checkpoint={Path(str(event['checkpoint'])).name}"
+            elif isinstance(event.get("fork_from"), str):
+                detail = f"fork={Path(str(event['fork_from'])).name}"
+            elif event.get("reason") is not None:
+                detail = f"reason={event['reason']}"
+            rows.append(
+                (
+                    event.get("event", "n/a"),
+                    event.get("session_id", "n/a"),
+                    event.get("step", "n/a"),
+                    (
+                        f"{int(event['tokens']):,}"
+                        if isinstance(event.get("tokens"), int)
+                        else "n/a"
+                    ),
+                    event.get("timestamp_utc", "n/a"),
+                    detail or "n/a",
+                )
+            )
+    elapsed_hours = float(lifecycle["elapsed_wall_seconds"]) / 3600.0
+    canonical_hours = (
+        float(lifecycle["canonical_committed_step_wall_seconds"]) / 3600.0
+    )
+    outside_hours = (
+        float(lifecycle["outside_canonical_committed_step_wall_seconds"]) / 3600.0
+    )
+    session_count = int(lifecycle["session_count"])
+    resume_count = int(lifecycle["resume_count"])
+    graceful_count = int(lifecycle["graceful_stop_count"])
+    unterminated_count = int(lifecycle["sessions_without_terminal_event_count"])
+    timeline = _markdown_table(
+        (
+            "事件" if zh_cn else "event",
+            "session",
+            "step",
+            "token" if zh_cn else "tokens",
+            "UTC",
+            "详情" if zh_cn else "detail",
+        ),
+        rows,
+    )
+    if zh_cn:
+        return f"""
+### 恢复与墙钟口径
+
+- 从首次 `train_start` 到 `train_complete` 的 elapsed wall 为
+  **{elapsed_hours:.3f} h**, 对应 **{_fmt(training["end_to_end_tokens_per_second"], 1)}
+  tok/s**。这个分母有意包含跨 session 停顿、重新初始化及回滚后的重放工作。
+- 最终 canonical 日志中已提交 optimizer step 的 active wall 合计
+  **{canonical_hours:.3f} h**, 对应
+  **{_fmt(training["aggregate_wall_step_tokens_per_second"], 1)} tok/s**。
+- 两者相差 **{outside_hours:.3f} h**; 该差值还包含 checkpoint 写盘、模型构建/preflight
+  等开销, 不能全部解释为 GPU 空闲。
+- 生命周期记录 {session_count} 个 session、{resume_count} 次 resume、
+  {graceful_count} 次 graceful stop; {unterminated_count} 个 session 没有终止事件。
+
+{timeline}
+"""
+    return f"""
+### Resume and wall-clock accounting
+
+- Elapsed wall from the first `train_start` through `train_complete` was
+  **{elapsed_hours:.3f} h**, or **{_fmt(training["end_to_end_tokens_per_second"], 1)}
+  tok/s**.  This denominator intentionally includes inter-session pauses, reinitialization,
+  and work replayed after rollback.
+- Canonical active wall for committed optimizer steps was **{canonical_hours:.3f} h**, or
+  **{_fmt(training["aggregate_wall_step_tokens_per_second"], 1)} tok/s**.
+- The **{outside_hours:.3f} h** difference also contains checkpoint writes, model
+  construction/preflight, and other overhead; it must not be read as GPU idle time alone.
+- The lifecycle records {session_count} sessions, {resume_count} resumes,
+  {graceful_count} graceful stops, and {unterminated_count} sessions without a terminal event.
+
+{timeline}
 """
 
 
@@ -1724,6 +2201,7 @@ def _build_report(
     run_id = str(training["run_id"])
     config = training["config"]
     baseline_section = _build_baseline_comparison_section(baseline_comparison, zh_cn=False)
+    lifecycle_section = _build_training_lifecycle_section(training, zh_cn=False)
     if config["lr_schedule"] == "warmup-stable-decay":
         decay_tokens = int(config["decay_tokens"])
         schedule_description = (
@@ -1792,9 +2270,11 @@ def _build_report(
 Deterministic cursor replay matched every logged data phase and reconstructed the source mixture
 of all {source_analysis["steps"]:,} optimizer batches.  In the post-warmup primary phase,
 pure-source batches accounted for
-{source_analysis["stable_primary_pure_source_batches"]:,} /
-{source_analysis["stable_primary_rows"]:,}
-({source_analysis["stable_primary_pure_source_batch_fraction"] * 100:.2f}%).  The table below fits
+{source_analysis["post_warmup_primary_pure_source_batches"]:,} /
+{source_analysis["post_warmup_primary_rows"]:,}
+({source_analysis["post_warmup_primary_pure_source_batch_fraction"] * 100:.2f}%).
+This fixed analysis window includes both the stable and cosine-decay portions of primary data,
+but excludes warmup and quality cooldown.  The table below fits
 each metric on that phase using source fixed effects plus committed tokens; uncertainty is a
 Newey-West HAC interval with lag 50.
 
@@ -1811,7 +2291,7 @@ for held-out NLL.
 
 ![Raw vs source-adjusted training loss](charts/training_source_adjusted_loss.svg)
 
-![Stable-primary training loss by source](charts/training_loss_by_source.svg)
+![Post-warmup primary training loss by source](charts/training_loss_by_source.svg)
 """
     else:
         source_analysis_section = ""
@@ -1880,8 +2360,9 @@ state, backward pass, or parameter update is involved.
 - Aggregate compute throughput: **{_fmt(training["aggregate_compute_tokens_per_second"], 1)} tok/s**;
   optimizer-step wall throughput: **{_fmt(training["aggregate_wall_step_tokens_per_second"], 1)} tok/s**;
   full train-start to final-checkpoint throughput: **{_fmt(training["end_to_end_tokens_per_second"], 1)} tok/s**.
-- The run lasted **{training["wall_duration_seconds"] / 3600:.3f} h** and wrote
-  {training["checkpoint_count"]} checkpoints.  Checkpoint writes consumed
+- The first-start-to-final elapsed span was
+  **{training["wall_duration_seconds"] / 3600:.3f} h**; its restart-aware accounting is
+  separated below.  The run wrote {training["checkpoint_count"]} checkpoints.  Checkpoint writes consumed
   {training["checkpoint_duration_seconds_total"] / 60:.2f} min in total
   (mean {_fmt(training["checkpoint_duration_seconds_mean"], 2)} s, max
   {_fmt(training["checkpoint_duration_seconds_max"], 2)} s).
@@ -1894,6 +2375,8 @@ state, backward pass, or parameter update is involved.
   ({training["grad_norm_over_clip_threshold_fraction"] * 100:.2f}%).
 - Hidden-alignment batches: {training["alignment_steps"]} / {training["steps"]}; ordinary batches:
   {training["ordinary_steps"]} / {training["steps"]}.
+
+{lifecycle_section}
 
 Token-weighted first-50 to last-50 changes: NTP {first["ntp"]:.5f} → {last["ntp"]:.5f}
 ({ntp_change:+.5f}), teacher KD {first["teacher_kd"]:.5f} → {last["teacher_kd"]:.5f}
@@ -2003,6 +2486,7 @@ def _build_report_zh_cn(
     run_id = str(training["run_id"])
     config = training["config"]
     baseline_section = _build_baseline_comparison_section(baseline_comparison, zh_cn=True)
+    lifecycle_section = _build_training_lifecycle_section(training, zh_cn=True)
     gap = acceptance.get("teacher_gap_closed_fraction")
     gate = acceptance.get("dense_gap_gate_pass")
     gate_text = "通过" if gate is True else "未通过" if gate is False else "未计算"
@@ -2109,9 +2593,11 @@ def _build_report_zh_cn(
 
 使用不可变 manifest 和确定性 cursor 逐步重放后, 所有 data phase 均与日志一致。
 warmup 后的 primary 阶段中,
-{source_analysis["stable_primary_pure_source_batches"]:,} /
-{source_analysis["stable_primary_rows"]:,} 个 optimizer batch
-({source_analysis["stable_primary_pure_source_batch_fraction"] * 100:.2f}%) 是单一数据源。
+{source_analysis["post_warmup_primary_pure_source_batches"]:,} /
+{source_analysis["post_warmup_primary_rows"]:,} 个 optimizer batch
+({source_analysis["post_warmup_primary_pure_source_batch_fraction"] * 100:.2f}%)
+是单一数据源。这个固定窗口同时包含 primary 的 stable 与 cosine-decay 段, 排除 warmup
+和 quality cooldown。
 下表对该阶段每项指标拟合 `source mix 固定效应 + committed tokens`;
 置信区间为 lag 50 的 Newey-West HAC 95% CI。
 
@@ -2127,7 +2613,7 @@ total loss 的来源组成解释了 {float(regressions["loss"]["r_squared"]) * 1
 
 ![Raw 与 source-adjusted loss](charts/training_source_adjusted_loss.svg)
 
-![各来源 stable-primary loss](charts/training_loss_by_source.svg)
+![各来源 post-warmup primary loss](charts/training_loss_by_source.svg)
 """
     else:
         source_analysis_section = ""
@@ -2204,8 +2690,9 @@ candidate/shared/teacher 三角色的全量 NLL 评测。评测全程为 `torch.
   optimizer-step wall 吞吐为 **{_fmt(training["aggregate_wall_step_tokens_per_second"], 1)} tok/s**;
   从 train_start 到 final checkpoint 的端到端吞吐为
   **{_fmt(training["end_to_end_tokens_per_second"], 1)} tok/s**。
-- 总墙钟 {training["wall_duration_seconds"] / 3600:.3f} 小时, 共写入
-  {training["checkpoint_count"]} 个 checkpoint; 写盘总耗时
+- 首次 `train_start` 到 final 的 elapsed 跨度为
+  {training["wall_duration_seconds"] / 3600:.3f} 小时, 恢复感知口径在下方单列。
+  共写入 {training["checkpoint_count"]} 个 checkpoint; 写盘总耗时
   {training["checkpoint_duration_seconds_total"] / 60:.2f} 分钟, 平均
   {_fmt(training["checkpoint_duration_seconds_mean"], 2)} 秒, 最大
   {_fmt(training["checkpoint_duration_seconds_max"], 2)} 秒。
@@ -2217,6 +2704,9 @@ candidate/shared/teacher 三角色的全量 NLL 评测。评测全程为 `torch.
   {training["steps"]} 步超过阈值 {training["grad_clip_threshold"]:.3f}, 比例
   {training["grad_norm_over_clip_threshold_fraction"] * 100:.2f}%。hidden-alignment batch 为
   {training["alignment_steps"]} 步, ordinary batch 为 {training["ordinary_steps"]} 步。
+
+{lifecycle_section}
+
 - 前 50 步到后 50 步的 token 加权指标: NTP {first["ntp"]:.5f} 到
   {last["ntp"]:.5f}, teacher KD {first["teacher_kd"]:.5f} 到
   {last["teacher_kd"]:.5f}, anchor KL {first["anchor_kl"]:.5f} 到
@@ -2333,7 +2823,13 @@ def generate_report(
         )
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    chart_paths = _make_charts(output_dir, training, training_raw, validation)
+    chart_paths = _make_charts(
+        output_dir,
+        training,
+        training_raw,
+        validation,
+        baseline_comparison,
+    )
     summary = {
         "schema_version": 1,
         "kind": "twen_dense_final_validation_report",

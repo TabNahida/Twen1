@@ -426,6 +426,12 @@ def test_completed_run_analysis_is_authenticated_read_only_and_atomic(tmp_path: 
     }
     assert analysis["phases"]["primary_stable"]["rolling"]["window_100"]["loss"]
     assert analysis["phases"]["primary_stable"]["rolling"]["window_152"]["loss"]
+    assert analysis["phases"]["primary_decay"] is None
+    assert analysis["phases"]["analysis_phase"]["kind"] == "post_warmup_primary"
+    assert analysis["source_adjusted"]["phase"]["kind"] == "post_warmup_primary"
+    assert analysis["source_adjusted"]["phase"]["points"] == analysis["phases"][
+        "analysis_phase"
+    ]["points"]
     slope = analysis["source_adjusted"]["common_slopes"]["loss"]["coefficients"][
         "tokens_per_100m"
     ]
@@ -464,6 +470,11 @@ def test_completed_run_analysis_is_authenticated_read_only_and_atomic(tmp_path: 
     report = markdown_path.read_text(encoding="utf-8")
     assert "Dashboard GPU telemetry" in report
     assert "last rank0 session" in report
+    assert "primary cosine decay" not in report
+    assert "## 后续版本建议 (v4)" in report
+    assert "## v3 建议" not in report
+    assert "next_version_priority" in analysis["interpretation"]
+    assert "v3_priority" not in analysis["interpretation"]
     assert not list(output_dir.glob(".*.tmp"))
     assert _snapshot(run_dir) == before
 
@@ -474,6 +485,25 @@ def test_completed_run_analysis_is_authenticated_read_only_and_atomic(tmp_path: 
             run_dir=run_dir,
         )
     assert not (run_dir / "forbidden-analysis").exists()
+
+
+def test_phase_rows_separate_decay_but_use_all_post_warmup_primary_for_regression() -> None:
+    metrics = [
+        {"step": 1, "tokens": 1, "lr": 0.1, "data_phase": "primary"},
+        {"step": 2, "tokens": 2, "lr": 0.2, "data_phase": "primary"},
+        {"step": 3, "tokens": 3, "lr": 0.2, "data_phase": "primary"},
+        {"step": 4, "tokens": 4, "lr": 0.15, "data_phase": "primary"},
+        {"step": 5, "tokens": 5, "lr": 0.1, "data_phase": "primary"},
+        {"step": 6, "tokens": 6, "lr": 0.05, "data_phase": "cooldown"},
+    ]
+
+    phases, analysis_phase = analyzer._phase_rows(metrics, warmup_tokens=1)
+
+    assert [row["step"] for row in phases["warmup"]] == [1]
+    assert [row["step"] for row in phases["primary_stable"]] == [2, 3]
+    assert [row["step"] for row in phases["primary_decay"]] == [4, 5]
+    assert [row["step"] for row in phases["cooldown"]] == [6]
+    assert [row["step"] for row in analysis_phase] == [2, 3, 4, 5]
 
 
 def test_incomplete_run_fails_closed(tmp_path: Path) -> None:

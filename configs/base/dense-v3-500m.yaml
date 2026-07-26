@@ -1,0 +1,122 @@
+architecture:
+  active_student_layers: null
+  adapter_init_path: artifacts/calibration/base/adapters.safetensors
+  channel_map_path: artifacts/calibration/base/channel_map.json
+  donor_hidden_size: 4096
+  donor_intermediate_size: 12288
+  donor_layers: 32
+  expert_initialization: donor
+  expert_intermediate_size: 1536
+  layer_map_path: artifacts/calibration/base/layer_map.json
+  lora_rank: 16
+  norm_topk_prob: true
+  num_experts: 8
+  random_expert_seed: 1701
+  student_hidden_size: 1024
+  student_intermediate_size: 3584
+  student_layers: 24
+  top_k: 2
+checkpoint:
+  every_minutes: 30.0
+  every_steps: 100
+  keep_last: 3
+  output_dir: runs/base-dense-v3-500m
+  save_on_signal: true
+  stop_file: STOP
+data:
+  global_batch_tokens: 262144
+  manifest_path: artifacts/data/base-v2-500m/manifest.json
+  manifest_sha256: 9290665ac1e09fbd5b9aea1966bed7a51095bab66f460a0124af4532b1805fd9
+  max_sequence_length: 4096
+  micro_batch_size: 1
+  num_workers: 4
+  quality_cooldown_manifest_path: artifacts/data/base-v2-500m-quality-bundle/prepared/manifest.json
+  quality_cooldown_manifest_sha256: 459357e415fbf77f6bd04ec2c3fe2e1dff06e81360b0a38715e51c77670514af
+  quality_cooldown_start_tokens: 450000000
+  quality_cooldown_teacher_kd_manifest_path: artifacts/data/base-v2-500m-quality-bundle/kd/manifest.json
+  quality_cooldown_teacher_kd_manifest_sha256: a8a92ba0232bd33742b77c110a5dee0cbaf272ac752cd6e0aa110eaf835610b0
+  shuffle_seed: 3407
+  teacher_kd_manifest_path: artifacts/data/base-v2-500m-kd/manifest.json
+  teacher_kd_manifest_sha256: 242ed2d0fb899cb333939bbd581f8a5632e97228f0c1fda2fee14bea7291efe9
+  teacher_top_k: 64
+losses:
+  anchor_kl: 0.1
+  dense_oracle: 0.0
+  dense_oracle_batch_fraction: 0.0
+  hidden_alignment: 0.1
+  hidden_alignment_batch_fraction: 0.05
+  kd_temperature: 2.0
+  load_balance: 0.0
+  mtp: 0.1
+  ntp: 1.0
+  router_supervision: 0.0
+  router_z: 0.0
+  teacher_kd: 1.0
+optimizer:
+  adam_beta1: 0.9
+  adam_beta2: 0.95
+  adam_eps: 1.0e-08
+  adapter_lr: 0.00018
+  decay_tokens: 250000000
+  grad_clip_norm: 1.0
+  lora_lr: 0.00018
+  lr_schedule: warmup-stable-decay
+  max_tokens: 500000000
+  min_lr_ratio: 0.1
+  router_lr: 0.0009
+  scale_lr: 0.0009
+  warmup_tokens: 5000000
+  weight_decay: 0.01
+run_id: base-dense-v3-500m
+runtime:
+  activation_checkpoint_layer_count: 0
+  activation_checkpointing: true
+  activation_checkpointing_on_alignment_only: true
+  allow_tf32: true
+  bf16: true
+  compile_streaming_loss: true
+  dense_transfer_checkpoint_layer_count: 0
+  dense_transfer_execution: expanded
+  dense_transfer_token_checkpoint: true
+  deterministic: false
+  expandable_segments: true
+  fused_adamw: true
+  hidden_alignment_activation_checkpoint_layer_count: 8
+  hidden_alignment_dense_transfer_checkpoint_layer_count: 16
+  log_every_steps: 1
+  loss_checkpoint_chunks: true
+  loss_chunk_tokens: 512
+  offline: true
+  profile: false
+  profile_active_steps: 3
+  profile_wait_steps: 1
+  profile_warmup_steps: 1
+  seed: 3407
+  sharding: fsdp2
+  teacher_cpu_offload: true
+schema_version: 1
+sources:
+  backbone:
+    local_path: artifacts/models/qwen3.5-0.8b-base
+    manifest_sha256: 5e847be98c2d114d2fb85a67ac77f4eef416e11871c1a5580d1bc52663e2e643
+    model_id: Qwen/Qwen3.5-0.8B-Base
+    revision: dc7cdfe2ee4154fa7e30f5b51ca41bfa40174e68
+  donor:
+    local_path: artifacts/models/qwen3.5-9b-base
+    manifest_sha256: ede9a83f7b8ab73842d79b2459262a8b963e215684177a6685b3dc2e2bb803a1
+    model_id: Qwen/Qwen3.5-9B-Base
+    revision: 68c46c4b3498877f3ef123c856ecfde50c39f404
+  folded_experts_path: null
+  folded_experts_sha256: null
+  teacher:
+    local_path: artifacts/models/qwen3.5-9b-base
+    manifest_sha256: ede9a83f7b8ab73842d79b2459262a8b963e215684177a6685b3dc2e2bb803a1
+    model_id: Qwen/Qwen3.5-9B-Base
+    revision: 68c46c4b3498877f3ef123c856ecfde50c39f404
+  tokenizer:
+    local_path: artifacts/models/qwen3.5-0.8b-base
+    manifest_sha256: 5e847be98c2d114d2fb85a67ac77f4eef416e11871c1a5580d1bc52663e2e643
+    model_id: Qwen/Qwen3.5-0.8B-Base
+    revision: dc7cdfe2ee4154fa7e30f5b51ca41bfa40174e68
+stage: dense-oracle
+track: base
