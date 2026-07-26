@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650" role="img">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>text{font-family:ui-sans-serif,system-ui,sans-serif;fill:#111827}.grid{stroke:#e5e7eb;stroke-width:1}.axis{stroke:#374151;stroke-width:1.5}.tick{font-size:13px;fill:#4b5563}.title{font-size:24px;font-weight:700}.label{font-size:15px;font-weight:600}.legend{font-size:14px}</style>
+<text class="title" x="105.0" y="38">Validation GPU utilization sample</text>
+<line class="grid" x1="105.0" y1="70.0" x2="105.0" y2="555.0"/>
+<line class="grid" x1="105.0" y1="555.0" x2="1160.0" y2="555.0"/>
+<text class="tick" x="105.0" y="578" text-anchor="middle">-1.68</text>
+<text class="tick" x="96" y="560.0" text-anchor="end">3.770</text>
+<line class="grid" x1="316.0" y1="70.0" x2="316.0" y2="555.0"/>
+<line class="grid" x1="105.0" y1="458.0" x2="1160.0" y2="458.0"/>
+<text class="tick" x="316.0" y="578" text-anchor="middle">3.79</text>
+<text class="tick" x="96" y="463.0" text-anchor="end">24.062</text>
+<line class="grid" x1="527.0" y1="70.0" x2="527.0" y2="555.0"/>
+<line class="grid" x1="105.0" y1="361.0" x2="1160.0" y2="361.0"/>
+<text class="tick" x="527.0" y="578" text-anchor="middle">9.26</text>
+<text class="tick" x="96" y="366.0" text-anchor="end">44.354</text>
+<line class="grid" x1="738.0" y1="70.0" x2="738.0" y2="555.0"/>
+<line class="grid" x1="105.0" y1="264.0" x2="1160.0" y2="264.0"/>
+<text class="tick" x="738.0" y="578" text-anchor="middle">14.74</text>
+<text class="tick" x="96" y="269.0" text-anchor="end">64.646</text>
+<line class="grid" x1="949.0" y1="70.0" x2="949.0" y2="555.0"/>
+<line class="grid" x1="105.0" y1="167.0" x2="1160.0" y2="167.0"/>
+<text class="tick" x="949.0" y="578" text-anchor="middle">20.21</text>
+<text class="tick" x="96" y="172.0" text-anchor="end">84.938</text>
+<line class="grid" x1="1160.0" y1="70.0" x2="1160.0" y2="555.0"/>
+<line class="grid" x1="105.0" y1="70.0" x2="1160.0" y2="70.0"/>
+<text class="tick" x="1160.0" y="578" text-anchor="middle">25.68</text>
+<text class="tick" x="96" y="75.0" text-anchor="end">105.2</text>
+<line class="axis" x1="105.0" y1="555.0" x2="1160.0" y2="555.0"/>
+<line class="axis" x1="105.0" y1="70.0" x2="105.0" y2="555.0"/>
+<text class="label" x="632.5" y="620" text-anchor="middle">One-second sample index</text>
+<text class="label" x="24" y="312.5" text-anchor="middle" transform="rotate(-90 24 312.5)">Utilization (%)</text>
+<polyline points="169.78,123.68 208.34,233.63 246.90,233.63 285.46,99.78 324.02,233.63 362.58,233.63 401.14,133.24 439.70,233.63 478.26,228.85 516.82,99.78 555.38,204.95 593.94,209.73 632.50,123.68 671.06,190.60 709.62,195.38 748.18,228.85 786.74,157.14 825.30,233.63 863.86,224.07 902.42,214.51 940.98,104.56 979.54,228.85 1018.10,233.63 1056.66,104.56 1095.22,486.98" fill="none" stroke="#2563eb" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="105.0" y1="602" x2="129.0" y2="602" stroke="#2563eb" stroke-width="4"/>
+<text class="legend" x="135.0" y="607">GPU</text>
+<polyline points="169.78,453.52 208.34,458.30 246.90,458.30 285.46,434.40 324.02,467.86 362.58,458.30 401.14,429.62 439.70,458.30 478.26,453.52 516.82,424.83 555.38,472.64 593.94,448.74 632.50,424.83 671.06,467.86 709.62,448.74 748.18,453.52 786.74,434.40 825.30,472.64 863.86,453.52 902.42,448.74 940.98,429.62 979.54,453.52 1018.10,458.30 1056.66,439.18 1095.22,525.22" fill="none" stroke="#dc2626" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="245.0" y1="602" x2="269.0" y2="602" stroke="#dc2626" stroke-width="4"/>
+<text class="legend" x="275.0" y="607">memory</text>
+</svg>

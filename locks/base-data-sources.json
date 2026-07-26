@@ -1,0 +1,235 @@
+{
+  "schema_version": 1,
+  "kind": "twen_base_data_source_recipe",
+  "recipe_id": "base-v1-20260717",
+  "split": {
+    "algorithm": "sha256_mod",
+    "seed": "twen-base-v1-20260717",
+    "modulus": 6,
+    "validation_remainder": 0,
+    "code_group_field": "repo_name"
+  },
+  "output_shard_tokens": 1000000,
+  "profiles": {
+    "poc": {
+      "description": "20 global batches at 262,144 tokens",
+      "train_tokens": 5242880
+    },
+    "dense": {
+      "description": "formal dense-oracle corpus",
+      "train_tokens": 100000000
+    },
+    "sparse": {
+      "description": "formal sparse expansion corpus",
+      "train_tokens": 500000000
+    }
+  },
+  "validation_tokens": 20000000,
+  "sources": [
+    {
+      "source_id": "english_fineweb_edu_dedup",
+      "category": "english_general",
+      "repo_id": "HuggingFaceTB/smollm-corpus",
+      "revision": "3ba9d605774198c5868892d7a8deda78031a781f",
+      "config": "fineweb-edu-dedup",
+      "split": "train",
+      "file_patterns": [
+        "fineweb-edu-dedup/train-*.parquet"
+      ],
+      "license": "ODC-By-1.0",
+      "license_scope": "database; underlying Common Crawl page rights are not individually cleared",
+      "card_url": "https://huggingface.co/datasets/HuggingFaceTB/smollm-corpus/blob/3ba9d605774198c5868892d7a8deda78031a781f/README.md",
+      "gated": false,
+      "text_field": "text",
+      "stable_id_fields": [
+        "id"
+      ],
+      "required_fields": [
+        "text",
+        "id"
+      ],
+      "train_token_quotas": {
+        "poc": 1835008,
+        "dense": 35000000,
+        "sparse": 175000000
+      },
+      "validation_token_quota": 7000000,
+      "min_characters": 200,
+      "max_document_tokens": 32768
+    },
+    {
+      "source_id": "chinese_fineweb2_cmn_hani",
+      "category": "chinese_general",
+      "repo_id": "HuggingFaceFW/fineweb-2",
+      "revision": "af9c13333eb981300149d5ca60a8e9d659b276b9",
+      "config": "cmn_Hani",
+      "split": "train",
+      "file_patterns": [
+        "data/cmn_Hani/train/*.parquet"
+      ],
+      "license": "ODC-By-1.0",
+      "license_scope": "database; also subject to Common Crawl Terms of Use",
+      "card_url": "https://huggingface.co/datasets/HuggingFaceFW/fineweb-2/blob/af9c13333eb981300149d5ca60a8e9d659b276b9/README.md",
+      "gated": false,
+      "text_field": "text",
+      "stable_id_fields": [
+        "id"
+      ],
+      "required_fields": [
+        "text",
+        "id"
+      ],
+      "train_token_quotas": {
+        "poc": 1310720,
+        "dense": 25000000,
+        "sparse": 125000000
+      },
+      "validation_token_quota": 5000000,
+      "min_characters": 100,
+      "max_document_tokens": 32768
+    },
+    {
+      "source_id": "code_github_clean_allowlisted",
+      "category": "code",
+      "repo_id": "codeparrot/github-code-clean",
+      "revision": "c48d40f9e70f0196f8236901ee35807f7d6c44c0",
+      "config": "native_parquet",
+      "split": "train",
+      "file_patterns": [
+        "data/train-*.parquet"
+      ],
+      "license": "per-row SPDX field",
+      "license_scope": "cleaning code is Apache-2.0; every source file retains its repository license",
+      "card_url": "https://huggingface.co/datasets/codeparrot/github-code-clean/blob/c48d40f9e70f0196f8236901ee35807f7d6c44c0/README.md",
+      "gated": false,
+      "text_field": "code",
+      "stable_id_fields": [
+        "repo_name"
+      ],
+      "required_fields": [
+        "code",
+        "repo_name",
+        "path",
+        "license"
+      ],
+      "license_field": "license",
+      "license_allowlist": [
+        "apache-2.0",
+        "bsd-2-clause",
+        "bsd-3-clause",
+        "cc0-1.0",
+        "isc",
+        "mit"
+      ],
+      "attribution_fields": [
+        "repo_name",
+        "path",
+        "license"
+      ],
+      "reject_detected_secrets": true,
+      "train_token_quotas": {
+        "poc": 786432,
+        "dense": 15000000,
+        "sparse": 75000000
+      },
+      "validation_token_quota": 3000000,
+      "min_characters": 80,
+      "max_document_tokens": 16384
+    },
+    {
+      "source_id": "math_finemath_4plus",
+      "category": "math",
+      "repo_id": "HuggingFaceTB/finemath",
+      "revision": "e92b25a616738fe95dc186b64dfb19f9c8525594",
+      "config": "finemath-4plus",
+      "split": "train",
+      "file_patterns": [
+        "finemath-4plus/train-*.parquet"
+      ],
+      "license": "ODC-By-1.0",
+      "license_scope": "database; also subject to Common Crawl Terms of Use",
+      "card_url": "https://huggingface.co/datasets/HuggingFaceTB/finemath/blob/e92b25a616738fe95dc186b64dfb19f9c8525594/README.md",
+      "gated": false,
+      "text_field": "text",
+      "stable_id_fields": [
+        "url"
+      ],
+      "required_fields": [
+        "text",
+        "url"
+      ],
+      "train_token_quotas": {
+        "poc": 786432,
+        "dense": 15000000,
+        "sparse": 75000000
+      },
+      "validation_token_quota": 3000000,
+      "min_characters": 200,
+      "max_document_tokens": 32768
+    },
+    {
+      "source_id": "science_cosmopedia_stanford",
+      "category": "science_synthetic",
+      "repo_id": "HuggingFaceTB/cosmopedia",
+      "revision": "0ae6ec63f91742bd2d1eaef4f02232c55d719385",
+      "config": "stanford",
+      "split": "train",
+      "file_patterns": [
+        "data/stanford/train-*.parquet"
+      ],
+      "license": "Apache-2.0",
+      "license_scope": "synthetic Mixtral output released by the dataset authors",
+      "card_url": "https://huggingface.co/datasets/HuggingFaceTB/cosmopedia/blob/0ae6ec63f91742bd2d1eaef4f02232c55d719385/README.md",
+      "gated": false,
+      "text_field": "text",
+      "stable_id_fields": [
+        "prompt",
+        "text"
+      ],
+      "required_fields": [
+        "text",
+        "prompt"
+      ],
+      "train_token_quotas": {
+        "poc": 262144,
+        "dense": 5000000,
+        "sparse": 25000000
+      },
+      "validation_token_quota": 1000000,
+      "min_characters": 200,
+      "max_document_tokens": 32768
+    },
+    {
+      "source_id": "science_cosmopedia_openstax",
+      "category": "science_synthetic",
+      "repo_id": "HuggingFaceTB/cosmopedia",
+      "revision": "0ae6ec63f91742bd2d1eaef4f02232c55d719385",
+      "config": "openstax",
+      "split": "train",
+      "file_patterns": [
+        "data/openstax/train-*.parquet"
+      ],
+      "license": "Apache-2.0",
+      "license_scope": "synthetic Mixtral output released by the dataset authors",
+      "card_url": "https://huggingface.co/datasets/HuggingFaceTB/cosmopedia/blob/0ae6ec63f91742bd2d1eaef4f02232c55d719385/README.md",
+      "gated": false,
+      "text_field": "text",
+      "stable_id_fields": [
+        "prompt",
+        "text"
+      ],
+      "required_fields": [
+        "text",
+        "prompt"
+      ],
+      "train_token_quotas": {
+        "poc": 262144,
+        "dense": 5000000,
+        "sparse": 25000000
+      },
+      "validation_token_quota": 1000000,
+      "min_characters": 200,
+      "max_document_tokens": 32768
+    }
+  ]
+}

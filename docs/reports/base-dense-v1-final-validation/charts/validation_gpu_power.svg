@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650" role="img">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>text{font-family:ui-sans-serif,system-ui,sans-serif;fill:#111827}.grid{stroke:#e5e7eb;stroke-width:1}.axis{stroke:#374151;stroke-width:1.5}.tick{font-size:13px;fill:#4b5563}.title{font-size:24px;font-weight:700}.label{font-size:15px;font-weight:600}.legend{font-size:14px}</style>
+<text class="title" x="105.0" y="38">Validation GPU power sample</text>
+<line class="grid" x1="105.0" y1="70.0" x2="105.0" y2="555.0"/>
+<line class="grid" x1="105.0" y1="555.0" x2="1160.0" y2="555.0"/>
+<text class="tick" x="105.0" y="578" text-anchor="middle">-1.68</text>
+<text class="tick" x="96" y="560.0" text-anchor="end">301.2</text>
+<line class="grid" x1="316.0" y1="70.0" x2="316.0" y2="555.0"/>
+<line class="grid" x1="105.0" y1="458.0" x2="1160.0" y2="458.0"/>
+<text class="tick" x="316.0" y="578" text-anchor="middle">3.79</text>
+<text class="tick" x="96" y="463.0" text-anchor="end">364.9</text>
+<line class="grid" x1="527.0" y1="70.0" x2="527.0" y2="555.0"/>
+<line class="grid" x1="105.0" y1="361.0" x2="1160.0" y2="361.0"/>
+<text class="tick" x="527.0" y="578" text-anchor="middle">9.26</text>
+<text class="tick" x="96" y="366.0" text-anchor="end">428.6</text>
+<line class="grid" x1="738.0" y1="70.0" x2="738.0" y2="555.0"/>
+<line class="grid" x1="105.0" y1="264.0" x2="1160.0" y2="264.0"/>
+<text class="tick" x="738.0" y="578" text-anchor="middle">14.74</text>
+<text class="tick" x="96" y="269.0" text-anchor="end">492.2</text>
+<line class="grid" x1="949.0" y1="70.0" x2="949.0" y2="555.0"/>
+<line class="grid" x1="105.0" y1="167.0" x2="1160.0" y2="167.0"/>
+<text class="tick" x="949.0" y="578" text-anchor="middle">20.21</text>
+<text class="tick" x="96" y="172.0" text-anchor="end">555.9</text>
+<line class="grid" x1="1160.0" y1="70.0" x2="1160.0" y2="555.0"/>
+<line class="grid" x1="105.0" y1="70.0" x2="1160.0" y2="70.0"/>
+<text class="tick" x="1160.0" y="578" text-anchor="middle">25.68</text>
+<text class="tick" x="96" y="75.0" text-anchor="end">619.5</text>
+<line class="axis" x1="105.0" y1="555.0" x2="1160.0" y2="555.0"/>
+<line class="axis" x1="105.0" y1="70.0" x2="105.0" y2="555.0"/>
+<text class="label" x="632.5" y="620" text-anchor="middle">One-second sample index</text>
+<text class="label" x="24" y="312.5" text-anchor="middle" transform="rotate(-90 24 312.5)">Watts</text>
+<line x1="105.0" y1="99.8" x2="1160.0" y2="99.8" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="7 5"/>
+<text class="tick" x="1155.0" y="93.8" text-anchor="end">power limit</text>
+<polyline points="169.78,341.04 208.34,339.28 246.90,334.17 285.46,311.75 324.02,317.41 362.58,333.75 401.14,343.39 439.70,329.80 478.26,340.56 516.82,338.00 555.38,322.88 593.94,316.45 632.50,525.22 671.06,331.67 709.62,305.73 748.18,312.45 786.74,352.14 825.30,331.99 863.86,308.13 902.42,322.23 940.98,320.31 979.54,321.02 1018.10,342.48 1056.66,350.20 1095.22,439.33" fill="none" stroke="#2563eb" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="105.0" y1="602" x2="129.0" y2="602" stroke="#2563eb" stroke-width="4"/>
+<text class="legend" x="135.0" y="607">power draw</text>
+</svg>

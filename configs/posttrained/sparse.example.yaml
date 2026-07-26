@@ -1,0 +1,50 @@
+schema_version: 1
+run_id: posttrained-sparse-v1
+track: posttrained
+stage: sparse
+
+sources:
+  backbone: &backbone
+    model_id: Qwen/Qwen3.5-0.8B
+    revision: REPLACE_WITH_COMMIT_SHA
+    local_path: artifacts/models/qwen3.5-0.8b
+    manifest_sha256: REPLACE_WITH_64_HEX_DIGEST
+  donor: &donor
+    model_id: Qwen/Qwen3.5-9B
+    revision: REPLACE_WITH_COMMIT_SHA
+    local_path: artifacts/models/qwen3.5-9b
+    manifest_sha256: REPLACE_WITH_64_HEX_DIGEST
+  teacher: *donor
+  tokenizer: *backbone
+  folded_experts_path: artifacts/folded/posttrained/model.safetensors
+  folded_experts_sha256: REPLACE_WITH_64_HEX_DIGEST
+
+architecture:
+  expert_initialization: donor
+  random_expert_seed: 1701
+  layer_map_path: artifacts/calibration/posttrained/layer_map.json
+  channel_map_path: artifacts/calibration/posttrained/channel_map.json
+  adapter_init_path: artifacts/calibration/posttrained/adapters.safetensors
+
+data:
+  manifest_path: artifacts/data/posttrained/manifest.json
+  manifest_sha256: REPLACE_WITH_64_HEX_DIGEST
+  teacher_kd_manifest_path: artifacts/data/posttrained-kd/manifest.json
+  teacher_kd_manifest_sha256: REPLACE_WITH_64_HEX_DIGEST
+
+losses:
+  # Project coefficient; Qwen3.5 does not publish an official MTP loss weight.
+  mtp: 0.0
+  hidden_alignment: 0.0
+
+optimizer:
+  max_tokens: 500000000
+
+checkpoint:
+  output_dir: runs/posttrained-sparse-v1
+
+runtime:
+  compile_streaming_loss: true
+  activation_checkpoint_layer_count: null
+  teacher_cpu_offload: false
+  activation_checkpointing_on_alignment_only: false

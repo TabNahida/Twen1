@@ -1,0 +1,3573 @@
+{
+  "kind": "twen_v1_final_validation_report",
+  "schema_version": 1,
+  "training": {
+    "aggregate_compute_tokens_per_second": 4438.636878448301,
+    "aggregate_wall_step_tokens_per_second": 4290.072790113233,
+    "alignment_steps": 20,
+    "checkpoint": {
+      "complete_sha256": "ca4fa16713ef0259cb85d84318254abaebd8e3a1157a7df01432235ecef45bb0",
+      "inventory_file_count": 4,
+      "manifest_sha256": "8f1da11708cc2b4c05cadc11106b9f46484a77c472511e8953d43cb82018ae29",
+      "metadata": {
+        "backend": "torch-distributed-checkpoint",
+        "checkpoint_id": "step-000000000383-milestone-complete",
+        "checkpoint_schema_version": 2,
+        "committed_tokens": 100151046,
+        "created_at": "2026-07-18T16:09:16.111439+00:00",
+        "critical_fingerprint": "ffa5a6060c20b06b76737d54859cdfa7662d885c6ed0b640c37d20bcb95d9381",
+        "data_cursor": {
+          "epoch": 0,
+          "extra": {
+            "committed_tokens": 100151046,
+            "dataset_fingerprint": "b8937234a7036230bdb6e58046858224a2e643d856a6297e358cacee9f03807d",
+            "dataset_size": 24476,
+            "next_global_sample": 24512,
+            "schema_version": 2,
+            "seed": 3407,
+            "shuffle": true,
+            "shuffle_algorithm": "shard-local-affine-v1"
+          },
+          "global_sample_index": 24512,
+          "global_token_index": 100151046,
+          "sample_index": 0,
+          "shard_id": null,
+          "shard_index": 0,
+          "shuffle_seed": 3407,
+          "token_offset": 0,
+          "version": 1
+        },
+        "data_fingerprint": "0607e6d14f8baa503616bdf30166ca9f8149d9465ad865f25ef0e0e84f5cea20",
+        "extra": {
+          "calibration_artifacts": {
+            "adapter_init": "be6693250f23b87a31412f28762441ed422f44653982d5976d9daa500be49d01",
+            "adapter_init_metadata": "080076b34811ecc8dcb27077a89d4808376b6976904a352f6f522db11d71cb3f",
+            "channel_map": "1fc1a967ad1930444d330a961b7da9bf2c9012b91f4db6bc0586d27466dce347",
+            "layer_map": "8de8f6ae594a405918eb4c4b47c8526e7f741eeaf4a96d596ec6cadd86092021"
+          },
+          "data_manifest_sha256": "0607e6d14f8baa503616bdf30166ca9f8149d9465ad865f25ef0e0e84f5cea20",
+          "data_manifests": {
+            "prepared": "artifacts/data/base/manifest.json",
+            "teacher_kd": "artifacts/data/base-kd/manifest.json"
+          },
+          "dependency_lock": "uv.lock",
+          "dependency_lock_sha256": "ead3178cd4c6498942fb4902e8b9cc45f206a94dff1a04a3d684bbc174b35f34",
+          "git_commit": "3eaef84ab516b3b3ebe65896a3e6e44b69be3043",
+          "git_dirty": true,
+          "reason": null,
+          "source_locations": {
+            "backbone": {
+              "local_path": "artifacts/models/qwen3.5-0.8b-base",
+              "model_id": "Qwen/Qwen3.5-0.8B-Base",
+              "revision": "dc7cdfe2ee4154fa7e30f5b51ca41bfa40174e68"
+            },
+            "donor": {
+              "local_path": "artifacts/models/qwen3.5-9b-base",
+              "model_id": "Qwen/Qwen3.5-9B-Base",
+              "revision": "68c46c4b3498877f3ef123c856ecfde50c39f404"
+            },
+            "folded_experts": null,
+            "teacher": {
+              "local_path": "artifacts/models/qwen3.5-9b-base",
+              "model_id": "Qwen/Qwen3.5-9B-Base",
+              "revision": "68c46c4b3498877f3ef123c856ecfde50c39f404"
+            },
+            "tokenizer": {
+              "local_path": "artifacts/models/qwen3.5-0.8b-base",
+              "model_id": "Qwen/Qwen3.5-0.8B-Base",
+              "revision": "dc7cdfe2ee4154fa7e30f5b51ca41bfa40174e68"
+            }
+          },
+          "source_manifests": {
+            "backbone": "5e847be98c2d114d2fb85a67ac77f4eef416e11871c1a5580d1bc52663e2e643",
+            "donor": "ede9a83f7b8ab73842d79b2459262a8b963e215684177a6685b3dc2e2bb803a1",
+            "folded_experts": null,
+            "teacher": "ede9a83f7b8ab73842d79b2459262a8b963e215684177a6685b3dc2e2bb803a1",
+            "tokenizer": "5e847be98c2d114d2fb85a67ac77f4eef416e11871c1a5580d1bc52663e2e643"
+          },
+          "source_tree_sha256": "4775fc259454c410e610c9349bab816a3622dc97b9d4877cff280cf05028947c",
+          "teacher_kd_manifest_sha256": "59c21c910413fd56f947340fa70d0e1eade26173f0a1197e59c8b53fcaa876ae"
+        },
+        "global_batch_tokens": 262144,
+        "global_step": 383,
+        "gradient_accumulation_steps": 64,
+        "kind": "milestone",
+        "rollback_applied": false,
+        "run_id": "base-dense-v1",
+        "saved_world_size": 1,
+        "stage": "dense-oracle",
+        "tag": "complete",
+        "trainer_state": {
+          "committed_tokens": 100151046,
+          "curriculum_position": 1.0,
+          "dynamic_loss_scale": null,
+          "extra": {
+            "last_committed_metrics": {
+              "anchor_kl": 0.035199138789772835,
+              "anchor_kl_loss": 0.035199138789772835,
+              "grad_norm": 0.3245913088321686,
+              "hidden_alignment": 0.0,
+              "loss": 3.2075233719129455,
+              "lr": 2.0000630145169435e-05,
+              "lr/adapters": 2.0000630145169435e-05,
+              "lr/scale": 0.00010000315072584718,
+              "next_lr": 2e-05,
+              "next_lr/adapters": 2e-05,
+              "next_lr/scale": 0.0001,
+              "ntp": 2.9280733776168253,
+              "ntp_loss": 2.9280733776168253,
+              "teacher_kd": 0.27593008041714273,
+              "teacher_kd_loss": 0.27593008041714273,
+              "tokens": 100151046.0,
+              "tokens_this_step": 258249.0
+            }
+          },
+          "global_batch_tokens": 262144,
+          "global_step": 383,
+          "gradient_accumulation_steps": 64,
+          "loss_weights": {
+            "anchor_kl": 0.1,
+            "dense_oracle": 0.0,
+            "dense_oracle_batch_fraction": 0.0,
+            "hidden_alignment": 0.1,
+            "hidden_alignment_batch_fraction": 0.05,
+            "kd_temperature": 2.0,
+            "load_balance": 0.0,
+            "ntp": 1.0,
+            "router_supervision": 0.0,
+            "router_z": 0.0,
+            "teacher_kd": 1.0
+          },
+          "micro_batch_tokens_per_rank": 4096,
+          "micro_step_in_accumulation": 0,
+          "router_stats": {},
+          "run_id": "base-dense-v1",
+          "stage": "dense-oracle",
+          "top_k": null,
+          "version": 1,
+          "world_size": 1
+        }
+      },
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v1/step-000000000383-milestone-complete"
+    },
+    "checkpoint_count": 38,
+    "checkpoint_duration_seconds_max": 24.20478465000633,
+    "checkpoint_duration_seconds_mean": 20.284676917581237,
+    "checkpoint_duration_seconds_total": 770.817722868087,
+    "committed_tokens": 100151046,
+    "compute_step_seconds": 22563.469088061946,
+    "config": {
+      "global_batch_tokens": 262144,
+      "losses": {
+        "anchor_kl": 0.1,
+        "dense_oracle": 0.0,
+        "dense_oracle_batch_fraction": 0.0,
+        "hidden_alignment": 0.1,
+        "hidden_alignment_batch_fraction": 0.05,
+        "kd_temperature": 2.0,
+        "load_balance": 0.0,
+        "ntp": 1.0,
+        "router_supervision": 0.0,
+        "router_z": 0.0,
+        "teacher_kd": 1.0
+      },
+      "max_tokens": 100000000,
+      "micro_batch_size": 1,
+      "mtp_present": false,
+      "mtp_weight": 0.0,
+      "warmup_tokens": 10000000
+    },
+    "data_wait_fraction_of_compute": 0.00019744424298657605,
+    "data_wait_seconds": 4.4550270732434,
+    "end_to_end_tokens_per_second": 4286.038891032218,
+    "first_50_weighted": {
+      "anchor_kl": 0.023117964347981555,
+      "grad_norm": 2.371866365827186,
+      "loss": 2.9422548942955045,
+      "ntp": 2.465953000634937,
+      "teacher_kd": 0.4719967392958769
+    },
+    "gpu_peak_allocated_gib": 22.38803243637085,
+    "gpu_peak_reserved_gib": 22.654296875,
+    "grad_clip_threshold": 1.0,
+    "grad_norm_max": 22.62726402282715,
+    "grad_norm_over_clip_threshold_fraction": 0.6840731070496083,
+    "grad_norm_over_clip_threshold_steps": 262,
+    "last_50_weighted": {
+      "anchor_kl": 0.06540428864027843,
+      "grad_norm": 1.090008249996737,
+      "loss": 2.8513978659754753,
+      "ntp": 2.4579706973500692,
+      "teacher_kd": 0.3849072686766558
+    },
+    "ordinary_steps": 363,
+    "run_id": "base-dense-v1",
+    "stage": "dense-oracle",
+    "steps": 383,
+    "tokens_from_step_sum": 100151046,
+    "track": "base",
+    "wall_duration_seconds": 23366.807569,
+    "wall_step_seconds": 23344.836066838994
+  },
+  "validation": {
+    "acceptance": {
+      "dense_gap_gate_pass": true,
+      "teacher_gap_closed_fraction": 0.10368036953586789
+    },
+    "checkpoint_inference_lineage": {
+      "archived_config_path": "/media/data1/Project/AI/Twen1/runs/base-dense-v1/resolved_config.yaml",
+      "archived_config_sha256": "2d8e4c3f66bff429cdd9a28dd4389899d11ba368d149f6392ffacfd47f9d142f",
+      "calibration_artifacts": {
+        "adapter_init": "be6693250f23b87a31412f28762441ed422f44653982d5976d9daa500be49d01",
+        "adapter_init_metadata": "080076b34811ecc8dcb27077a89d4808376b6976904a352f6f522db11d71cb3f",
+        "channel_map": "1fc1a967ad1930444d330a961b7da9bf2c9012b91f4db6bc0586d27466dce347",
+        "layer_map": "8de8f6ae594a405918eb4c4b47c8526e7f741eeaf4a96d596ec6cadd86092021"
+      },
+      "current_preflight_fingerprint": "2f52656271b8e959e56ec21ecaeb0f0837e2dbd925373a3e6b5446a2f0a56085",
+      "current_source_tree_sha256": "8197ce12d1d553ec94ed28716388b69b609bd0e2b5626c9c2c275bf823912f17",
+      "exact_training_fingerprint_match": false,
+      "loss_weights": {
+        "anchor_kl": 0.1,
+        "dense_oracle": 0.0,
+        "dense_oracle_batch_fraction": 0.0,
+        "hidden_alignment": 0.1,
+        "hidden_alignment_batch_fraction": 0.05,
+        "kd_temperature": 2.0,
+        "load_balance": 0.0,
+        "ntp": 1.0,
+        "router_supervision": 0.0,
+        "router_z": 0.0,
+        "teacher_kd": 1.0
+      },
+      "mode": "forward_only_lineage_compatible_not_exact_resume",
+      "saved_critical_fingerprint": "ffa5a6060c20b06b76737d54859cdfa7662d885c6ed0b640c37d20bcb95d9381",
+      "saved_source_tree_sha256": "4775fc259454c410e610c9349bab816a3622dc97b9d4877cff280cf05028947c",
+      "source_manifests": {
+        "backbone": "5e847be98c2d114d2fb85a67ac77f4eef416e11871c1a5580d1bc52663e2e643",
+        "donor": "ede9a83f7b8ab73842d79b2459262a8b963e215684177a6685b3dc2e2bb803a1",
+        "folded_experts": null,
+        "teacher": "ede9a83f7b8ab73842d79b2459262a8b963e215684177a6685b3dc2e2bb803a1",
+        "tokenizer": "5e847be98c2d114d2fb85a67ac77f4eef416e11871c1a5580d1bc52663e2e643"
+      },
+      "source_tree_match": false,
+      "top_k": null
+    },
+    "checkpoint_state": {
+      "committed_tokens": 100151046,
+      "global_step": 383,
+      "kind": "milestone",
+      "tag": "complete"
+    },
+    "data_governance": {
+      "audits": {
+        "accepted_row_provenance_ledger": "complete",
+        "basic_pii_regex_reject": "complete",
+        "cdn_etag_as_lfs_sha256": "not_assumed",
+        "code_license_allowlist": "complete",
+        "code_secret_regex_scan": "complete",
+        "cross_source_exact_dedup": "complete_deterministic_first_wins",
+        "cross_source_near_dedup": "pending",
+        "full_contextual_pii_scan": "pending",
+        "immutable_hub_commit_url_and_lfs_identity_lock": "complete",
+        "lfs_sha256": "locked_from_pinned_hub_sibling_metadata",
+        "output_sha256": "complete",
+        "project_benchmark_13gram_scan": "pending",
+        "remote_response_size_match": "complete",
+        "stable_train_validation_split": "complete"
+      },
+      "lineage_kind": "authenticated_extracted_corpus",
+      "pending_audits": [
+        "cross_source_near_dedup",
+        "full_contextual_pii_scan",
+        "project_benchmark_13gram_scan"
+      ],
+      "ready_for_training": false,
+      "research_only": true,
+      "role": "validation"
+    },
+    "identity": {
+      "complete_sha256": "67188e6c088ea2f8a8ac20d39bbfe4f47bf8c83e60ea3eaf8cf788904318431a",
+      "manifest_sha256": "00bdd9a7211cc278f9eaa4afaceb715241d2af6005a6df8ea525fb683b680d9b",
+      "path": "/media/data1/Project/AI/Twen1/artifacts/evaluations/base-dense-v1-final-validation",
+      "plan_sha256": "cab35495461902531e9c1440b04630bac6cbf65fb5b6cc591aac1801ace5f9b9"
+    },
+    "prepared_manifest": {
+      "dataset_fingerprint": "6839d5aefb3b5b8f960e7da1b54bd40c2882bcb915954e727f2480252d4cdc79",
+      "input_token_count": 20014392,
+      "path": "/media/data1/Project/AI/Twen1/artifacts/data/base-validation/manifest.json",
+      "sequence_count": 4947,
+      "sha256": "4d3877bfaf4e01551d41913e11d37db08c6097b513ac94ae4a63b8a640b68e7f",
+      "shard_count": 120
+    },
+    "roles": {
+      "candidate": {
+        "mean_nll": 2.542524845436771,
+        "nll_sum": 50874511.055900574,
+        "perplexity": 12.711725629725338,
+        "predicted_tokens": 20009445,
+        "sequences": 4947,
+        "timing": {
+          "completed_unix_seconds": 1784433225.0065644,
+          "completion_evidence": "authenticated COMPLETE.completed_unix_seconds",
+          "duration_seconds": 1364.612004995346,
+          "predicted_tokens_per_second": 14663.101985584717,
+          "start_evidence": "SHARD_STATE filesystem mtime",
+          "started_unix_seconds": 1784431860.3945594
+        }
+      },
+      "shared": {
+        "mean_nll": 2.5975848838573468,
+        "nll_sum": 51976231.86637497,
+        "perplexity": 13.431260777892932,
+        "predicted_tokens": 20009445,
+        "sequences": 4947,
+        "timing": {
+          "completed_unix_seconds": 1784433823.9205632,
+          "completion_evidence": "authenticated COMPLETE.completed_unix_seconds",
+          "duration_seconds": 598.8450031280518,
+          "predicted_tokens_per_second": 33413.39561235574,
+          "start_evidence": "SHARD_STATE filesystem mtime",
+          "started_unix_seconds": 1784433225.07556
+        }
+      },
+      "teacher": {
+        "mean_nll": 2.066529307309388,
+        "nll_sum": 41350104.5154953,
+        "perplexity": 7.897366167060709,
+        "predicted_tokens": 20009445,
+        "sequences": 4947,
+        "timing": {
+          "completed_unix_seconds": 1784436157.54209,
+          "completion_evidence": "authenticated COMPLETE.completed_unix_seconds",
+          "duration_seconds": 2129.97273850441,
+          "predicted_tokens_per_second": 9394.225868848402,
+          "start_evidence": "SHARD_STATE filesystem mtime",
+          "started_unix_seconds": 1784434027.5693514
+        }
+      }
+    },
+    "runtime": {
+      "compute_capability": "12.0",
+      "cuda_home": "/usr/local/cuda-13.2",
+      "cuda_version": "13.0",
+      "device": "cuda:0",
+      "device_name": "NVIDIA GeForce RTX 5090",
+      "dtype": "bfloat16",
+      "fla_tilelang": "0",
+      "torch_version": "2.11.0+cu130"
+    },
+    "runtime_gpu_sample": {
+      "path": "/media/data1/Project/AI/Twen1/artifacts/evaluations/base-dense-v1-final-validation/runtime-gpu-sample.csv",
+      "pstates": {
+        "P1": 25
+      },
+      "sample_count": 25,
+      "samples": [
+        {
+          "gpu_utilization_percent": 94.0,
+          "memory_clock_mhz": 13801.0,
+          "memory_free_mib": 7993.0,
+          "memory_used_mib": 24195.0,
+          "memory_utilization_percent": 25.0,
+          "power_draw_w": 441.65,
+          "power_limit_w": 600.0,
+          "pstate": "P1",
+          "sample": 0,
+          "sm_clock_mhz": 2662.0,
+          "temperature_c": 70.0,
+          "timestamp": "2026/07/19 11:38:56.125"
+        },
+        {
+          "gpu_utilization_percent": 71.0,
+          "memory_clock_mhz": 13801.0,
+          "memory_free_mib": 7993.0,
+          "memory_used_mib": 24195.0,
+          "memory_utilization_percent": 24.0,
+          "power_draw_w": 442.81,
+          "power_limit_w": 600.0,
+          "pstate": "P1",
+          "sample": 1,
+          "sm_clock_mhz": 2670.0,
+          "temperature_c": 69.0,
+          "timestamp": "2026/07/19 11:38:57.128"
+        },
+        {
+          "gpu_utilization_percent": 71.0,
+          "memory_clock_mhz": 13801.0,
+          "memory_free_mib": 7993.0,
+          "memory_used_mib": 24195.0,
+          "memory_utilization_percent": 24.0,
+          "power_draw_w": 446.16,
+          "power_limit_w": 600.0,
+          "pstate": "P1",
+          "sample": 2,
+          "sm_clock_mhz": 2715.0,
+          "temperature_c": 72.0,
+          "timestamp": "2026/07/19 11:38:58.130"
+        },
+        {
+          "gpu_utilization_percent": 99.0,
+          "memory_clock_mhz": 13801.0,
+          "memory_free_mib": 7993.0,
+          "memory_used_mib": 24195.0,
+          "memory_utilization_percent": 29.0,
+          "power_draw_w": 460.88,
+          "power_limit_w": 600.0,
+          "pstate": "P1",
+          "sample": 3,
+          "sm_clock_mhz": 2670.0,
+          "temperature_c": 71.0,
+          "timestamp": "2026/07/19 11:38:59.131"
+        },
+        {
+          "gpu_utilization_percent": 71.0,
+          "memory_clock_mhz": 13801.0,
+          "memory_free_mib": 7993.0,
+          "memory_used_mib": 24195.0,
+          "memory_utilization_percent": 22.0,
+          "power_draw_w": 457.16,
+          "power_limit_w": 600.0,
+          "pstate": "P1",
+          "sample": 4,
+          "sm_clock_mhz": 2670.0,
+          "temperature_c": 64.0,
+          "timestamp": "2026/07/19 11:39:00.132"
+        },
+        {
+          "gpu_utilization_percent": 71.0,
+          "memory_clock_mhz": 13801.0,
+          "memory_free_mib": 7993.0,
+          "memory_used_mib": 24195.0,
+          "memory_utilization_percent": 24.0,
+          "power_draw_w": 446.44,
+          "power_limit_w": 600.0,
+          "pstate": "P1",
+          "sample": 5,
+          "sm_clock_mhz": 2692.0,
+          "temperature_c": 72.0,
+          "timestamp": "2026/07/19 11:39:01.133"
+        },
+        {
+          "gpu_utilization_percent": 92.0,
+          "memory_clock_mhz": 13801.0,
+          "memory_free_mib": 7993.0,
+          "memory_used_mib": 24195.0,
+          "memory_utilization_percent": 30.0,
+          "power_draw_w": 440.11,
+          "power_limit_w": 600.0,
+          "pstate": "P1",
+          "sample": 6,
+          "sm_clock_mhz": 2655.0,
+          "temperature_c": 71.0,
+          "timestamp": "2026/07/19 11:39:02.134"
+        },
+        {
+          "gpu_utilization_percent": 71.0,
+          "memory_clock_mhz": 13801.0,
+          "memory_free_mib": 7993.0,
+          "memory_used_mib": 24195.0,
+          "memory_utilization_percent": 24.0,
+          "power_draw_w": 449.03,
+          "power_limit_w": 600.0,
+          "pstate": "P1",
+          "sample": 7,
+          "sm_clock_mhz": 2670.0,
+          "temperature_c": 65.0,
+          "timestamp": "2026/07/19 11:39:03.136"
+        },
+        {
+          "gpu_utilization_percent": 72.0,
+          "memory_clock_mhz": 13801.0,
+          "memory_free_mib": 7993.0,
+          "memory_used_mib": 24195.0,
+          "memory_utilization_percent": 25.0,
+          "power_draw_w": 441.97,
+          "power_limit_w": 600.0,
+          "pstate": "P1",
+          "sample": 8,
+          "sm_clock_mhz": 2662.0,
+          "temperature_c": 72.0,
+          "timestamp": "2026/07/19 11:39:04.138"
+        },
+        {
+          "gpu_utilization_percent": 99.0,
+          "memory_clock_mhz": 13801.0,
+          "memory_free_mib": 7993.0,
+          "memory_used_mib": 24195.0,
+          "memory_utilization_percent": 31.0,
+          "power_draw_w": 443.65,
+          "power_limit_w": 600.0,
+          "pstate": "P1",
+          "sample": 9,
+          "sm_clock_mhz": 2662.0,
+          "temperature_c": 71.0,
+          "timestamp": "2026/07/19 11:39:05.139"
+        },
+        {
+          "gpu_utilization_percent": 77.0,
+          "memory_clock_mhz": 13801.0,
+          "memory_free_mib": 7993.0,
+          "memory_used_mib": 24195.0,
+          "memory_utilization_percent": 21.0,
+          "power_draw_w": 453.57,
+          "power_limit_w": 600.0,
+          "pstate": "P1",
+          "sample": 10,
+          "sm_clock_mhz": 2670.0,
+          "temperature_c": 69.0,
+          "timestamp": "2026/07/19 11:39:06.140"
+        },
+        {
+          "gpu_utilization_percent": 76.0,
+          "memory_clock_mhz": 13801.0,
+          "memory_free_mib": 7993.0,
+          "memory_used_mib": 24195.0,
+          "memory_utilization_percent": 26.0,
+          "power_draw_w": 457.79,
+          "power_limit_w": 600.0,
+          "pstate": "P1",
+          "sample": 11,
+          "sm_clock_mhz": 2670.0,
+          "temperature_c": 69.0,
+          "timestamp": "2026/07/19 11:39:07.142"
+        },
+        {
+          "gpu_utilization_percent": 94.0,
+          "memory_clock_mhz": 13801.0,
+          "memory_free_mib": 7993.0,
+          "memory_used_mib": 24195.0,
+          "memory_utilization_percent": 31.0,
+          "power_draw_w": 320.77,
+          "power_limit_w": 600.0,
+          "pstate": "P1",
+          "sample": 12,
+          "sm_clock_mhz": 2677.0,
+          "temperature_c": 69.0,
+          "timestamp": "2026/07/19 11:39:08.143"
+        },
+        {
+          "gpu_utilization_percent": 80.0,
+          "memory_clock_mhz": 13801.0,
+          "memory_free_mib": 7993.0,
+          "memory_used_mib": 24195.0,
+          "memory_utilization_percent": 22.0,
+          "power_draw_w": 447.8,
+          "power_limit_w": 600.0,
+          "pstate": "P1",
+          "sample": 13,
+          "sm_clock_mhz": 2670.0,
+          "temperature_c": 69.0,
+          "timestamp": "2026/07/19 11:39:09.145"
+        },
+        {
+          "gpu_utilization_percent": 79.0,
+          "memory_clock_mhz": 13801.0,
+          "memory_free_mib": 7993.0,
+          "memory_used_mib": 24195.0,
+          "memory_utilization_percent": 26.0,
+          "power_draw_w": 464.83,
+          "power_limit_w": 600.0,
+          "pstate": "P1",
+          "sample": 14,
+          "sm_clock_mhz": 2670.0,
+          "temperature_c": 66.0,
+          "timestamp": "2026/07/19 11:39:10.146"
+        },
+        {
+          "gpu_utilization_percent": 72.0,
+          "memory_clock_mhz": 13801.0,
+          "memory_free_mib": 7993.0,
+          "memory_used_mib": 24195.0,
+          "memory_utilization_percent": 25.0,
+          "power_draw_w": 460.42,
+          "power_limit_w": 600.0,
+          "pstate": "P1",
+          "sample": 15,
+          "sm_clock_mhz": 2730.0,
+          "temperature_c": 73.0,
+          "timestamp": "2026/07/19 11:39:11.148"
+        },
+        {
+          "gpu_utilization_percent": 87.0,
+          "memory_clock_mhz": 13801.0,
+          "memory_free_mib": 7993.0,
+          "memory_used_mib": 24195.0,
+          "memory_utilization_percent": 29.0,
+          "power_draw_w": 434.37,
+          "power_limit_w": 600.0,
+          "pstate": "P1",
+          "sample": 16,
+          "sm_clock_mhz": 2662.0,
+          "temperature_c": 72.0,
+          "timestamp": "2026/07/19 11:39:12.150"
+        },
+        {
+          "gpu_utilization_percent": 71.0,
+          "memory_clock_mhz": 13801.0,
+          "memory_free_mib": 7993.0,
+          "memory_used_mib": 24195.0,
+          "memory_utilization_percent": 21.0,
+          "power_draw_w": 447.59,
+          "power_limit_w": 600.0,
+          "pstate": "P1",
+          "sample": 17,
+          "sm_clock_mhz": 2670.0,
+          "temperature_c": 64.0,
+          "timestamp": "2026/07/19 11:39:13.151"
+        },
+        {
+          "gpu_utilization_percent": 73.0,
+          "memory_clock_mhz": 13801.0,
+          "memory_free_mib": 7993.0,
+          "memory_used_mib": 24195.0,
+          "memory_utilization_percent": 25.0,
+          "power_draw_w": 463.25,
+          "power_limit_w": 600.0,
+          "pstate": "P1",
+          "sample": 18,
+          "sm_clock_mhz": 2730.0,
+          "temperature_c": 71.0,
+          "timestamp": "2026/07/19 11:39:14.153"
+        },
+        {
+          "gpu_utilization_percent": 75.0,
+          "memory_clock_mhz": 13801.0,
+          "memory_free_mib": 7993.0,
+          "memory_used_mib": 24195.0,
+          "memory_utilization_percent": 26.0,
+          "power_draw_w": 454.0,
+          "power_limit_w": 600.0,
+          "pstate": "P1",
+          "sample": 19,
+          "sm_clock_mhz": 2707.0,
+          "temperature_c": 72.0,
+          "timestamp": "2026/07/19 11:39:15.154"
+        },
+        {
+          "gpu_utilization_percent": 98.0,
+          "memory_clock_mhz": 13801.0,
+          "memory_free_mib": 7993.0,
+          "memory_used_mib": 24195.0,
+          "memory_utilization_percent": 30.0,
+          "power_draw_w": 455.26,
+          "power_limit_w": 600.0,
+          "pstate": "P1",
+          "sample": 20,
+          "sm_clock_mhz": 2662.0,
+          "temperature_c": 71.0,
+          "timestamp": "2026/07/19 11:39:16.155"
+        },
+        {
+          "gpu_utilization_percent": 72.0,
+          "memory_clock_mhz": 13801.0,
+          "memory_free_mib": 7993.0,
+          "memory_used_mib": 24195.0,
+          "memory_utilization_percent": 25.0,
+          "power_draw_w": 454.79,
+          "power_limit_w": 600.0,
+          "pstate": "P1",
+          "sample": 21,
+          "sm_clock_mhz": 2662.0,
+          "temperature_c": 65.0,
+          "timestamp": "2026/07/19 11:39:17.156"
+        },
+        {
+          "gpu_utilization_percent": 71.0,
+          "memory_clock_mhz": 13801.0,
+          "memory_free_mib": 7993.0,
+          "memory_used_mib": 24195.0,
+          "memory_utilization_percent": 24.0,
+          "power_draw_w": 440.71,
+          "power_limit_w": 600.0,
+          "pstate": "P1",
+          "sample": 22,
+          "sm_clock_mhz": 2662.0,
+          "temperature_c": 72.0,
+          "timestamp": "2026/07/19 11:39:18.158"
+        },
+        {
+          "gpu_utilization_percent": 98.0,
+          "memory_clock_mhz": 13801.0,
+          "memory_free_mib": 7993.0,
+          "memory_used_mib": 24195.0,
+          "memory_utilization_percent": 28.0,
+          "power_draw_w": 435.64,
+          "power_limit_w": 600.0,
+          "pstate": "P1",
+          "sample": 23,
+          "sm_clock_mhz": 2670.0,
+          "temperature_c": 71.0,
+          "timestamp": "2026/07/19 11:39:19.159"
+        },
+        {
+          "gpu_utilization_percent": 18.0,
+          "memory_clock_mhz": 13801.0,
+          "memory_free_mib": 7993.0,
+          "memory_used_mib": 24195.0,
+          "memory_utilization_percent": 10.0,
+          "power_draw_w": 377.14,
+          "power_limit_w": 600.0,
+          "pstate": "P1",
+          "sample": 24,
+          "sm_clock_mhz": 2670.0,
+          "temperature_c": 66.0,
+          "timestamp": "2026/07/19 11:39:20.160"
+        }
+      ],
+      "sha256": "01420465a766a8ca46d5ca54e7bbd1065c178a983708daa918ccf1b320932ffb",
+      "statistics": {
+        "gpu_utilization_percent": {
+          "max": 99.0,
+          "mean": 78.08,
+          "min": 18.0
+        },
+        "memory_clock_mhz": {
+          "max": 13801.0,
+          "mean": 13801.0,
+          "min": 13801.0
+        },
+        "memory_free_mib": {
+          "max": 7993.0,
+          "mean": 7993.0,
+          "min": 7993.0
+        },
+        "memory_used_mib": {
+          "max": 24195.0,
+          "mean": 24195.0,
+          "min": 24195.0
+        },
+        "memory_utilization_percent": {
+          "max": 31.0,
+          "mean": 25.08,
+          "min": 10.0
+        },
+        "power_draw_w": {
+          "max": 464.83,
+          "mean": 441.51160000000004,
+          "min": 320.77
+        },
+        "power_limit_w": {
+          "max": 600.0,
+          "mean": 600.0,
+          "min": 600.0
+        },
+        "sm_clock_mhz": {
+          "max": 2730.0,
+          "mean": 2676.4,
+          "min": 2655.0
+        },
+        "temperature_c": {
+          "max": 73.0,
+          "mean": 69.44,
+          "min": 64.0
+        }
+      }
+    },
+    "shards": [
+      {
+        "candidate_over_shared_nll_improvement": 0.021067524248893577,
+        "index": 0,
+        "input_tokens": 206043,
+        "roles": {
+          "candidate": {
+            "mean_nll": 3.4122865059023075,
+            "predicted_tokens": 205992
+          },
+          "shared": {
+            "mean_nll": 3.433354030151201,
+            "predicted_tokens": 205992
+          },
+          "teacher": {
+            "mean_nll": 2.668716083994615,
+            "predicted_tokens": 205992
+          }
+        },
+        "sequences": 51,
+        "shard_id": "shard-000000",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.02577624016935287,
+        "index": 1,
+        "input_tokens": 164649,
+        "roles": {
+          "candidate": {
+            "mean_nll": 3.5849299245451696,
+            "predicted_tokens": 164608
+          },
+          "shared": {
+            "mean_nll": 3.6107061647145224,
+            "predicted_tokens": 164608
+          },
+          "teacher": {
+            "mean_nll": 2.8686397368577925,
+            "predicted_tokens": 164608
+          }
+        },
+        "sequences": 41,
+        "shard_id": "shard-000001",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.024573925424689502,
+        "index": 2,
+        "input_tokens": 139442,
+        "roles": {
+          "candidate": {
+            "mean_nll": 3.721059578683616,
+            "predicted_tokens": 139407
+          },
+          "shared": {
+            "mean_nll": 3.7456335041083055,
+            "predicted_tokens": 139407
+          },
+          "teacher": {
+            "mean_nll": 3.022211044359574,
+            "predicted_tokens": 139407
+          }
+        },
+        "sequences": 35,
+        "shard_id": "shard-000002",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.02224024550895587,
+        "index": 3,
+        "input_tokens": 194414,
+        "roles": {
+          "candidate": {
+            "mean_nll": 3.569918071065831,
+            "predicted_tokens": 194366
+          },
+          "shared": {
+            "mean_nll": 3.592158316574787,
+            "predicted_tokens": 194366
+          },
+          "teacher": {
+            "mean_nll": 2.872496128538588,
+            "predicted_tokens": 194366
+          }
+        },
+        "sequences": 48,
+        "shard_id": "shard-000003",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.012961832671167794,
+        "index": 4,
+        "input_tokens": 182936,
+        "roles": {
+          "candidate": {
+            "mean_nll": 3.5021841662819315,
+            "predicted_tokens": 182891
+          },
+          "shared": {
+            "mean_nll": 3.5151459989530993,
+            "predicted_tokens": 182891
+          },
+          "teacher": {
+            "mean_nll": 2.7794584989744573,
+            "predicted_tokens": 182891
+          }
+        },
+        "sequences": 45,
+        "shard_id": "shard-000004",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.023098922057945614,
+        "index": 5,
+        "input_tokens": 152320,
+        "roles": {
+          "candidate": {
+            "mean_nll": 3.362418609477657,
+            "predicted_tokens": 152282
+          },
+          "shared": {
+            "mean_nll": 3.3855175315356028,
+            "predicted_tokens": 152282
+          },
+          "teacher": {
+            "mean_nll": 2.7196684676381135,
+            "predicted_tokens": 152282
+          }
+        },
+        "sequences": 38,
+        "shard_id": "shard-000005",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.014395401062753166,
+        "index": 6,
+        "input_tokens": 178872,
+        "roles": {
+          "candidate": {
+            "mean_nll": 3.5863280201506473,
+            "predicted_tokens": 178828
+          },
+          "shared": {
+            "mean_nll": 3.6007234212134005,
+            "predicted_tokens": 178828
+          },
+          "teacher": {
+            "mean_nll": 2.8714160853061323,
+            "predicted_tokens": 178828
+          }
+        },
+        "sequences": 44,
+        "shard_id": "shard-000006",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.020038165484017156,
+        "index": 7,
+        "input_tokens": 201227,
+        "roles": {
+          "candidate": {
+            "mean_nll": 3.4089194744689224,
+            "predicted_tokens": 201177
+          },
+          "shared": {
+            "mean_nll": 3.4289576399529396,
+            "predicted_tokens": 201177
+          },
+          "teacher": {
+            "mean_nll": 2.6775320039419577,
+            "predicted_tokens": 201177
+          }
+        },
+        "sequences": 50,
+        "shard_id": "shard-000007",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.01974097071710945,
+        "index": 8,
+        "input_tokens": 175602,
+        "roles": {
+          "candidate": {
+            "mean_nll": 3.6016986944203944,
+            "predicted_tokens": 175559
+          },
+          "shared": {
+            "mean_nll": 3.621439665137504,
+            "predicted_tokens": 175559
+          },
+          "teacher": {
+            "mean_nll": 2.898902243156147,
+            "predicted_tokens": 175559
+          }
+        },
+        "sequences": 43,
+        "shard_id": "shard-000008",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.023345564423434606,
+        "index": 9,
+        "input_tokens": 137061,
+        "roles": {
+          "candidate": {
+            "mean_nll": 3.6453455141368125,
+            "predicted_tokens": 137027
+          },
+          "shared": {
+            "mean_nll": 3.668691078560247,
+            "predicted_tokens": 137027
+          },
+          "teacher": {
+            "mean_nll": 2.9609542265735036,
+            "predicted_tokens": 137027
+          }
+        },
+        "sequences": 34,
+        "shard_id": "shard-000009",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.01017179650677269,
+        "index": 10,
+        "input_tokens": 151523,
+        "roles": {
+          "candidate": {
+            "mean_nll": 3.4936459938954756,
+            "predicted_tokens": 151486
+          },
+          "shared": {
+            "mean_nll": 3.5038177904022483,
+            "predicted_tokens": 151486
+          },
+          "teacher": {
+            "mean_nll": 2.7979412211565755,
+            "predicted_tokens": 151486
+          }
+        },
+        "sequences": 37,
+        "shard_id": "shard-000010",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.25265621917902426,
+        "index": 11,
+        "input_tokens": 176371,
+        "roles": {
+          "candidate": {
+            "mean_nll": 4.783021650232283,
+            "predicted_tokens": 176327
+          },
+          "shared": {
+            "mean_nll": 5.035677869411307,
+            "predicted_tokens": 176327
+          },
+          "teacher": {
+            "mean_nll": 4.352689149301617,
+            "predicted_tokens": 176327
+          }
+        },
+        "sequences": 44,
+        "shard_id": "shard-000011",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.2598094800428541,
+        "index": 12,
+        "input_tokens": 156850,
+        "roles": {
+          "candidate": {
+            "mean_nll": 4.746107612727264,
+            "predicted_tokens": 156811
+          },
+          "shared": {
+            "mean_nll": 5.005917092770118,
+            "predicted_tokens": 156811
+          },
+          "teacher": {
+            "mean_nll": 4.32435669845985,
+            "predicted_tokens": 156811
+          }
+        },
+        "sequences": 39,
+        "shard_id": "shard-000012",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.28540501309536204,
+        "index": 13,
+        "input_tokens": 144171,
+        "roles": {
+          "candidate": {
+            "mean_nll": 4.736573574957939,
+            "predicted_tokens": 144135
+          },
+          "shared": {
+            "mean_nll": 5.021978588053301,
+            "predicted_tokens": 144135
+          },
+          "teacher": {
+            "mean_nll": 4.333426870181384,
+            "predicted_tokens": 144135
+          }
+        },
+        "sequences": 36,
+        "shard_id": "shard-000013",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.26371051224983244,
+        "index": 14,
+        "input_tokens": 166579,
+        "roles": {
+          "candidate": {
+            "mean_nll": 4.600531209703266,
+            "predicted_tokens": 166538
+          },
+          "shared": {
+            "mean_nll": 4.864241721953098,
+            "predicted_tokens": 166538
+          },
+          "teacher": {
+            "mean_nll": 4.200867767181889,
+            "predicted_tokens": 166538
+          }
+        },
+        "sequences": 41,
+        "shard_id": "shard-000014",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.2539653042749004,
+        "index": 15,
+        "input_tokens": 162728,
+        "roles": {
+          "candidate": {
+            "mean_nll": 4.682567005172477,
+            "predicted_tokens": 162688
+          },
+          "shared": {
+            "mean_nll": 4.936532309447378,
+            "predicted_tokens": 162688
+          },
+          "teacher": {
+            "mean_nll": 4.235851266832449,
+            "predicted_tokens": 162688
+          }
+        },
+        "sequences": 40,
+        "shard_id": "shard-000015",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.2807315135506041,
+        "index": 16,
+        "input_tokens": 182440,
+        "roles": {
+          "candidate": {
+            "mean_nll": 4.667860200817594,
+            "predicted_tokens": 182395
+          },
+          "shared": {
+            "mean_nll": 4.948591714368198,
+            "predicted_tokens": 182395
+          },
+          "teacher": {
+            "mean_nll": 4.255216603645248,
+            "predicted_tokens": 182395
+          }
+        },
+        "sequences": 45,
+        "shard_id": "shard-000016",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.2543264710222406,
+        "index": 17,
+        "input_tokens": 155853,
+        "roles": {
+          "candidate": {
+            "mean_nll": 4.592924241114907,
+            "predicted_tokens": 155814
+          },
+          "shared": {
+            "mean_nll": 4.847250712137147,
+            "predicted_tokens": 155814
+          },
+          "teacher": {
+            "mean_nll": 4.057325312896857,
+            "predicted_tokens": 155814
+          }
+        },
+        "sequences": 39,
+        "shard_id": "shard-000017",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.27193014775178614,
+        "index": 18,
+        "input_tokens": 162519,
+        "roles": {
+          "candidate": {
+            "mean_nll": 4.577968321098419,
+            "predicted_tokens": 162479
+          },
+          "shared": {
+            "mean_nll": 4.849898468850205,
+            "predicted_tokens": 162479
+          },
+          "teacher": {
+            "mean_nll": 4.065607865574166,
+            "predicted_tokens": 162479
+          }
+        },
+        "sequences": 40,
+        "shard_id": "shard-000018",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.2746254699794566,
+        "index": 19,
+        "input_tokens": 154832,
+        "roles": {
+          "candidate": {
+            "mean_nll": 4.678623850993094,
+            "predicted_tokens": 154794
+          },
+          "shared": {
+            "mean_nll": 4.95324932097255,
+            "predicted_tokens": 154794
+          },
+          "teacher": {
+            "mean_nll": 4.1634060264670305,
+            "predicted_tokens": 154794
+          }
+        },
+        "sequences": 38,
+        "shard_id": "shard-000019",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.2810757827444723,
+        "index": 20,
+        "input_tokens": 165233,
+        "roles": {
+          "candidate": {
+            "mean_nll": 4.655295254560792,
+            "predicted_tokens": 165192
+          },
+          "shared": {
+            "mean_nll": 4.936371037305264,
+            "predicted_tokens": 165192
+          },
+          "teacher": {
+            "mean_nll": 4.14651604978979,
+            "predicted_tokens": 165192
+          }
+        },
+        "sequences": 41,
+        "shard_id": "shard-000020",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.24689237698176392,
+        "index": 21,
+        "input_tokens": 176540,
+        "roles": {
+          "candidate": {
+            "mean_nll": 4.533722788368345,
+            "predicted_tokens": 176496
+          },
+          "shared": {
+            "mean_nll": 4.780615165350109,
+            "predicted_tokens": 176496
+          },
+          "teacher": {
+            "mean_nll": 4.00645642647576,
+            "predicted_tokens": 176496
+          }
+        },
+        "sequences": 44,
+        "shard_id": "shard-000021",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.25769692597342786,
+        "index": 22,
+        "input_tokens": 190097,
+        "roles": {
+          "candidate": {
+            "mean_nll": 4.631144379151868,
+            "predicted_tokens": 190050
+          },
+          "shared": {
+            "mean_nll": 4.888841305125296,
+            "predicted_tokens": 190050
+          },
+          "teacher": {
+            "mean_nll": 4.108083052260096,
+            "predicted_tokens": 190050
+          }
+        },
+        "sequences": 47,
+        "shard_id": "shard-000022",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.2682566002036282,
+        "index": 23,
+        "input_tokens": 158661,
+        "roles": {
+          "candidate": {
+            "mean_nll": 4.634111178767369,
+            "predicted_tokens": 158622
+          },
+          "shared": {
+            "mean_nll": 4.902367778970997,
+            "predicted_tokens": 158622
+          },
+          "teacher": {
+            "mean_nll": 4.102888735435107,
+            "predicted_tokens": 158622
+          }
+        },
+        "sequences": 39,
+        "shard_id": "shard-000023",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.2713511949022358,
+        "index": 24,
+        "input_tokens": 152931,
+        "roles": {
+          "candidate": {
+            "mean_nll": 4.616529570772125,
+            "predicted_tokens": 152893
+          },
+          "shared": {
+            "mean_nll": 4.88788076567436,
+            "predicted_tokens": 152893
+          },
+          "teacher": {
+            "mean_nll": 4.107021082809955,
+            "predicted_tokens": 152893
+          }
+        },
+        "sequences": 38,
+        "shard_id": "shard-000024",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.2780203448678975,
+        "index": 25,
+        "input_tokens": 170591,
+        "roles": {
+          "candidate": {
+            "mean_nll": 4.5993740137548444,
+            "predicted_tokens": 170549
+          },
+          "shared": {
+            "mean_nll": 4.877394358622742,
+            "predicted_tokens": 170549
+          },
+          "teacher": {
+            "mean_nll": 4.100028145549446,
+            "predicted_tokens": 170549
+          }
+        },
+        "sequences": 42,
+        "shard_id": "shard-000025",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.25317614329592963,
+        "index": 26,
+        "input_tokens": 180527,
+        "roles": {
+          "candidate": {
+            "mean_nll": 4.482357222685079,
+            "predicted_tokens": 180482
+          },
+          "shared": {
+            "mean_nll": 4.735533365981008,
+            "predicted_tokens": 180482
+          },
+          "teacher": {
+            "mean_nll": 3.968357029663536,
+            "predicted_tokens": 180482
+          }
+        },
+        "sequences": 45,
+        "shard_id": "shard-000026",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.23683202870038667,
+        "index": 27,
+        "input_tokens": 160910,
+        "roles": {
+          "candidate": {
+            "mean_nll": 4.526691589336498,
+            "predicted_tokens": 160870
+          },
+          "shared": {
+            "mean_nll": 4.763523618036885,
+            "predicted_tokens": 160870
+          },
+          "teacher": {
+            "mean_nll": 3.9883684042724714,
+            "predicted_tokens": 160870
+          }
+        },
+        "sequences": 40,
+        "shard_id": "shard-000027",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.25343798949111473,
+        "index": 28,
+        "input_tokens": 193768,
+        "roles": {
+          "candidate": {
+            "mean_nll": 4.4998628441863575,
+            "predicted_tokens": 193720
+          },
+          "shared": {
+            "mean_nll": 4.753300833677472,
+            "predicted_tokens": 193720
+          },
+          "teacher": {
+            "mean_nll": 3.9644840874554768,
+            "predicted_tokens": 193720
+          }
+        },
+        "sequences": 48,
+        "shard_id": "shard-000028",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.24603747383107155,
+        "index": 29,
+        "input_tokens": 105411,
+        "roles": {
+          "candidate": {
+            "mean_nll": 4.480654008219861,
+            "predicted_tokens": 105385
+          },
+          "shared": {
+            "mean_nll": 4.726691482050932,
+            "predicted_tokens": 105385
+          },
+          "teacher": {
+            "mean_nll": 3.952701858438701,
+            "predicted_tokens": 105385
+          }
+        },
+        "sequences": 26,
+        "shard_id": "shard-000029",
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.003178306095933836,
+        "index": 30,
+        "input_tokens": 153949,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.0417453708789088,
+            "predicted_tokens": 153911
+          },
+          "shared": {
+            "mean_nll": 1.0449236769748427,
+            "predicted_tokens": 153911
+          },
+          "teacher": {
+            "mean_nll": 0.7286286901970234,
+            "predicted_tokens": 153911
+          }
+        },
+        "sequences": 38,
+        "shard_id": "shard-000030",
+        "source": "code_github_clean_allowlisted"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.006389420981244953,
+        "index": 31,
+        "input_tokens": 163387,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.1652491745130287,
+            "predicted_tokens": 163347
+          },
+          "shared": {
+            "mean_nll": 1.1716385954942736,
+            "predicted_tokens": 163347
+          },
+          "teacher": {
+            "mean_nll": 0.8704336491074933,
+            "predicted_tokens": 163347
+          }
+        },
+        "sequences": 40,
+        "shard_id": "shard-000031",
+        "source": "code_github_clean_allowlisted"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.0046661200440965,
+        "index": 32,
+        "input_tokens": 202161,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.1028612429401419,
+            "predicted_tokens": 202111
+          },
+          "shared": {
+            "mean_nll": 1.1075273629842384,
+            "predicted_tokens": 202111
+          },
+          "teacher": {
+            "mean_nll": 0.828485400682708,
+            "predicted_tokens": 202111
+          }
+        },
+        "sequences": 50,
+        "shard_id": "shard-000032",
+        "source": "code_github_clean_allowlisted"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.001483814681939366,
+        "index": 33,
+        "input_tokens": 170887,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.1304985621789854,
+            "predicted_tokens": 170845
+          },
+          "shared": {
+            "mean_nll": 1.1319823768609247,
+            "predicted_tokens": 170845
+          },
+          "teacher": {
+            "mean_nll": 0.8332316782138963,
+            "predicted_tokens": 170845
+          }
+        },
+        "sequences": 42,
+        "shard_id": "shard-000033",
+        "source": "code_github_clean_allowlisted"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.002867072134868476,
+        "index": 34,
+        "input_tokens": 166784,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.0307586168991634,
+            "predicted_tokens": 166743
+          },
+          "shared": {
+            "mean_nll": 1.0336256890340318,
+            "predicted_tokens": 166743
+          },
+          "teacher": {
+            "mean_nll": 0.705751129264047,
+            "predicted_tokens": 166743
+          }
+        },
+        "sequences": 41,
+        "shard_id": "shard-000034",
+        "source": "code_github_clean_allowlisted"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.006545628458647701,
+        "index": 35,
+        "input_tokens": 145132,
+        "roles": {
+          "candidate": {
+            "mean_nll": 0.9859273321291916,
+            "predicted_tokens": 145096
+          },
+          "shared": {
+            "mean_nll": 0.9924729605878393,
+            "predicted_tokens": 145096
+          },
+          "teacher": {
+            "mean_nll": 0.6829589929563337,
+            "predicted_tokens": 145096
+          }
+        },
+        "sequences": 36,
+        "shard_id": "shard-000035",
+        "source": "code_github_clean_allowlisted"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.0039357423026871174,
+        "index": 36,
+        "input_tokens": 200131,
+        "roles": {
+          "candidate": {
+            "mean_nll": 0.98215644610612,
+            "predicted_tokens": 200082
+          },
+          "shared": {
+            "mean_nll": 0.9860921884088071,
+            "predicted_tokens": 200082
+          },
+          "teacher": {
+            "mean_nll": 0.7057037138454875,
+            "predicted_tokens": 200082
+          }
+        },
+        "sequences": 49,
+        "shard_id": "shard-000036",
+        "source": "code_github_clean_allowlisted"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.00036188971452688623,
+        "index": 37,
+        "input_tokens": 158516,
+        "roles": {
+          "candidate": {
+            "mean_nll": 0.9019321554374806,
+            "predicted_tokens": 158477
+          },
+          "shared": {
+            "mean_nll": 0.9022940451520075,
+            "predicted_tokens": 158477
+          },
+          "teacher": {
+            "mean_nll": 0.6192926141971212,
+            "predicted_tokens": 158477
+          }
+        },
+        "sequences": 39,
+        "shard_id": "shard-000037",
+        "source": "code_github_clean_allowlisted"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.001577843077255281,
+        "index": 38,
+        "input_tokens": 195272,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.005343512502385,
+            "predicted_tokens": 195224
+          },
+          "shared": {
+            "mean_nll": 1.0069213555796404,
+            "predicted_tokens": 195224
+          },
+          "teacher": {
+            "mean_nll": 0.7197442636457432,
+            "predicted_tokens": 195224
+          }
+        },
+        "sequences": 48,
+        "shard_id": "shard-000038",
+        "source": "code_github_clean_allowlisted"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.0009466157809181475,
+        "index": 39,
+        "input_tokens": 131863,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.0864823652798585,
+            "predicted_tokens": 131830
+          },
+          "shared": {
+            "mean_nll": 1.0874289810607767,
+            "predicted_tokens": 131830
+          },
+          "teacher": {
+            "mean_nll": 0.7550094992241132,
+            "predicted_tokens": 131830
+          }
+        },
+        "sequences": 33,
+        "shard_id": "shard-000039",
+        "source": "code_github_clean_allowlisted"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.0026742736118035015,
+        "index": 40,
+        "input_tokens": 187511,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.0375477178917147,
+            "predicted_tokens": 187465
+          },
+          "shared": {
+            "mean_nll": 1.0402219915035182,
+            "predicted_tokens": 187465
+          },
+          "teacher": {
+            "mean_nll": 0.7453656052905917,
+            "predicted_tokens": 187465
+          }
+        },
+        "sequences": 46,
+        "shard_id": "shard-000040",
+        "source": "code_github_clean_allowlisted"
+      },
+      {
+        "candidate_over_shared_nll_improvement": -0.0004577045088982601,
+        "index": 41,
+        "input_tokens": 185742,
+        "roles": {
+          "candidate": {
+            "mean_nll": 0.989857138713105,
+            "predicted_tokens": 185696
+          },
+          "shared": {
+            "mean_nll": 0.9893994342042067,
+            "predicted_tokens": 185696
+          },
+          "teacher": {
+            "mean_nll": 0.689736166268243,
+            "predicted_tokens": 185696
+          }
+        },
+        "sequences": 46,
+        "shard_id": "shard-000041",
+        "source": "code_github_clean_allowlisted"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.0015897491629264238,
+        "index": 42,
+        "input_tokens": 182778,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.1254538932988551,
+            "predicted_tokens": 182733
+          },
+          "shared": {
+            "mean_nll": 1.1270436424617816,
+            "predicted_tokens": 182733
+          },
+          "teacher": {
+            "mean_nll": 0.7911779365034983,
+            "predicted_tokens": 182733
+          }
+        },
+        "sequences": 45,
+        "shard_id": "shard-000042",
+        "source": "code_github_clean_allowlisted"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.0005864357461735636,
+        "index": 43,
+        "input_tokens": 145076,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.0451007798831895,
+            "predicted_tokens": 145040
+          },
+          "shared": {
+            "mean_nll": 1.045687215629363,
+            "predicted_tokens": 145040
+          },
+          "teacher": {
+            "mean_nll": 0.6721766644923384,
+            "predicted_tokens": 145040
+          }
+        },
+        "sequences": 36,
+        "shard_id": "shard-000043",
+        "source": "code_github_clean_allowlisted"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.0008019826227566584,
+        "index": 44,
+        "input_tokens": 190127,
+        "roles": {
+          "candidate": {
+            "mean_nll": 0.9516457557678223,
+            "predicted_tokens": 190080
+          },
+          "shared": {
+            "mean_nll": 0.952447738390579,
+            "predicted_tokens": 190080
+          },
+          "teacher": {
+            "mean_nll": 0.6614628636074388,
+            "predicted_tokens": 190080
+          }
+        },
+        "sequences": 47,
+        "shard_id": "shard-000044",
+        "source": "code_github_clean_allowlisted"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.003849910130260703,
+        "index": 45,
+        "input_tokens": 171086,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.0979183389090033,
+            "predicted_tokens": 171044
+          },
+          "shared": {
+            "mean_nll": 1.101768249039264,
+            "predicted_tokens": 171044
+          },
+          "teacher": {
+            "mean_nll": 0.7664622968336181,
+            "predicted_tokens": 171044
+          }
+        },
+        "sequences": 42,
+        "shard_id": "shard-000045",
+        "source": "code_github_clean_allowlisted"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.001539360967302228,
+        "index": 46,
+        "input_tokens": 188430,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.069097872733599,
+            "predicted_tokens": 188383
+          },
+          "shared": {
+            "mean_nll": 1.0706372337009011,
+            "predicted_tokens": 188383
+          },
+          "teacher": {
+            "mean_nll": 0.7514721430340923,
+            "predicted_tokens": 188383
+          }
+        },
+        "sequences": 47,
+        "shard_id": "shard-000046",
+        "source": "code_github_clean_allowlisted"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.014770980250145005,
+        "index": 47,
+        "input_tokens": 61252,
+        "roles": {
+          "candidate": {
+            "mean_nll": 0.9162479048486821,
+            "predicted_tokens": 61237
+          },
+          "shared": {
+            "mean_nll": 0.9310188850988271,
+            "predicted_tokens": 61237
+          },
+          "teacher": {
+            "mean_nll": 0.6247612415760182,
+            "predicted_tokens": 61237
+          }
+        },
+        "sequences": 15,
+        "shard_id": "shard-000047",
+        "source": "code_github_clean_allowlisted"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.006861190594354749,
+        "index": 48,
+        "input_tokens": 160544,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.5794939422265175,
+            "predicted_tokens": 160504
+          },
+          "shared": {
+            "mean_nll": 2.5863551328208723,
+            "predicted_tokens": 160504
+          },
+          "teacher": {
+            "mean_nll": 2.0676384510252666,
+            "predicted_tokens": 160504
+          }
+        },
+        "sequences": 40,
+        "shard_id": "shard-000048",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.00836838761198333,
+        "index": 49,
+        "input_tokens": 170101,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.596200126224575,
+            "predicted_tokens": 170059
+          },
+          "shared": {
+            "mean_nll": 2.604568513836558,
+            "predicted_tokens": 170059
+          },
+          "teacher": {
+            "mean_nll": 2.0987658832743343,
+            "predicted_tokens": 170059
+          }
+        },
+        "sequences": 42,
+        "shard_id": "shard-000049",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.008952892013298186,
+        "index": 50,
+        "input_tokens": 153497,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.629761409577436,
+            "predicted_tokens": 153459
+          },
+          "shared": {
+            "mean_nll": 2.6387143015907344,
+            "predicted_tokens": 153459
+          },
+          "teacher": {
+            "mean_nll": 2.119499806468055,
+            "predicted_tokens": 153459
+          }
+        },
+        "sequences": 38,
+        "shard_id": "shard-000050",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.009667088794391265,
+        "index": 51,
+        "input_tokens": 145307,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.6666136049177056,
+            "predicted_tokens": 145271
+          },
+          "shared": {
+            "mean_nll": 2.676280693712097,
+            "predicted_tokens": 145271
+          },
+          "teacher": {
+            "mean_nll": 2.157806792052655,
+            "predicted_tokens": 145271
+          }
+        },
+        "sequences": 36,
+        "shard_id": "shard-000051",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.0015215137807329526,
+        "index": 52,
+        "input_tokens": 215984,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.6401480636103085,
+            "predicted_tokens": 215931
+          },
+          "shared": {
+            "mean_nll": 2.6416695773910415,
+            "predicted_tokens": 215931
+          },
+          "teacher": {
+            "mean_nll": 2.074843868310363,
+            "predicted_tokens": 215931
+          }
+        },
+        "sequences": 53,
+        "shard_id": "shard-000052",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.008745131645991222,
+        "index": 53,
+        "input_tokens": 157413,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.5767336835738432,
+            "predicted_tokens": 157374
+          },
+          "shared": {
+            "mean_nll": 2.5854788152198345,
+            "predicted_tokens": 157374
+          },
+          "teacher": {
+            "mean_nll": 2.0750536363490593,
+            "predicted_tokens": 157374
+          }
+        },
+        "sequences": 39,
+        "shard_id": "shard-000053",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.008391674467166155,
+        "index": 54,
+        "input_tokens": 135659,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.6906608906970044,
+            "predicted_tokens": 135625
+          },
+          "shared": {
+            "mean_nll": 2.6990525651641706,
+            "predicted_tokens": 135625
+          },
+          "teacher": {
+            "mean_nll": 2.170602400453629,
+            "predicted_tokens": 135625
+          }
+        },
+        "sequences": 34,
+        "shard_id": "shard-000054",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.007400939100647097,
+        "index": 55,
+        "input_tokens": 129179,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.6603900217327445,
+            "predicted_tokens": 129147
+          },
+          "shared": {
+            "mean_nll": 2.6677909608333916,
+            "predicted_tokens": 129147
+          },
+          "teacher": {
+            "mean_nll": 2.1559933770057085,
+            "predicted_tokens": 129147
+          }
+        },
+        "sequences": 32,
+        "shard_id": "shard-000055",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.007332928744904876,
+        "index": 56,
+        "input_tokens": 137661,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.6444728096594416,
+            "predicted_tokens": 137627
+          },
+          "shared": {
+            "mean_nll": 2.6518057384043465,
+            "predicted_tokens": 137627
+          },
+          "teacher": {
+            "mean_nll": 2.1279441734100595,
+            "predicted_tokens": 137627
+          }
+        },
+        "sequences": 34,
+        "shard_id": "shard-000056",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.0019713526263189785,
+        "index": 57,
+        "input_tokens": 184431,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.630362060871275,
+            "predicted_tokens": 184385
+          },
+          "shared": {
+            "mean_nll": 2.632333413497594,
+            "predicted_tokens": 184385
+          },
+          "teacher": {
+            "mean_nll": 2.108879142029055,
+            "predicted_tokens": 184385
+          }
+        },
+        "sequences": 46,
+        "shard_id": "shard-000057",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.009839533029739833,
+        "index": 58,
+        "input_tokens": 159648,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.6487470669289874,
+            "predicted_tokens": 159609
+          },
+          "shared": {
+            "mean_nll": 2.6585865999587273,
+            "predicted_tokens": 159609
+          },
+          "teacher": {
+            "mean_nll": 2.135764908429545,
+            "predicted_tokens": 159609
+          }
+        },
+        "sequences": 39,
+        "shard_id": "shard-000058",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.008943155493570387,
+        "index": 59,
+        "input_tokens": 135539,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.682388447886494,
+            "predicted_tokens": 135505
+          },
+          "shared": {
+            "mean_nll": 2.6913316033800645,
+            "predicted_tokens": 135505
+          },
+          "teacher": {
+            "mean_nll": 2.1718922495652837,
+            "predicted_tokens": 135505
+          }
+        },
+        "sequences": 34,
+        "shard_id": "shard-000059",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.008135375418654611,
+        "index": 60,
+        "input_tokens": 159764,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.5962119131018278,
+            "predicted_tokens": 159724
+          },
+          "shared": {
+            "mean_nll": 2.6043472885204824,
+            "predicted_tokens": 159724
+          },
+          "teacher": {
+            "mean_nll": 2.0933758437906675,
+            "predicted_tokens": 159724
+          }
+        },
+        "sequences": 40,
+        "shard_id": "shard-000060",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.004313758535139822,
+        "index": 61,
+        "input_tokens": 204206,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.6727946446666397,
+            "predicted_tokens": 204156
+          },
+          "shared": {
+            "mean_nll": 2.6771084032017796,
+            "predicted_tokens": 204156
+          },
+          "teacher": {
+            "mean_nll": 2.1726927173070165,
+            "predicted_tokens": 204156
+          }
+        },
+        "sequences": 50,
+        "shard_id": "shard-000061",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.006802980078261189,
+        "index": 62,
+        "input_tokens": 146117,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.6285546952546874,
+            "predicted_tokens": 146081
+          },
+          "shared": {
+            "mean_nll": 2.6353576753329486,
+            "predicted_tokens": 146081
+          },
+          "teacher": {
+            "mean_nll": 2.1298881639028604,
+            "predicted_tokens": 146081
+          }
+        },
+        "sequences": 36,
+        "shard_id": "shard-000062",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.005377634029536171,
+        "index": 63,
+        "input_tokens": 188407,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.6206430954473725,
+            "predicted_tokens": 188361
+          },
+          "shared": {
+            "mean_nll": 2.6260207294769087,
+            "predicted_tokens": 188361
+          },
+          "teacher": {
+            "mean_nll": 2.1081936720537624,
+            "predicted_tokens": 188361
+          }
+        },
+        "sequences": 46,
+        "shard_id": "shard-000063",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.009050823725896606,
+        "index": 64,
+        "input_tokens": 152974,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.5855970574752267,
+            "predicted_tokens": 152936
+          },
+          "shared": {
+            "mean_nll": 2.5946478812011233,
+            "predicted_tokens": 152936
+          },
+          "teacher": {
+            "mean_nll": 2.0928093890811557,
+            "predicted_tokens": 152936
+          }
+        },
+        "sequences": 38,
+        "shard_id": "shard-000064",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.0034526597036936835,
+        "index": 65,
+        "input_tokens": 214995,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.5829101594303636,
+            "predicted_tokens": 214942
+          },
+          "shared": {
+            "mean_nll": 2.5863628191340573,
+            "predicted_tokens": 214942
+          },
+          "teacher": {
+            "mean_nll": 2.0395142411419416,
+            "predicted_tokens": 214942
+          }
+        },
+        "sequences": 53,
+        "shard_id": "shard-000065",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.006979907371665206,
+        "index": 66,
+        "input_tokens": 161059,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.7248219251299535,
+            "predicted_tokens": 161019
+          },
+          "shared": {
+            "mean_nll": 2.7318018325016187,
+            "predicted_tokens": 161019
+          },
+          "teacher": {
+            "mean_nll": 2.1838284005885953,
+            "predicted_tokens": 161019
+          }
+        },
+        "sequences": 40,
+        "shard_id": "shard-000066",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.007086573574257571,
+        "index": 67,
+        "input_tokens": 184256,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.6572653469984826,
+            "predicted_tokens": 184211
+          },
+          "shared": {
+            "mean_nll": 2.66435192057274,
+            "predicted_tokens": 184211
+          },
+          "teacher": {
+            "mean_nll": 2.1277300952397997,
+            "predicted_tokens": 184211
+          }
+        },
+        "sequences": 45,
+        "shard_id": "shard-000067",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.006059075614004428,
+        "index": 68,
+        "input_tokens": 187453,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.5979707914292156,
+            "predicted_tokens": 187407
+          },
+          "shared": {
+            "mean_nll": 2.60402986704322,
+            "predicted_tokens": 187407
+          },
+          "teacher": {
+            "mean_nll": 2.101264026436279,
+            "predicted_tokens": 187407
+          }
+        },
+        "sequences": 46,
+        "shard_id": "shard-000068",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.009231241581854288,
+        "index": 69,
+        "input_tokens": 166070,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.514319408125802,
+            "predicted_tokens": 166029
+          },
+          "shared": {
+            "mean_nll": 2.5235506497076563,
+            "predicted_tokens": 166029
+          },
+          "teacher": {
+            "mean_nll": 2.0220569259314263,
+            "predicted_tokens": 166029
+          }
+        },
+        "sequences": 41,
+        "shard_id": "shard-000069",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.006561176227988241,
+        "index": 70,
+        "input_tokens": 182732,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.6229811193889687,
+            "predicted_tokens": 182687
+          },
+          "shared": {
+            "mean_nll": 2.629542295616957,
+            "predicted_tokens": 182687
+          },
+          "teacher": {
+            "mean_nll": 2.1282182536549876,
+            "predicted_tokens": 182687
+          }
+        },
+        "sequences": 45,
+        "shard_id": "shard-000070",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.0054750442806268396,
+        "index": 71,
+        "input_tokens": 189905,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.5704255444982236,
+            "predicted_tokens": 189858
+          },
+          "shared": {
+            "mean_nll": 2.5759005887788504,
+            "predicted_tokens": 189858
+          },
+          "teacher": {
+            "mean_nll": 1.9912845893789701,
+            "predicted_tokens": 189858
+          }
+        },
+        "sequences": 47,
+        "shard_id": "shard-000071",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.006933785949449156,
+        "index": 72,
+        "input_tokens": 159964,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.6950702531273154,
+            "predicted_tokens": 159924
+          },
+          "shared": {
+            "mean_nll": 2.7020040390767646,
+            "predicted_tokens": 159924
+          },
+          "teacher": {
+            "mean_nll": 2.155801136811348,
+            "predicted_tokens": 159924
+          }
+        },
+        "sequences": 40,
+        "shard_id": "shard-000072",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.007334305612664238,
+        "index": 73,
+        "input_tokens": 140635,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.506930582798053,
+            "predicted_tokens": 140600
+          },
+          "shared": {
+            "mean_nll": 2.5142648884107173,
+            "predicted_tokens": 140600
+          },
+          "teacher": {
+            "mean_nll": 1.995032335609664,
+            "predicted_tokens": 140600
+          }
+        },
+        "sequences": 35,
+        "shard_id": "shard-000073",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.0054679601519396215,
+        "index": 74,
+        "input_tokens": 173138,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.658956735959661,
+            "predicted_tokens": 173095
+          },
+          "shared": {
+            "mean_nll": 2.6644246961116007,
+            "predicted_tokens": 173095
+          },
+          "teacher": {
+            "mean_nll": 2.125689623393675,
+            "predicted_tokens": 173095
+          }
+        },
+        "sequences": 43,
+        "shard_id": "shard-000074",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.007520582659326536,
+        "index": 75,
+        "input_tokens": 179212,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.6803285299315798,
+            "predicted_tokens": 179168
+          },
+          "shared": {
+            "mean_nll": 2.6878491125909063,
+            "predicted_tokens": 179168
+          },
+          "teacher": {
+            "mean_nll": 2.1662100239893562,
+            "predicted_tokens": 179168
+          }
+        },
+        "sequences": 44,
+        "shard_id": "shard-000075",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.00832081275647889,
+        "index": 76,
+        "input_tokens": 165503,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.65426163690058,
+            "predicted_tokens": 165462
+          },
+          "shared": {
+            "mean_nll": 2.6625824496570587,
+            "predicted_tokens": 165462
+          },
+          "teacher": {
+            "mean_nll": 2.154797740863933,
+            "predicted_tokens": 165462
+          }
+        },
+        "sequences": 41,
+        "shard_id": "shard-000076",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.00834708393596939,
+        "index": 77,
+        "input_tokens": 137019,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.4924076854901998,
+            "predicted_tokens": 136985
+          },
+          "shared": {
+            "mean_nll": 2.500754769426169,
+            "predicted_tokens": 136985
+          },
+          "teacher": {
+            "mean_nll": 2.0149639480657098,
+            "predicted_tokens": 136985
+          }
+        },
+        "sequences": 34,
+        "shard_id": "shard-000077",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.004058001564376745,
+        "index": 78,
+        "input_tokens": 183225,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.6386174171665164,
+            "predicted_tokens": 183180
+          },
+          "shared": {
+            "mean_nll": 2.642675418730893,
+            "predicted_tokens": 183180
+          },
+          "teacher": {
+            "mean_nll": 2.1160118851889194,
+            "predicted_tokens": 183180
+          }
+        },
+        "sequences": 45,
+        "shard_id": "shard-000078",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.012089235912602359,
+        "index": 79,
+        "input_tokens": 136468,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.5827650264820123,
+            "predicted_tokens": 136434
+          },
+          "shared": {
+            "mean_nll": 2.5948542623946147,
+            "predicted_tokens": 136434
+          },
+          "teacher": {
+            "mean_nll": 2.0853429026781036,
+            "predicted_tokens": 136434
+          }
+        },
+        "sequences": 34,
+        "shard_id": "shard-000079",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.005712995297946666,
+        "index": 80,
+        "input_tokens": 162376,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.620926489849756,
+            "predicted_tokens": 162336
+          },
+          "shared": {
+            "mean_nll": 2.626639485147703,
+            "predicted_tokens": 162336
+          },
+          "teacher": {
+            "mean_nll": 2.107298760965875,
+            "predicted_tokens": 162336
+          }
+        },
+        "sequences": 40,
+        "shard_id": "shard-000080",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.005451297135020461,
+        "index": 81,
+        "input_tokens": 166975,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.65679089022458,
+            "predicted_tokens": 166934
+          },
+          "shared": {
+            "mean_nll": 2.6622421873596003,
+            "predicted_tokens": 166934
+          },
+          "teacher": {
+            "mean_nll": 2.145612843249428,
+            "predicted_tokens": 166934
+          }
+        },
+        "sequences": 41,
+        "shard_id": "shard-000081",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.004811130804000641,
+        "index": 82,
+        "input_tokens": 163859,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.6408179340111757,
+            "predicted_tokens": 163818
+          },
+          "shared": {
+            "mean_nll": 2.6456290648151763,
+            "predicted_tokens": 163818
+          },
+          "teacher": {
+            "mean_nll": 2.1256659399389175,
+            "predicted_tokens": 163818
+          }
+        },
+        "sequences": 41,
+        "shard_id": "shard-000082",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.010730875079894009,
+        "index": 83,
+        "input_tokens": 127129,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.621176336213372,
+            "predicted_tokens": 127097
+          },
+          "shared": {
+            "mean_nll": 2.631907211293266,
+            "predicted_tokens": 127097
+          },
+          "teacher": {
+            "mean_nll": 2.115386563583541,
+            "predicted_tokens": 127097
+          }
+        },
+        "sequences": 32,
+        "shard_id": "shard-000083",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.007037979548182971,
+        "index": 84,
+        "input_tokens": 182049,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.6006448036083687,
+            "predicted_tokens": 182004
+          },
+          "shared": {
+            "mean_nll": 2.6076827831565517,
+            "predicted_tokens": 182004
+          },
+          "teacher": {
+            "mean_nll": 2.082583179458367,
+            "predicted_tokens": 182004
+          }
+        },
+        "sequences": 45,
+        "shard_id": "shard-000084",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.006086829729918364,
+        "index": 85,
+        "input_tokens": 175490,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.5733857215426883,
+            "predicted_tokens": 175447
+          },
+          "shared": {
+            "mean_nll": 2.5794725512726067,
+            "predicted_tokens": 175447
+          },
+          "teacher": {
+            "mean_nll": 2.0876748953432163,
+            "predicted_tokens": 175447
+          }
+        },
+        "sequences": 43,
+        "shard_id": "shard-000085",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.005621437650578542,
+        "index": 86,
+        "input_tokens": 164070,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.5612982635454324,
+            "predicted_tokens": 164029
+          },
+          "shared": {
+            "mean_nll": 2.566919701196011,
+            "predicted_tokens": 164029
+          },
+          "teacher": {
+            "mean_nll": 2.0585393017542106,
+            "predicted_tokens": 164029
+          }
+        },
+        "sequences": 41,
+        "shard_id": "shard-000086",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.008236493407652201,
+        "index": 87,
+        "input_tokens": 159106,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.640082787932915,
+            "predicted_tokens": 159067
+          },
+          "shared": {
+            "mean_nll": 2.648319281340567,
+            "predicted_tokens": 159067
+          },
+          "teacher": {
+            "mean_nll": 2.128627043139644,
+            "predicted_tokens": 159067
+          }
+        },
+        "sequences": 39,
+        "shard_id": "shard-000087",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.004799670716258753,
+        "index": 88,
+        "input_tokens": 177904,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.644681130326345,
+            "predicted_tokens": 177860
+          },
+          "shared": {
+            "mean_nll": 2.649480801042604,
+            "predicted_tokens": 177860
+          },
+          "teacher": {
+            "mean_nll": 2.1228767836843234,
+            "predicted_tokens": 177860
+          }
+        },
+        "sequences": 44,
+        "shard_id": "shard-000088",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.006643284472010791,
+        "index": 89,
+        "input_tokens": 223130,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.525656651000224,
+            "predicted_tokens": 223075
+          },
+          "shared": {
+            "mean_nll": 2.532299935472235,
+            "predicted_tokens": 223075
+          },
+          "teacher": {
+            "mean_nll": 1.9735380521195225,
+            "predicted_tokens": 223075
+          }
+        },
+        "sequences": 55,
+        "shard_id": "shard-000089",
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.010746572033886626,
+        "index": 90,
+        "input_tokens": 202789,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.5482037341383195,
+            "predicted_tokens": 202739
+          },
+          "shared": {
+            "mean_nll": 1.558950306172206,
+            "predicted_tokens": 202739
+          },
+          "teacher": {
+            "mean_nll": 1.2060916598020193,
+            "predicted_tokens": 202739
+          }
+        },
+        "sequences": 50,
+        "shard_id": "shard-000090",
+        "source": "math_finemath_4plus"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.01594438086754235,
+        "index": 91,
+        "input_tokens": 195181,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.6399034955022564,
+            "predicted_tokens": 195133
+          },
+          "shared": {
+            "mean_nll": 1.6558478763697988,
+            "predicted_tokens": 195133
+          },
+          "teacher": {
+            "mean_nll": 1.2402893047013428,
+            "predicted_tokens": 195133
+          }
+        },
+        "sequences": 48,
+        "shard_id": "shard-000091",
+        "source": "math_finemath_4plus"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.017559145103378082,
+        "index": 92,
+        "input_tokens": 207070,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.7427186682215763,
+            "predicted_tokens": 207019
+          },
+          "shared": {
+            "mean_nll": 1.7602778133249544,
+            "predicted_tokens": 207019
+          },
+          "teacher": {
+            "mean_nll": 1.3504030257337492,
+            "predicted_tokens": 207019
+          }
+        },
+        "sequences": 51,
+        "shard_id": "shard-000092",
+        "source": "math_finemath_4plus"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.01956135672147652,
+        "index": 93,
+        "input_tokens": 171624,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.623347252117883,
+            "predicted_tokens": 171582
+          },
+          "shared": {
+            "mean_nll": 1.6429086088393596,
+            "predicted_tokens": 171582
+          },
+          "teacher": {
+            "mean_nll": 1.2530564760831373,
+            "predicted_tokens": 171582
+          }
+        },
+        "sequences": 42,
+        "shard_id": "shard-000093",
+        "source": "math_finemath_4plus"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.029430876904578573,
+        "index": 94,
+        "input_tokens": 138795,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.9143349903622506,
+            "predicted_tokens": 138761
+          },
+          "shared": {
+            "mean_nll": 1.9437658672668292,
+            "predicted_tokens": 138761
+          },
+          "teacher": {
+            "mean_nll": 1.4702487321810298,
+            "predicted_tokens": 138761
+          }
+        },
+        "sequences": 34,
+        "shard_id": "shard-000094",
+        "source": "math_finemath_4plus"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.02363191177437951,
+        "index": 95,
+        "input_tokens": 155743,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.5278667857037758,
+            "predicted_tokens": 155704
+          },
+          "shared": {
+            "mean_nll": 1.5514986974781553,
+            "predicted_tokens": 155704
+          },
+          "teacher": {
+            "mean_nll": 1.1641543167428638,
+            "predicted_tokens": 155704
+          }
+        },
+        "sequences": 39,
+        "shard_id": "shard-000095",
+        "source": "math_finemath_4plus"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.025259962284681636,
+        "index": 96,
+        "input_tokens": 189679,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.4148439818687066,
+            "predicted_tokens": 189632
+          },
+          "shared": {
+            "mean_nll": 1.4401039441533883,
+            "predicted_tokens": 189632
+          },
+          "teacher": {
+            "mean_nll": 1.0742616225367174,
+            "predicted_tokens": 189632
+          }
+        },
+        "sequences": 47,
+        "shard_id": "shard-000096",
+        "source": "math_finemath_4plus"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.02027630575855688,
+        "index": 97,
+        "input_tokens": 134414,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.8166542712656784,
+            "predicted_tokens": 134381
+          },
+          "shared": {
+            "mean_nll": 1.8369305770242352,
+            "predicted_tokens": 134381
+          },
+          "teacher": {
+            "mean_nll": 1.4144454352997493,
+            "predicted_tokens": 134381
+          }
+        },
+        "sequences": 33,
+        "shard_id": "shard-000097",
+        "source": "math_finemath_4plus"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.019490415402549255,
+        "index": 98,
+        "input_tokens": 153513,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.792695990160246,
+            "predicted_tokens": 153475
+          },
+          "shared": {
+            "mean_nll": 1.8121864055627952,
+            "predicted_tokens": 153475
+          },
+          "teacher": {
+            "mean_nll": 1.4301869228752646,
+            "predicted_tokens": 153475
+          }
+        },
+        "sequences": 38,
+        "shard_id": "shard-000098",
+        "source": "math_finemath_4plus"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.015496696128777021,
+        "index": 99,
+        "input_tokens": 137740,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.6368059028099267,
+            "predicted_tokens": 137706
+          },
+          "shared": {
+            "mean_nll": 1.6523025989387037,
+            "predicted_tokens": 137706
+          },
+          "teacher": {
+            "mean_nll": 1.2800519050492989,
+            "predicted_tokens": 137706
+          }
+        },
+        "sequences": 34,
+        "shard_id": "shard-000099",
+        "source": "math_finemath_4plus"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.02833104291187638,
+        "index": 100,
+        "input_tokens": 180544,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.6418760409781097,
+            "predicted_tokens": 180499
+          },
+          "shared": {
+            "mean_nll": 1.670207083889986,
+            "predicted_tokens": 180499
+          },
+          "teacher": {
+            "mean_nll": 1.2618892097934926,
+            "predicted_tokens": 180499
+          }
+        },
+        "sequences": 45,
+        "shard_id": "shard-000100",
+        "source": "math_finemath_4plus"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.017219572979518594,
+        "index": 101,
+        "input_tokens": 146047,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.5590226125675035,
+            "predicted_tokens": 146011
+          },
+          "shared": {
+            "mean_nll": 1.5762421855470221,
+            "predicted_tokens": 146011
+          },
+          "teacher": {
+            "mean_nll": 1.2249563103135743,
+            "predicted_tokens": 146011
+          }
+        },
+        "sequences": 36,
+        "shard_id": "shard-000101",
+        "source": "math_finemath_4plus"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.02019533472706936,
+        "index": 102,
+        "input_tokens": 189918,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.3685835113389575,
+            "predicted_tokens": 189871
+          },
+          "shared": {
+            "mean_nll": 1.3887788460660269,
+            "predicted_tokens": 189871
+          },
+          "teacher": {
+            "mean_nll": 1.042306947368843,
+            "predicted_tokens": 189871
+          }
+        },
+        "sequences": 47,
+        "shard_id": "shard-000102",
+        "source": "math_finemath_4plus"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.021265046677674704,
+        "index": 103,
+        "input_tokens": 208979,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.609314099226438,
+            "predicted_tokens": 208927
+          },
+          "shared": {
+            "mean_nll": 1.6305791459041128,
+            "predicted_tokens": 208927
+          },
+          "teacher": {
+            "mean_nll": 1.2454895300858486,
+            "predicted_tokens": 208927
+          }
+        },
+        "sequences": 52,
+        "shard_id": "shard-000103",
+        "source": "math_finemath_4plus"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.028361975298930808,
+        "index": 104,
+        "input_tokens": 183689,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.5326240308397294,
+            "predicted_tokens": 183644
+          },
+          "shared": {
+            "mean_nll": 1.5609860061386602,
+            "predicted_tokens": 183644
+          },
+          "teacher": {
+            "mean_nll": 1.1699031194951237,
+            "predicted_tokens": 183644
+          }
+        },
+        "sequences": 45,
+        "shard_id": "shard-000104",
+        "source": "math_finemath_4plus"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.01939331398046029,
+        "index": 105,
+        "input_tokens": 192027,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.7513199591713655,
+            "predicted_tokens": 191980
+          },
+          "shared": {
+            "mean_nll": 1.7707132731518258,
+            "predicted_tokens": 191980
+          },
+          "teacher": {
+            "mean_nll": 1.3528472420324547,
+            "predicted_tokens": 191980
+          }
+        },
+        "sequences": 47,
+        "shard_id": "shard-000105",
+        "source": "math_finemath_4plus"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.029174947578639143,
+        "index": 106,
+        "input_tokens": 192262,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.5512543238223637,
+            "predicted_tokens": 192215
+          },
+          "shared": {
+            "mean_nll": 1.5804292714010029,
+            "predicted_tokens": 192215
+          },
+          "teacher": {
+            "mean_nll": 1.1753695584005865,
+            "predicted_tokens": 192215
+          }
+        },
+        "sequences": 47,
+        "shard_id": "shard-000106",
+        "source": "math_finemath_4plus"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.025871381678193472,
+        "index": 107,
+        "input_tokens": 32324,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.3700613122659826,
+            "predicted_tokens": 32316
+          },
+          "shared": {
+            "mean_nll": 2.395932693944176,
+            "predicted_tokens": 32316
+          },
+          "teacher": {
+            "mean_nll": 1.9704629581950504,
+            "predicted_tokens": 32316
+          }
+        },
+        "sequences": 8,
+        "shard_id": "shard-000107",
+        "source": "math_finemath_4plus"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.06966705233424464,
+        "index": 108,
+        "input_tokens": 166642,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.8257604081945786,
+            "predicted_tokens": 166601
+          },
+          "shared": {
+            "mean_nll": 1.8954274605288233,
+            "predicted_tokens": 166601
+          },
+          "teacher": {
+            "mean_nll": 1.3297065938511023,
+            "predicted_tokens": 166601
+          }
+        },
+        "sequences": 41,
+        "shard_id": "shard-000108",
+        "source": "science_cosmopedia_openstax"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.0640577699189957,
+        "index": 109,
+        "input_tokens": 171113,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.7620109406785047,
+            "predicted_tokens": 171071
+          },
+          "shared": {
+            "mean_nll": 1.8260687105975004,
+            "predicted_tokens": 171071
+          },
+          "teacher": {
+            "mean_nll": 1.294630894528076,
+            "predicted_tokens": 171071
+          }
+        },
+        "sequences": 42,
+        "shard_id": "shard-000109",
+        "source": "science_cosmopedia_openstax"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.07026784846444967,
+        "index": 110,
+        "input_tokens": 172934,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.838410084164752,
+            "predicted_tokens": 172891
+          },
+          "shared": {
+            "mean_nll": 1.9086779326292016,
+            "predicted_tokens": 172891
+          },
+          "teacher": {
+            "mean_nll": 1.3375699573437436,
+            "predicted_tokens": 172891
+          }
+        },
+        "sequences": 43,
+        "shard_id": "shard-000110",
+        "source": "science_cosmopedia_openstax"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.07232659850942436,
+        "index": 111,
+        "input_tokens": 165384,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.8042447591427366,
+            "predicted_tokens": 165343
+          },
+          "shared": {
+            "mean_nll": 1.876571357652161,
+            "predicted_tokens": 165343
+          },
+          "teacher": {
+            "mean_nll": 1.3158698583860047,
+            "predicted_tokens": 165343
+          }
+        },
+        "sequences": 41,
+        "shard_id": "shard-000111",
+        "source": "science_cosmopedia_openstax"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.06896632412839931,
+        "index": 112,
+        "input_tokens": 162385,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.8156979060796452,
+            "predicted_tokens": 162345
+          },
+          "shared": {
+            "mean_nll": 1.8846642302080445,
+            "predicted_tokens": 162345
+          },
+          "teacher": {
+            "mean_nll": 1.3125312647977687,
+            "predicted_tokens": 162345
+          }
+        },
+        "sequences": 40,
+        "shard_id": "shard-000112",
+        "source": "science_cosmopedia_openstax"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.06839890549270611,
+        "index": 113,
+        "input_tokens": 161697,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.7853321142527079,
+            "predicted_tokens": 161657
+          },
+          "shared": {
+            "mean_nll": 1.853731019745414,
+            "predicted_tokens": 161657
+          },
+          "teacher": {
+            "mean_nll": 1.311169452698267,
+            "predicted_tokens": 161657
+          }
+        },
+        "sequences": 40,
+        "shard_id": "shard-000113",
+        "source": "science_cosmopedia_openstax"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.05353411712719969,
+        "index": 114,
+        "input_tokens": 149549,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.6495511866705306,
+            "predicted_tokens": 149512
+          },
+          "shared": {
+            "mean_nll": 1.7030853037977303,
+            "predicted_tokens": 149512
+          },
+          "teacher": {
+            "mean_nll": 1.1086618791990777,
+            "predicted_tokens": 149512
+          }
+        },
+        "sequences": 37,
+        "shard_id": "shard-000114",
+        "source": "science_cosmopedia_stanford"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.05824148043961164,
+        "index": 115,
+        "input_tokens": 172308,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.6559242547705388,
+            "predicted_tokens": 172265
+          },
+          "shared": {
+            "mean_nll": 1.7141657352101505,
+            "predicted_tokens": 172265
+          },
+          "teacher": {
+            "mean_nll": 1.1242671678343958,
+            "predicted_tokens": 172265
+          }
+        },
+        "sequences": 43,
+        "shard_id": "shard-000115",
+        "source": "science_cosmopedia_stanford"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.05975279528249944,
+        "index": 116,
+        "input_tokens": 148732,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.6562786509560257,
+            "predicted_tokens": 148695
+          },
+          "shared": {
+            "mean_nll": 1.716031446238525,
+            "predicted_tokens": 148695
+          },
+          "teacher": {
+            "mean_nll": 1.1302965561123965,
+            "predicted_tokens": 148695
+          }
+        },
+        "sequences": 37,
+        "shard_id": "shard-000116",
+        "source": "science_cosmopedia_stanford"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.058885395205345636,
+        "index": 117,
+        "input_tokens": 157420,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.6874319953697159,
+            "predicted_tokens": 157381
+          },
+          "shared": {
+            "mean_nll": 1.7463173905750615,
+            "predicted_tokens": 157381
+          },
+          "teacher": {
+            "mean_nll": 1.1442497842367805,
+            "predicted_tokens": 157381
+          }
+        },
+        "sequences": 39,
+        "shard_id": "shard-000117",
+        "source": "science_cosmopedia_stanford"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.0600476339111633,
+        "index": 118,
+        "input_tokens": 175711,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.717833298288533,
+            "predicted_tokens": 175668
+          },
+          "shared": {
+            "mean_nll": 1.7778809321996962,
+            "predicted_tokens": 175668
+          },
+          "teacher": {
+            "mean_nll": 1.1723318637865534,
+            "predicted_tokens": 175668
+          }
+        },
+        "sequences": 43,
+        "shard_id": "shard-000118",
+        "source": "science_cosmopedia_stanford"
+      },
+      {
+        "candidate_over_shared_nll_improvement": 0.05705191958332945,
+        "index": 119,
+        "input_tokens": 196841,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.7074404451739396,
+            "predicted_tokens": 196792
+          },
+          "shared": {
+            "mean_nll": 1.764492364757269,
+            "predicted_tokens": 196792
+          },
+          "teacher": {
+            "mean_nll": 1.1620725300395491,
+            "predicted_tokens": 196792
+          }
+        },
+        "sequences": 49,
+        "shard_id": "shard-000119",
+        "source": "science_cosmopedia_stanford"
+      }
+    ],
+    "sources": [
+      {
+        "input_tokens": 5001101,
+        "roles": {
+          "candidate": {
+            "mean_nll": 4.2072181467957765,
+            "nll_sum": 21035514.345092773,
+            "perplexity": 67.16942418878519,
+            "predicted_tokens": 4999863
+          },
+          "shared": {
+            "mean_nll": 4.378317507818659,
+            "nll_sum": 21890987.709594727,
+            "perplexity": 79.70381947671022,
+            "predicted_tokens": 4999863
+          },
+          "teacher": {
+            "mean_nll": 3.6361449796522276,
+            "nll_sum": 18180226.746398926,
+            "perplexity": 37.94527460123117,
+            "predicted_tokens": 4999863
+          }
+        },
+        "sequences": 1238,
+        "shards": 30,
+        "source": "chinese_fineweb2_cmn_hani",
+        "teacher_gap_closed_fraction": 0.23053852646040504
+      },
+      {
+        "input_tokens": 3000084,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.0410051349526261,
+            "nll_sum": 3122332.5054893494,
+            "perplexity": 2.832062188913909,
+            "predicted_tokens": 2999344
+          },
+          "shared": {
+            "mean_nll": 1.0437498223727595,
+            "nll_sum": 3130564.7672348022,
+            "perplexity": 2.839845991542953,
+            "predicted_tokens": 2999344
+          },
+          "teacher": {
+            "mean_nll": 0.7357665897251948,
+            "nll_sum": 2206817.1062927246,
+            "perplexity": 2.0870813145061464,
+            "predicted_tokens": 2999344
+          }
+        },
+        "sequences": 740,
+        "shards": 18,
+        "source": "code_github_clean_allowlisted",
+        "teacher_gap_closed_fraction": 0.00891180794661694
+      },
+      {
+        "input_tokens": 7000153,
+        "roles": {
+          "candidate": {
+            "mean_nll": 2.6188485847177088,
+            "nll_sum": 18327807.549957275,
+            "perplexity": 13.719917164652045,
+            "predicted_tokens": 6998422
+          },
+          "shared": {
+            "mean_nll": 2.625586989652381,
+            "nll_sum": 18374965.751296997,
+            "perplexity": 13.812679706965557,
+            "predicted_tokens": 6998422
+          },
+          "teacher": {
+            "mean_nll": 2.103206615318329,
+            "nll_sum": 14719127.447189331,
+            "perplexity": 8.192397706851144,
+            "predicted_tokens": 6998422
+          }
+        },
+        "sequences": 1731,
+        "shards": 42,
+        "source": "english_fineweb_edu_dedup",
+        "teacher_gap_closed_fraction": 0.012899422079672714
+      },
+      {
+        "input_tokens": 3012338,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.627773629975838,
+            "nll_sum": 4902194.925167084,
+            "perplexity": 5.092524244722058,
+            "predicted_tokens": 3011595
+          },
+          "shared": {
+            "mean_nll": 1.6490135129892258,
+            "nll_sum": 4966160.850650787,
+            "perplexity": 5.201845741985506,
+            "predicted_tokens": 3011595
+          },
+          "teacher": {
+            "mean_nll": 1.2567600053435277,
+            "nll_sum": 3784852.1482925415,
+            "perplexity": 3.5140176247874777,
+            "predicted_tokens": 3011595
+          }
+        },
+        "sequences": 743,
+        "shards": 18,
+        "source": "math_finemath_4plus",
+        "teacher_gap_closed_fraction": 0.054148357119530505
+      },
+      {
+        "input_tokens": 1000155,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.8053132814488464,
+            "nll_sum": 1805147.1926269531,
+            "perplexity": 6.081876489176043,
+            "predicted_tokens": 999908
+          },
+          "shared": {
+            "mean_nll": 1.8742455256811361,
+            "nll_sum": 1874073.0950927734,
+            "perplexity": 6.5159011852270226,
+            "predicted_tokens": 999908
+          },
+          "teacher": {
+            "mean_nll": 1.3169916991249915,
+            "nll_sum": 1316870.5358886719,
+            "perplexity": 3.732176961229461,
+            "predicted_tokens": 999908
+          }
+        },
+        "sequences": 247,
+        "shards": 6,
+        "source": "science_cosmopedia_openstax",
+        "teacher_gap_closed_fraction": 0.12369990289397256
+      },
+      {
+        "input_tokens": 1000561,
+        "roles": {
+          "candidate": {
+            "mean_nll": 1.6809883882016317,
+            "nll_sum": 1681514.5375671387,
+            "perplexity": 5.370861845038668,
+            "predicted_tokens": 1000313
+          },
+          "shared": {
+            "mean_nll": 1.7389354057228916,
+            "nll_sum": 1739479.6925048828,
+            "perplexity": 5.6912812908974395,
+            "predicted_tokens": 1000313
+          },
+          "teacher": {
+            "mean_nll": 1.1418531314029763,
+            "nll_sum": 1142210.5314331055,
+            "perplexity": 3.132568049962786,
+            "predicted_tokens": 1000313
+          }
+        },
+        "sequences": 248,
+        "shards": 6,
+        "source": "science_cosmopedia_stanford",
+        "teacher_gap_closed_fraction": 0.09705030615297096
+      }
+    ]
+  }
+}

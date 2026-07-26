@@ -1,0 +1,144 @@
+{
+  "artifacts": [
+    {
+      "expected_size": 1570,
+      "filename": ".gitattributes",
+      "provider": "huggingface",
+      "repository": "Qwen/Qwen3.5-9B-Base",
+      "revision": "68c46c4b3498877f3ef123c856ecfde50c39f404",
+      "sha256": "34448b82c17d60fec9b65b1f093c115ddbaadc04beb1b0140b6bfed2e012a930",
+      "url": "https://huggingface.co/Qwen/Qwen3.5-9B-Base/resolve/68c46c4b3498877f3ef123c856ecfde50c39f404/.gitattributes"
+    },
+    {
+      "expected_size": 11343,
+      "filename": "LICENSE",
+      "provider": "huggingface",
+      "repository": "Qwen/Qwen3.5-9B-Base",
+      "revision": "68c46c4b3498877f3ef123c856ecfde50c39f404",
+      "sha256": "50cbab8a892c5f2993b8c7351a99182507472def3b1374558308605d99b86b32",
+      "url": "https://huggingface.co/Qwen/Qwen3.5-9B-Base/resolve/68c46c4b3498877f3ef123c856ecfde50c39f404/LICENSE"
+    },
+    {
+      "expected_size": 3705,
+      "filename": "README.md",
+      "provider": "huggingface",
+      "repository": "Qwen/Qwen3.5-9B-Base",
+      "revision": "68c46c4b3498877f3ef123c856ecfde50c39f404",
+      "sha256": "e5fb9a49c5b5eea08839180eef484c97743be241189ccb4a1f4d830514c1f0cb",
+      "url": "https://huggingface.co/Qwen/Qwen3.5-9B-Base/resolve/68c46c4b3498877f3ef123c856ecfde50c39f404/README.md"
+    },
+    {
+      "expected_size": 3126,
+      "filename": "config.json",
+      "provider": "huggingface",
+      "repository": "Qwen/Qwen3.5-9B-Base",
+      "revision": "68c46c4b3498877f3ef123c856ecfde50c39f404",
+      "sha256": "d0883072e01861ed0b2d47be3c16c36a8e81c224c7ffaa310c6558fb3f932b05",
+      "url": "https://huggingface.co/Qwen/Qwen3.5-9B-Base/resolve/68c46c4b3498877f3ef123c856ecfde50c39f404/config.json"
+    },
+    {
+      "expected_size": 3353259,
+      "filename": "merges.txt",
+      "provider": "huggingface",
+      "repository": "Qwen/Qwen3.5-9B-Base",
+      "revision": "68c46c4b3498877f3ef123c856ecfde50c39f404",
+      "sha256": "a9d356d7bdf1ef4949e3e748e95b8e10ad9d4e2e838eddc38a0a7b6b94d1db8d",
+      "url": "https://huggingface.co/Qwen/Qwen3.5-9B-Base/resolve/68c46c4b3498877f3ef123c856ecfde50c39f404/merges.txt"
+    },
+    {
+      "expected_size": 5276436216,
+      "filename": "model.safetensors-00001-of-00004.safetensors",
+      "provider": "huggingface",
+      "repository": "Qwen/Qwen3.5-9B-Base",
+      "revision": "68c46c4b3498877f3ef123c856ecfde50c39f404",
+      "sha256": "862bf7bba8a50145d19d0ae463931fae515284024736592a73a336bc4dfa54ee",
+      "url": "https://huggingface.co/Qwen/Qwen3.5-9B-Base/resolve/68c46c4b3498877f3ef123c856ecfde50c39f404/model.safetensors-00001-of-00004.safetensors"
+    },
+    {
+      "expected_size": 5335161576,
+      "filename": "model.safetensors-00002-of-00004.safetensors",
+      "provider": "huggingface",
+      "repository": "Qwen/Qwen3.5-9B-Base",
+      "revision": "68c46c4b3498877f3ef123c856ecfde50c39f404",
+      "sha256": "bace8e115e11ca93c22f0352a60d2fb0c76ac6d7d1c2993c143b7ad2b6c8868c",
+      "url": "https://huggingface.co/Qwen/Qwen3.5-9B-Base/resolve/68c46c4b3498877f3ef123c856ecfde50c39f404/model.safetensors-00002-of-00004.safetensors"
+    },
+    {
+      "expected_size": 5368717376,
+      "filename": "model.safetensors-00003-of-00004.safetensors",
+      "provider": "huggingface",
+      "repository": "Qwen/Qwen3.5-9B-Base",
+      "revision": "68c46c4b3498877f3ef123c856ecfde50c39f404",
+      "sha256": "63a021ac0011cbfc66166e77103327a8b45dee95832e36551f6b4c3337448959",
+      "url": "https://huggingface.co/Qwen/Qwen3.5-9B-Base/resolve/68c46c4b3498877f3ef123c856ecfde50c39f404/model.safetensors-00003-of-00004.safetensors"
+    },
+    {
+      "expected_size": 3325995704,
+      "filename": "model.safetensors-00004-of-00004.safetensors",
+      "provider": "huggingface",
+      "repository": "Qwen/Qwen3.5-9B-Base",
+      "revision": "68c46c4b3498877f3ef123c856ecfde50c39f404",
+      "sha256": "1a643bbed669266917b5058b5d3f660c03233599249ff7d8fd083decfe662ae0",
+      "url": "https://huggingface.co/Qwen/Qwen3.5-9B-Base/resolve/68c46c4b3498877f3ef123c856ecfde50c39f404/model.safetensors-00004-of-00004.safetensors"
+    },
+    {
+      "expected_size": 79657,
+      "filename": "model.safetensors.index.json",
+      "provider": "huggingface",
+      "repository": "Qwen/Qwen3.5-9B-Base",
+      "revision": "68c46c4b3498877f3ef123c856ecfde50c39f404",
+      "sha256": "026b9d9fe03f19fd065f2a2f56a332c67640878106c0ca6be2f60c655ed5a8c1",
+      "url": "https://huggingface.co/Qwen/Qwen3.5-9B-Base/resolve/68c46c4b3498877f3ef123c856ecfde50c39f404/model.safetensors.index.json"
+    },
+    {
+      "expected_size": 390,
+      "filename": "preprocessor_config.json",
+      "provider": "huggingface",
+      "repository": "Qwen/Qwen3.5-9B-Base",
+      "revision": "68c46c4b3498877f3ef123c856ecfde50c39f404",
+      "sha256": "27225450ac9c6529872ee1924fcb0962ff5634834f817040f444118116f4e516",
+      "url": "https://huggingface.co/Qwen/Qwen3.5-9B-Base/resolve/68c46c4b3498877f3ef123c856ecfde50c39f404/preprocessor_config.json"
+    },
+    {
+      "expected_size": 12807196,
+      "filename": "tokenizer.json",
+      "provider": "huggingface",
+      "repository": "Qwen/Qwen3.5-9B-Base",
+      "revision": "68c46c4b3498877f3ef123c856ecfde50c39f404",
+      "sha256": "fe000e3ed39ed12b8d2481d527d44f93c65d37e87645d2dcc80d1bf9d50d2927",
+      "url": "https://huggingface.co/Qwen/Qwen3.5-9B-Base/resolve/68c46c4b3498877f3ef123c856ecfde50c39f404/tokenizer.json"
+    },
+    {
+      "expected_size": 16713,
+      "filename": "tokenizer_config.json",
+      "provider": "huggingface",
+      "repository": "Qwen/Qwen3.5-9B-Base",
+      "revision": "68c46c4b3498877f3ef123c856ecfde50c39f404",
+      "sha256": "3891e840d7dc5fca0af33d3a25083a735e36fe06214e3f707024820cb6b9f89c",
+      "url": "https://huggingface.co/Qwen/Qwen3.5-9B-Base/resolve/68c46c4b3498877f3ef123c856ecfde50c39f404/tokenizer_config.json"
+    },
+    {
+      "expected_size": 386,
+      "filename": "video_preprocessor_config.json",
+      "provider": "huggingface",
+      "repository": "Qwen/Qwen3.5-9B-Base",
+      "revision": "68c46c4b3498877f3ef123c856ecfde50c39f404",
+      "sha256": "d039cd7d88b3502a99edd455496b75b44ecf7dd3b3669748bafac37e6cecc085",
+      "url": "https://huggingface.co/Qwen/Qwen3.5-9B-Base/resolve/68c46c4b3498877f3ef123c856ecfde50c39f404/video_preprocessor_config.json"
+    },
+    {
+      "expected_size": 6722759,
+      "filename": "vocab.json",
+      "provider": "huggingface",
+      "repository": "Qwen/Qwen3.5-9B-Base",
+      "revision": "68c46c4b3498877f3ef123c856ecfde50c39f404",
+      "sha256": "ce99b4cb2983d118806ce0a8b777a35b093e2000a503ebde25853284c9dfa003",
+      "url": "https://huggingface.co/Qwen/Qwen3.5-9B-Base/resolve/68c46c4b3498877f3ef123c856ecfde50c39f404/vocab.json"
+    }
+  ],
+  "model_id": "Qwen/Qwen3.5-9B-Base",
+  "provider": "huggingface",
+  "requested_revision": "main",
+  "resolved_revision": "68c46c4b3498877f3ef123c856ecfde50c39f404",
+  "schema_version": 1
+}
