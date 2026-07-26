@@ -1,0 +1,1060 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Twen 任务监控</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f1115;
+      --surface: #171a21;
+      --surface-2: #1d2129;
+      --surface-3: #222731;
+      --border: #343a46;
+      --border-strong: #4a5260;
+      --text: #e7eaf0;
+      --muted: #9aa2af;
+      --faint: #737c8b;
+      --accent: #4c8df6;
+      --accent-soft: #1d3557;
+      --success: #4caf74;
+      --warning: #d5a53c;
+      --danger: #d96868;
+      --radius: 6px;
+    }
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    button, select { font: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: .45; }
+    [hidden] { display: none !important; }
+    .app-header {
+      height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 0 22px;
+      border-bottom: 1px solid var(--border);
+      background: #13161b;
+    }
+    .brand { min-width: 0; }
+    .brand h1 { margin: 0; font-size: 17px; font-weight: 650; }
+    .brand p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+    .header-tools { display: flex; align-items: center; gap: 12px; }
+    .connection { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 13px; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warning); }
+    .dot.ok { background: var(--success); }
+    .dot.bad { background: var(--danger); }
+    .button {
+      min-height: 32px;
+      padding: 6px 11px;
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      background: var(--surface-2);
+      color: var(--text);
+    }
+    .button:hover:not(:disabled) { background: var(--surface-3); }
+    .button.primary { border-color: #426ba9; color: #d7e6ff; }
+    .button.warning { border-color: #7b6535; color: #ead49c; }
+    .button.danger { border-color: #7d4548; color: #efb5b8; }
+    .launch-select {
+      min-height: 32px;
+      max-width: 260px;
+      padding: 5px 8px;
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      background: var(--surface-2);
+      color: var(--text);
+    }
+    .app-layout {
+      display: grid;
+      grid-template-columns: 300px minmax(0, 1fr);
+      min-height: calc(100vh - 58px);
+    }
+    .sidebar {
+      border-right: 1px solid var(--border);
+      background: #13161b;
+      padding: 16px 12px 24px;
+      overflow: auto;
+    }
+    .sidebar-title {
+      margin: 0 8px 14px;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 650;
+      letter-spacing: .02em;
+    }
+    .task-group { margin-bottom: 20px; }
+    .task-group h2 {
+      margin: 0 8px 7px;
+      color: var(--faint);
+      font-size: 11px;
+      font-weight: 650;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .task-list { display: grid; gap: 5px; }
+    .task-item {
+      width: 100%;
+      display: block;
+      padding: 10px;
+      text-align: left;
+      color: var(--text);
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 4px;
+    }
+    .task-item:hover { background: var(--surface-2); }
+    .task-item.selected { background: var(--accent-soft); border-color: #385d91; }
+    .task-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .task-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .task-meta { margin-top: 4px; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .status {
+      flex: 0 0 auto;
+      display: inline-block;
+      padding: 2px 6px;
+      border: 1px solid var(--border-strong);
+      border-radius: 3px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .status.running { color: #a9dbbb; border-color: #39764f; background: #192a20; }
+    .status.completed { color: #b5c9e8; border-color: #465d7e; background: #1a2432; }
+    .status.paused { color: #e8cf9f; border-color: #806735; background: #2b2518; }
+    .empty { padding: 10px; color: var(--faint); font-size: 12px; }
+    .main { min-width: 0; padding: 18px; overflow: hidden; }
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+    .main > .panel + .panel,
+    .main > .panel + .grid,
+    .main > .grid + .panel,
+    .main > .grid + .grid { margin-top: 14px; }
+    .panel-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .panel-header h2 { margin: 0; font-size: 14px; font-weight: 650; }
+    .panel-header p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+    .panel-body { padding: 16px; }
+    .overview { padding: 16px; }
+    .overview-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+    .overview h2 { margin: 0; font-size: 19px; font-weight: 650; }
+    .overview-meta { margin-top: 4px; color: var(--muted); font-size: 12px; }
+    .progress-track { height: 7px; margin-top: 16px; overflow: hidden; border-radius: 2px; background: #292e37; }
+    .progress-fill { height: 100%; width: 0; background: var(--accent); transition: width .25s ease; }
+    .progress-line { display: flex; justify-content: space-between; gap: 12px; margin-top: 7px; color: var(--muted); font-size: 12px; }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(120px, 1fr));
+      gap: 1px;
+      margin-top: 16px;
+      border: 1px solid var(--border);
+      background: var(--border);
+    }
+    .summary-item { min-width: 0; padding: 12px; background: var(--surface-2); }
+    .summary-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+    .summary-value { margin-top: 5px; font-size: 19px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .summary-detail { margin-top: 3px; color: var(--faint); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .task-actions { display: flex; gap: 8px; margin-top: 14px; }
+    .association-note { margin-top: 12px; padding: 8px 10px; border-left: 3px solid var(--border-strong); background: var(--surface-2); color: var(--muted); font-size: 12px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-items: stretch;
+      gap: 14px;
+    }
+    .grid > .panel { min-width: 0; width: 100%; box-sizing: border-box; }
+    .gpu-stats { display: grid; grid-template-columns: repeat(6, minmax(110px, 1fr)); gap: 1px; background: var(--border); }
+    .gpu-stat { min-width: 0; padding: 12px; background: var(--surface-2); }
+    .gpu-stat strong { display: block; margin-top: 4px; font-size: 18px; }
+    .gpu-stat small { display: block; margin-top: 3px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chart-panel {
+      display: grid;
+      grid-template-rows: auto minmax(230px, 1fr);
+      min-height: 310px;
+      height: 100%;
+    }
+    .chart-panel .panel-header { min-height: 63px; box-sizing: border-box; }
+    .chart-wrap {
+      position: relative;
+      min-height: 230px;
+      height: 100%;
+      padding: 10px 12px 12px;
+      box-sizing: border-box;
+    }
+    canvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: pan-y; }
+    .chart-tooltip {
+      position: absolute;
+      z-index: 5;
+      min-width: 150px;
+      max-width: min(260px, calc(100% - 16px));
+      padding: 8px 9px;
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      background: #20242c;
+      color: var(--text);
+      font-size: 11px;
+      line-height: 1.45;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .chart-tooltip.show { opacity: 1; }
+    .chart-tooltip-time { margin-bottom: 5px; color: var(--muted); white-space: nowrap; }
+    .chart-tooltip-row { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; gap: 7px; align-items: center; }
+    .chart-tooltip-row + .chart-tooltip-row { margin-top: 3px; }
+    .chart-tooltip-dot { width: 7px; height: 7px; border-radius: 50%; }
+    .chart-tooltip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chart-tooltip-value { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-variant-numeric: tabular-nums; }
+    .roles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .role-card { border: 1px solid var(--border); background: var(--surface-2); padding: 12px; border-radius: 4px; }
+    .role-card h3 { margin: 0 0 8px; font-size: 13px; }
+    .role-value { font-size: 19px; font-weight: 650; }
+    .role-meta { margin-top: 4px; color: var(--muted); font-size: 12px; }
+    .acceptance { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .acceptance span { border: 1px solid var(--border); border-radius: 3px; padding: 4px 7px; color: var(--muted); font-size: 12px; }
+    .console {
+      margin: 0;
+      max-height: 360px;
+      overflow: auto;
+      padding: 13px;
+      border: 1px solid #2b3038;
+      border-radius: 4px;
+      background: #0d0f13;
+      color: #d4d9e1;
+      font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .event-table-wrap { max-height: 360px; overflow: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+    th { position: sticky; top: 0; background: var(--surface-2); color: var(--muted); font-weight: 600; }
+    td:last-child { max-width: 720px; overflow-wrap: anywhere; }
+    .toast {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 20;
+      max-width: 420px;
+      padding: 10px 12px;
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      background: #252a33;
+      color: var(--text);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(8px);
+      transition: .16s ease;
+    }
+    .toast.show { opacity: 1; transform: none; }
+    .toast.error { border-color: #82474a; color: #f1b7ba; }
+    @media (max-width: 1220px) {
+      .summary-grid, .gpu-stats { grid-template-columns: repeat(3, minmax(120px, 1fr)); }
+    }
+    @media (max-width: 860px) {
+      .app-header { height: auto; min-height: 58px; padding: 10px 14px; align-items: flex-start; }
+      .app-layout { grid-template-columns: 1fr; }
+      .sidebar { border-right: 0; border-bottom: 1px solid var(--border); max-height: 320px; }
+      .main { padding: 12px; }
+      .grid { grid-template-columns: 1fr; }
+      .summary-grid, .gpu-stats, .roles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 520px) {
+      .brand p { display: none; }
+      .connection span:last-child { display: none; }
+      .summary-grid, .gpu-stats, .roles { grid-template-columns: 1fr; }
+      .overview-head { display: block; }
+      .overview-head .status { margin-top: 8px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <h1>Twen 任务监控</h1>
+      <p>运行任务、可恢复任务、已完成任务与实时硬件状态</p>
+    </div>
+    <div class="header-tools">
+      <span class="connection"><span id="connDot" class="dot"></span><span id="connText">连接中</span></span>
+      <select id="launchSelect" class="launch-select" aria-label="可启动训练配置" hidden></select>
+      <button id="launchBtn" class="button primary" type="button" hidden>启动训练</button>
+      <button id="refreshBtn" class="button" type="button">刷新</button>
+    </div>
+  </header>
+
+  <div class="app-layout">
+    <aside class="sidebar">
+      <h2 class="sidebar-title">任务</h2>
+      <section class="task-group">
+        <h2>运行中</h2>
+        <div id="runningTasks" class="task-list"><div class="empty">正在读取任务…</div></div>
+      </section>
+      <section class="task-group">
+        <h2>可恢复</h2>
+        <div id="pausedTasks" class="task-list"><div class="empty">正在读取任务…</div></div>
+      </section>
+      <section class="task-group">
+        <h2>已完成</h2>
+        <div id="completedTasks" class="task-list"><div class="empty">正在读取任务…</div></div>
+      </section>
+    </aside>
+
+    <main class="main">
+      <section id="overview" class="panel overview">
+        <div class="overview-head">
+          <div>
+            <h2 id="taskName">正在读取任务</h2>
+            <div id="taskMeta" class="overview-meta">—</div>
+          </div>
+          <span id="taskState" class="status">—</span>
+        </div>
+        <div class="progress-track"><div id="progressFill" class="progress-fill"></div></div>
+        <div class="progress-line"><span id="progressText">—</span><span id="updatedText">—</span></div>
+        <div id="summaryGrid" class="summary-grid"></div>
+        <div id="taskActions" class="task-actions" hidden>
+          <button id="startBtn" class="button primary" type="button">启动训练</button>
+          <button id="saveBtn" class="button warning" type="button">保存 checkpoint</button>
+          <button id="stopBtn" class="button danger" type="button">优雅停止</button>
+        </div>
+        <div id="associationNote" class="association-note" hidden></div>
+      </section>
+
+      <section id="gpuSection" class="panel" hidden>
+        <div class="panel-header">
+          <div><h2>实时 GPU</h2><p id="gpuOwner">仅关联当前运行任务；100 ms 采样，窗口约 60 秒</p></div>
+          <span id="gpuState" class="status running">LIVE</span>
+        </div>
+        <div id="gpuStats" class="gpu-stats"></div>
+      </section>
+
+      <section id="taskProgressSection" class="grid" hidden>
+        <div class="panel chart-panel">
+          <div class="panel-header"><div><h2>任务进度</h2><p>当前浏览器会话内的进度变化</p></div></div>
+          <div class="chart-wrap"><canvas id="taskProgressChart"></canvas></div>
+        </div>
+        <div class="panel chart-panel">
+          <div class="panel-header"><div><h2>任务吞吐</h2><p>运行日志实时 tok/s；虚线为 attempt 累计 wall 均值</p></div></div>
+          <div class="chart-wrap"><canvas id="taskSpeedChart"></canvas></div>
+        </div>
+      </section>
+
+      <section id="gpuCharts" class="grid" hidden>
+        <div class="panel chart-panel"><div class="panel-header"><div><h2>功耗</h2><p>power draw 与 600 W limit</p></div></div><div class="chart-wrap"><canvas id="gpuPowerChart"></canvas></div></div>
+        <div class="panel chart-panel"><div class="panel-header"><div><h2>利用率</h2><p>GPU core 与 memory controller</p></div></div><div class="chart-wrap"><canvas id="gpuUtilChart"></canvas></div></div>
+        <div class="panel chart-panel"><div class="panel-header"><div><h2>温度与时钟</h2><p>GPU 温度与 SM clock</p></div></div><div class="chart-wrap"><canvas id="gpuThermalChart"></canvas></div></div>
+        <div class="panel chart-panel"><div class="panel-header"><div><h2>物理显存</h2><p>NVML used / free</p></div></div><div class="chart-wrap"><canvas id="gpuVramChart"></canvas></div></div>
+      </section>
+
+      <section id="trainingCharts" class="grid" hidden>
+        <div class="panel chart-panel"><div class="panel-header"><div><h2>Loss</h2><p>训练总损失与可用分量</p></div></div><div class="chart-wrap"><canvas id="lossChart"></canvas></div></div>
+        <div class="panel chart-panel"><div class="panel-header"><div><h2>平滑 Loss</h2><p>100-step 与 152-step 均值；152 steps 覆盖两个典型 source 周期</p></div></div><div class="chart-wrap"><canvas id="smoothedLossChart"></canvas></div></div>
+        <div class="panel chart-panel"><div class="panel-header"><div><h2>训练吞吐</h2><p>compute / wall token/s</p></div></div><div class="chart-wrap"><canvas id="trainingSpeedChart"></canvas></div></div>
+        <div class="panel chart-panel"><div class="panel-header"><div><h2>训练显存</h2><p>allocated / reserved / peak</p></div></div><div class="chart-wrap"><canvas id="trainingMemoryChart"></canvas></div></div>
+        <div class="panel chart-panel"><div class="panel-header"><div><h2>学习率与梯度</h2><p>adapter LR 与 grad norm</p></div></div><div class="chart-wrap"><canvas id="trainingLrChart"></canvas></div></div>
+      </section>
+
+      <section id="evaluationSection" class="panel" hidden>
+        <div class="panel-header"><div><h2>评测结果</h2><p>只显示该 evaluation 自身的已认证指标</p></div></div>
+        <div class="panel-body"><div id="evaluationRoles" class="roles"></div><div id="evaluationAcceptance" class="acceptance"></div></div>
+      </section>
+
+      <section id="eventsSection" class="panel" hidden>
+        <div class="panel-header"><div><h2>事件与 checkpoint</h2><p>所选训练任务的结构化事件</p></div></div>
+        <div class="event-table-wrap"><table><thead><tr><th>事件</th><th>Step</th><th>时间</th><th>详情</th></tr></thead><tbody id="eventsBody"></tbody></table></div>
+      </section>
+
+      <section id="consoleSection" class="panel" hidden>
+        <div class="panel-header"><div><h2>任务日志</h2><p id="consoleSource">所选任务自己的 console tail</p></div></div>
+        <div class="panel-body"><pre id="console" class="console">尚无日志</pre></div>
+      </section>
+    </main>
+  </div>
+  <div id="toast" class="toast"></div>
+
+  <script>
+    "use strict";
+    const $ = id => document.getElementById(id);
+    let bootstrap = null;
+    let snapshot = null;
+    let csrf = "";
+    let selectedTaskKey = "";
+    let refreshing = false;
+    let busy = false;
+    let timer = null;
+    const progressHistory = new Map();
+    const progressRateState = new Map();
+    const chartStates = new WeakMap();
+
+    function finite(value) { return typeof value === "number" && Number.isFinite(value); }
+    function num(value, digits = 2) { return finite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: digits }) : "—"; }
+    function compact(value) {
+      if (!finite(value)) return "—";
+      const abs = Math.abs(value);
+      if (abs >= 1e9) return (value / 1e9).toFixed(2) + "B";
+      if (abs >= 1e6) return (value / 1e6).toFixed(2) + "M";
+      if (abs >= 1e3) return (value / 1e3).toFixed(2) + "k";
+      return num(value, 0);
+    }
+    function duration(seconds) {
+      if (!finite(seconds)) return "—";
+      seconds = Math.max(0, Math.round(seconds));
+      const days = Math.floor(seconds / 86400); seconds %= 86400;
+      const hours = Math.floor(seconds / 3600); seconds %= 3600;
+      const minutes = Math.floor(seconds / 60); const secs = seconds % 60;
+      if (days) return `${days}d ${hours}h`;
+      if (hours) return `${hours}h ${String(minutes).padStart(2, "0")}m`;
+      if (minutes) return `${minutes}m ${String(secs).padStart(2, "0")}s`;
+      return `${secs}s`;
+    }
+    function localTime(value) {
+      if (!value) return "—";
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+    }
+    function parseConsoleTokenRate(value) {
+      if (typeof value !== "string" || !value) return null;
+      const pattern = /(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*([kKmMgGtT]?)tok\/s\b/g;
+      let latest = null;
+      for (const match of value.matchAll(pattern)) {
+        const base = Number(match[1].replaceAll(",", ""));
+        const multiplier = ({ k: 1e3, m: 1e6, g: 1e9, t: 1e12 })[match[2].toLowerCase()] || 1;
+        const rate = base * multiplier;
+        if (finite(rate) && rate >= 0) latest = rate;
+      }
+      return latest;
+    }
+    function sampleTaskRate(task, progress, consoleText, observedAt) {
+      const completed = progress.completed_tokens;
+      const sourceTime = finite(task.updated_at_unix) ? task.updated_at_unix * 1000 : observedAt;
+      let tracker = progressRateState.get(task.key);
+      if (!tracker || !finite(completed) || completed < tracker.tokens || sourceTime < tracker.changedAt) {
+        tracker = {
+          tokens: finite(completed) ? completed : 0,
+          changedAt: sourceTime,
+          changes: 0,
+          intervalRate: null
+        };
+      } else if (completed > tracker.tokens && sourceTime > tracker.changedAt) {
+        const candidate = (completed - tracker.tokens) / ((sourceTime - tracker.changedAt) / 1000);
+        if (tracker.changes > 0 && finite(candidate) && candidate >= 0) tracker.intervalRate = candidate;
+        tracker.tokens = completed;
+        tracker.changedAt = sourceTime;
+        tracker.changes += 1;
+      }
+      progressRateState.set(task.key, tracker);
+      const consoleRate = parseConsoleTokenRate(consoleText);
+      return {
+        liveRate: finite(consoleRate) ? consoleRate : tracker.intervalRate,
+        rateSource: finite(consoleRate) ? "运行日志" : finite(tracker.intervalRate) ? "提交间隔" : "等待实时样本"
+      };
+    }
+    function latestProgressRate(taskKey) {
+      const rows = progressHistory.get(taskKey) || [];
+      for (let index = rows.length - 1; index >= 0; index--) {
+        if (finite(rows[index].live_tokens_per_second)) return rows[index];
+      }
+      return null;
+    }
+    function kindLabel(kind) {
+      return ({ kd: "Teacher KD", data_pipeline: "数据准备", evaluation: "评测", training: "训练" })[kind] || String(kind || "任务");
+    }
+    function stateLabel(state) { return state === "running" ? "运行中" : state === "paused" ? "可恢复" : state === "completed" ? "已完成" : String(state || "未知"); }
+    function toast(message, error = false) {
+      const node = $("toast"); node.textContent = message; node.className = "toast show" + (error ? " error" : "");
+      clearTimeout(node._timer); node._timer = setTimeout(() => node.className = "toast", 3200);
+    }
+    async function request(url, options = {}) {
+      const response = await fetch(url, { cache: "no-store", ...options });
+      let value = null; try { value = await response.json(); } catch (_) {}
+      if (!response.ok || !value || value.ok === false) throw new Error(value?.error || `HTTP ${response.status}`);
+      return value;
+    }
+    function clear(node) { node.replaceChildren(); }
+    function addSummary(label, value, detail = "") {
+      const item = document.createElement("div"); item.className = "summary-item";
+      const l = document.createElement("div"); l.className = "summary-label"; l.textContent = label;
+      const v = document.createElement("div"); v.className = "summary-value"; v.textContent = value;
+      const d = document.createElement("div"); d.className = "summary-detail"; d.textContent = detail;
+      item.append(l, v, d); $("summaryGrid").append(item);
+    }
+    function taskMeta(task) {
+      const progress = task.progress || {};
+      if (task.kind === "kd") return [kindLabel(task.kind), `phase ${task.phase || "—"}`, finite(progress.completed_shards) ? `${num(progress.completed_shards, 0)}/${num(progress.total_shards, 0)} shards` : null].filter(Boolean).join(" · ");
+      return [kindLabel(task.kind), task.phase, task.source?.status || task.source?.run_id].filter(Boolean).join(" · ");
+    }
+    function renderTaskList(tasks) {
+      const renderGroup = (container, rows, emptyText) => {
+        clear(container);
+        if (!rows.length) { const empty = document.createElement("div"); empty.className = "empty"; empty.textContent = emptyText; container.append(empty); return; }
+        for (const task of rows) {
+          const button = document.createElement("button"); button.type = "button"; button.className = "task-item" + (task.key === selectedTaskKey ? " selected" : "");
+          const row = document.createElement("div"); row.className = "task-row";
+          const name = document.createElement("span"); name.className = "task-name"; name.textContent = task.label || task.key;
+          const status = document.createElement("span"); status.className = `status ${task.state || ""}`; status.textContent = stateLabel(task.state);
+          row.append(name, status);
+          const meta = document.createElement("div"); meta.className = "task-meta";
+          const percent = task.progress?.percent;
+          meta.textContent = [kindLabel(task.kind), finite(percent) ? `${num(percent, 1)}%` : null, task.phase].filter(Boolean).join(" · ");
+          button.append(row, meta);
+          button.addEventListener("click", () => { if (task.key !== selectedTaskKey) { selectedTaskKey = task.key; refresh(); } });
+          container.append(button);
+        }
+      };
+      renderGroup($("runningTasks"), tasks.filter(task => task.state === "running"), "当前没有运行中的任务");
+      renderGroup($("pausedTasks"), tasks.filter(task => task.state === "paused"), "当前没有可恢复的训练");
+      renderGroup($("completedTasks"), tasks.filter(task => task.state === "completed"), "尚无已完成任务");
+    }
+    function syncLaunchProfiles() {
+      const profiles = (bootstrap?.profiles || []).filter(profile => profile.start_available === true);
+      const select = $("launchSelect"), button = $("launchBtn"); clear(select);
+      for (const profile of profiles) {
+        const option = document.createElement("option"); option.value = profile.profile_id;
+        option.textContent = `${profile.label || profile.run_id || profile.profile_id} · ${profile.start_action === "resume" ? "恢复" : "首次启动"}`;
+        select.append(option);
+      }
+      const syncButtonLabel = () => {
+        const selected = profiles.find(profile => profile.profile_id === select.value);
+        button.textContent = selected?.start_action === "resume" ? "恢复训练" : "启动训练";
+      };
+      select.onchange = syncButtonLabel; syncButtonLabel();
+      select.hidden = profiles.length === 0; button.hidden = profiles.length === 0;
+    }
+    function latestTraining() {
+      const metrics = snapshot?.metrics || [], telemetry = snapshot?.telemetry || [];
+      const metric = metrics[metrics.length - 1] || snapshot?.status?.latest_metric || snapshot?.task_data?.latest_metric || {};
+      const tel = telemetry[telemetry.length - 1] || snapshot?.status?.latest_telemetry || {};
+      return { metric, tel };
+    }
+    function renderOverview() {
+      const task = snapshot?.task;
+      if (!task) return;
+      const data = snapshot.task_data || {}, progress = data.progress || task.progress || {};
+      $("taskName").textContent = task.label || task.key;
+      $("taskMeta").textContent = taskMeta(task);
+      $("taskState").textContent = stateLabel(task.state);
+      $("taskState").className = `status ${task.state || ""}`;
+      const percent = finite(progress.percent) ? Math.max(0, Math.min(100, progress.percent)) : (task.state === "completed" ? 100 : 0);
+      $("progressFill").style.width = `${percent}%`;
+      $("progressText").textContent = finite(progress.completed_tokens) && finite(progress.total_tokens)
+        ? `${num(percent, 2)}% · ${progress.completed_tokens.toLocaleString()} / ${progress.total_tokens.toLocaleString()} tokens`
+        : `${num(percent, 2)}%`;
+      $("updatedText").textContent = `更新 ${localTime(task.updated_at || snapshot.server_time_utc)}`;
+      clear($("summaryGrid"));
+      if (task.kind === "kd") {
+        const live = latestProgressRate(task.key);
+        addSummary("阶段", data.phase || task.phase || "—", finite(data.attempt) ? `attempt ${num(data.attempt, 0)}` : "");
+        addSummary("已完成 token", compact(progress.completed_tokens), finite(progress.total_tokens) ? `总计 ${compact(progress.total_tokens)}` : "");
+        addSummary(
+          "实时吞吐",
+          finite(live?.live_tokens_per_second) ? `${num(live.live_tokens_per_second, 0)} tok/s` : "—",
+          finite(progress.tokens_per_second)
+            ? `${live?.rate_source || "等待实时样本"} · attempt 均值 ${num(progress.tokens_per_second, 0)}`
+            : (live?.rate_source || "等待实时样本")
+        );
+        addSummary("ETA", duration(progress.eta_seconds), finite(progress.remaining_tokens) ? `剩余 ${compact(progress.remaining_tokens)}` : "");
+        addSummary("Shard", finite(progress.completed_shards) ? `${num(progress.completed_shards, 0)} / ${num(progress.total_shards, 0)}` : "—", "已认证提交");
+        addSummary("Sequence", finite(progress.completed_sequences) ? `${num(progress.completed_sequences, 0)} / ${num(progress.total_sequences, 0)}` : "—", data.optimizer_created === false ? "未创建 optimizer" : "");
+      } else if (task.kind === "training") {
+        const { metric, tel } = latestTraining();
+        addSummary("Step", num(metric.step ?? tel.step, 0), `${compact(metric.tokens ?? tel.tokens)} tokens`);
+        addSummary("Loss", num(metric.loss, 4), finite(metric.ntp_loss ?? metric.ntp) ? `NTP ${num(metric.ntp_loss ?? metric.ntp, 4)}` : "");
+        addSummary("KD Loss", num(metric.teacher_kd_loss ?? metric.teacher_kd, 4), "teacher distillation");
+        addSummary("MTP Loss", num(metric.mtp_loss ?? metric.mtp, 4), "Qwen3.5 native MTP");
+        addSummary("Wall 吞吐", finite(tel.wall_clock_tokens_per_second_ema) ? `${num(tel.wall_clock_tokens_per_second_ema, 0)} tok/s` : "—", finite(tel.compute_tokens_per_second_ema) ? `compute ${num(tel.compute_tokens_per_second_ema, 0)}` : "");
+        addSummary("GPU 显存", finite(tel.gpu_peak_allocated_gib) ? `${num(tel.gpu_peak_allocated_gib, 2)} GiB` : "—", finite(tel.gpu_peak_reserved_gib) ? `reserved ${num(tel.gpu_peak_reserved_gib, 2)}` : "");
+        addSummary("ETA", duration(tel.wall_clock_eta_seconds ?? tel.eta_seconds), finite(metric.grad_norm) ? `grad ${num(metric.grad_norm, 3)}` : "");
+      } else if (task.kind === "evaluation") {
+        const roles = data.roles || {}, names = Object.keys(roles);
+        addSummary("状态", stateLabel(task.state), `${names.length} roles`);
+        for (const name of names.slice(0, 3)) addSummary(`${name} NLL`, num(roles[name].mean_nll, 4), finite(roles[name].perplexity) ? `PPL ${num(roles[name].perplexity, 3)}` : "");
+        addSummary("评测进度", `${num(percent, 0)}%`, task.detail || "");
+      } else {
+        addSummary("状态", stateLabel(task.state), data.phase || task.phase || "");
+        addSummary("进度", `${num(percent, 0)}%`, task.detail || "");
+        addSummary("完成 token", compact(progress.completed_tokens), finite(progress.total_tokens) ? `总计 ${compact(progress.total_tokens)}` : "");
+        addSummary("耗时", duration(progress.attempt_elapsed_seconds), "");
+      }
+      const status = snapshot.status || {}, control = task.control || data.control || {};
+      const showActions = task.kind === "training" && Boolean(control.available || status.profile_id);
+      $("taskActions").hidden = !showActions;
+      if (showActions) {
+        const active = task.state === "running";
+        const startAvailable = Boolean(status.start_available ?? control.start_available ?? (status.launch_enabled ?? control.launch_enabled));
+        const startAction = status.start_action ?? control.start_action;
+        $("startBtn").textContent = startAction === "resume" ? "恢复训练" : "启动训练";
+        $("startBtn").disabled = busy || active || !startAvailable;
+        $("saveBtn").disabled = busy || !active || status.state !== "running";
+        $("stopBtn").disabled = busy || !active;
+      }
+      const note = $("associationNote");
+      if (task.state === "completed" && snapshot.active_task_key) {
+        note.hidden = false;
+        note.textContent = "这是已完成任务；当前实时 GPU 属于另一个运行任务，因此不会在这里显示。";
+      } else if (!snapshot.live_gpu_relevant && task.state === "running") {
+        note.hidden = false;
+        note.textContent = "当前 GPU 遥测未关联到这个任务。";
+      } else note.hidden = true;
+    }
+    function gpuSummary(fields, key, unit, digits = 1) {
+      const value = fields?.[key] || {};
+      return { value: finite(value.current) ? `${num(value.current, digits)}${unit}` : "—", detail: finite(value.mean) ? `均值 ${num(value.mean, digits)} · p95 ${num(value.p95, digits)} · 峰值 ${num(value.max, digits)}` : "暂无窗口统计" };
+    }
+    function renderGpu() {
+      const relevant = Boolean(snapshot?.live_gpu_relevant), section = $("gpuSection"), charts = $("gpuCharts");
+      section.hidden = !relevant; charts.hidden = !relevant;
+      if (!relevant) return;
+      const block = snapshot.gpu_telemetry || {}, latest = block.latest || {}, stats = block.window_statistics || {}, fields = stats.fields || {};
+      $("gpuOwner").textContent = `关联任务：${block.associated_task_label || snapshot.task.label} · ${num((block.sample_interval_seconds || .1) * 1000, 0)} ms 采样`;
+      $("gpuState").textContent = latest.available === true ? "LIVE" : "不可用";
+      $("gpuState").className = `status ${latest.available === true ? "running" : ""}`;
+      clear($("gpuStats"));
+      const rows = [
+        ["功耗", gpuSummary(fields, "power_draw_w", " W", 1)],
+        ["GPU 利用率", gpuSummary(fields, "gpu_utilization_percent", "%", 0)],
+        ["显存控制器", gpuSummary(fields, "memory_utilization_percent", "%", 0)],
+        ["SM Clock", gpuSummary(fields, "sm_clock_mhz", " MHz", 0)],
+        ["显存使用", gpuSummary(fields, "vram_used_mib", " MiB", 0)],
+        ["温度", gpuSummary(fields, "temperature_c", " °C", 0)]
+      ];
+      for (const [label, row] of rows) {
+        const item = document.createElement("div"); item.className = "gpu-stat";
+        const l = document.createElement("span"); l.className = "summary-label"; l.textContent = label;
+        const value = document.createElement("strong"); value.textContent = row.value;
+        const detail = document.createElement("small"); detail.textContent = row.detail;
+        item.append(l, value, detail); $("gpuStats").append(item);
+      }
+      const history = (block.history || []).filter(row => row.available === true);
+      drawChart($("gpuPowerChart"), history, [
+        { key: "power_draw_w", label: "draw", color: "#4c8df6", unit: " W", digits: 1 },
+        { key: "power_limit_w", label: "limit", color: "#9aa2af", unit: " W", digits: 1, dash: [4, 4] }
+      ], { zero: false });
+      drawChart($("gpuUtilChart"), history, [
+        { key: "gpu_utilization_percent", label: "GPU", color: "#4c8df6", unit: "%", digits: 0 },
+        { key: "memory_utilization_percent", label: "memory", color: "#4caf74", unit: "%", digits: 0 }
+      ], { zero: true, maxValue: 100 });
+      drawChart($("gpuThermalChart"), history, [
+        { key: "temperature_c", label: "温度", color: "#d5a53c", unit: " °C", digits: 0 },
+        { key: "sm_clock_mhz", label: "SM clock", color: "#4c8df6", unit: " MHz", digits: 0, axis: "right" }
+      ], { zero: false });
+      const vramRows = history.map(row => ({ ...row, used_gib: row.vram_used_mib / 1024, free_gib: row.vram_free_mib / 1024 }));
+      drawChart($("gpuVramChart"), vramRows, [
+        { key: "used_gib", label: "used", color: "#4c8df6", unit: " GiB", digits: 2 },
+        { key: "free_gib", label: "free", color: "#9aa2af", unit: " GiB", digits: 2 }
+      ], { zero: true });
+    }
+    function rememberProgress() {
+      const task = snapshot?.task, progress = snapshot?.task_data?.progress || task?.progress || {};
+      if (!task || task.state !== "running" || !["kd", "data_pipeline"].includes(task.kind)) return;
+      const rows = progressHistory.get(task.key) || [];
+      const now = Date.now();
+      const last = rows[rows.length - 1];
+      if (!last || now - last.time >= 750) {
+        const rate = sampleTaskRate(task, progress, snapshot?.console || "", now);
+        rows.push({
+          time: now,
+          percent: progress.percent,
+          completed_tokens: progress.completed_tokens,
+          live_tokens_per_second: rate.liveRate,
+          attempt_tokens_per_second: progress.tokens_per_second,
+          rate_source: rate.rateSource
+        });
+        if (rows.length > 300) rows.splice(0, rows.length - 300);
+      }
+      progressHistory.set(task.key, rows);
+    }
+    function renderTaskProgress() {
+      const task = snapshot?.task;
+      const visible = task?.state === "running" && ["kd", "data_pipeline"].includes(task.kind);
+      $("taskProgressSection").hidden = !visible;
+      if (!visible) return;
+      const rows = progressHistory.get(task.key) || [];
+      drawChart($("taskProgressChart"), rows, [
+        { key: "percent", label: "进度", color: "#4c8df6", unit: "%", digits: 3 }
+      ], { zero: true, maxValue: 100 });
+      drawChart($("taskSpeedChart"), rows, [
+        { key: "live_tokens_per_second", label: "实时", color: "#4caf74", unit: " tok/s", digits: 0 },
+        { key: "attempt_tokens_per_second", label: "attempt 均值", color: "#9aa2af", unit: " tok/s", digits: 0, dash: [5, 4] }
+      ], { zero: true });
+    }
+    function combineTraining() {
+      const rows = new Map();
+      for (const metric of snapshot?.metrics || []) if (finite(metric.step)) rows.set(metric.step, { ...rows.get(metric.step), ...metric });
+      for (const tel of snapshot?.telemetry || []) if (finite(tel.step)) rows.set(tel.step, { ...rows.get(tel.step), ...tel });
+      return [...rows.values()].sort((a, b) => a.step - b.step);
+    }
+    function addMovingMean(rows, sourceKey, targetKey, window) {
+      const queue = [];
+      let sum = 0;
+      for (const row of rows) {
+        const value = row[sourceKey];
+        if (!finite(value)) {
+          queue.length = 0;
+          sum = 0;
+          row[targetKey] = null;
+          continue;
+        }
+        queue.push(value);
+        sum += value;
+        if (queue.length > window) sum -= queue.shift();
+        row[targetKey] = queue.length === window ? sum / window : null;
+      }
+    }
+    function renderTrainingCharts() {
+      const visible = snapshot?.task?.kind === "training";
+      $("trainingCharts").hidden = !visible;
+      if (!visible) return;
+      const rows = combineTraining();
+      drawChart($("lossChart"), rows, [
+        { key: "loss", label: "total", color: "#4c8df6", digits: 5 },
+        { key: "ntp_loss", label: "NTP", color: "#4caf74", digits: 5 },
+        { key: "teacher_kd_loss", label: "KD", color: "#d5a53c", digits: 5 },
+        { key: "mtp_loss", label: "MTP", color: "#9b7ede", digits: 5 },
+        { key: "anchor_kl_loss", label: "anchor", color: "#d96868", digits: 5 },
+        { key: "hidden_alignment", label: "hidden", color: "#70a6a6", digits: 5 }
+      ], {});
+      const smoothed = rows.map(row => ({ ...row }));
+      addMovingMean(smoothed, "loss", "loss_ma100", 100);
+      addMovingMean(smoothed, "loss", "loss_ma152", 152);
+      addMovingMean(smoothed, "ntp_loss", "ntp_ma152", 152);
+      addMovingMean(smoothed, "teacher_kd_loss", "kd_ma152", 152);
+      drawChart($("smoothedLossChart"), smoothed, [
+        { key: "loss_ma100", label: "total MA100", color: "#9aa2af", digits: 5, dash: [5, 4] },
+        { key: "loss_ma152", label: "total MA152", color: "#4c8df6", digits: 5 },
+        { key: "ntp_ma152", label: "NTP MA152", color: "#4caf74", digits: 5 },
+        { key: "kd_ma152", label: "KD MA152", color: "#d5a53c", digits: 5 }
+      ], {});
+      drawChart($("trainingSpeedChart"), rows, [
+        { key: "compute_tokens_per_second_ema", label: "compute", color: "#4caf74", unit: " tok/s", digits: 0 },
+        { key: "wall_clock_tokens_per_second_ema", label: "wall", color: "#4c8df6", unit: " tok/s", digits: 0 }
+      ], { zero: true });
+      drawChart($("trainingMemoryChart"), rows, [
+        { key: "gpu_allocated_gib", label: "allocated", color: "#4c8df6", unit: " GiB", digits: 3 },
+        { key: "gpu_reserved_gib", label: "reserved", color: "#9aa2af", unit: " GiB", digits: 3 },
+        { key: "gpu_peak_allocated_gib", label: "peak", color: "#d5a53c", unit: " GiB", digits: 3 }
+      ], { zero: true });
+      const normalized = rows.map(row => ({ ...row, learning_rate: row["lr/adapters"] ?? row.lr }));
+      drawChart($("trainingLrChart"), normalized, [
+        { key: "learning_rate", label: "LR", color: "#4c8df6", digits: 8 },
+        { key: "grad_norm", label: "grad", color: "#d5a53c", digits: 5, axis: "right" }
+      ], { zero: true });
+    }
+    function renderEvaluation() {
+      const visible = snapshot?.task?.kind === "evaluation";
+      $("evaluationSection").hidden = !visible;
+      if (!visible) return;
+      const data = snapshot.task_data || {}, roles = data.roles || {}, acceptance = data.acceptance || {};
+      clear($("evaluationRoles")); clear($("evaluationAcceptance"));
+      for (const [name, value] of Object.entries(roles)) {
+        const card = document.createElement("div"); card.className = "role-card";
+        const title = document.createElement("h3"); title.textContent = name;
+        const nll = document.createElement("div"); nll.className = "role-value"; nll.textContent = `NLL ${num(value.mean_nll, 4)}`;
+        const meta = document.createElement("div"); meta.className = "role-meta"; meta.textContent = [finite(value.perplexity) ? `PPL ${num(value.perplexity, 3)}` : null, finite(value.predicted_tokens) ? `${compact(value.predicted_tokens)} tokens` : null].filter(Boolean).join(" · ");
+        card.append(title, nll, meta); $("evaluationRoles").append(card);
+      }
+      for (const [name, value] of Object.entries(acceptance)) {
+        const node = document.createElement("span"); node.textContent = `${name}: ${typeof value === "boolean" ? (value ? "PASS" : "FAIL") : num(value, 4)}`; $("evaluationAcceptance").append(node);
+      }
+    }
+    function renderEventsAndConsole() {
+      const events = snapshot?.events || [];
+      $("eventsSection").hidden = snapshot?.task?.kind !== "training" || events.length === 0;
+      clear($("eventsBody"));
+      for (const event of [...events].reverse().slice(0, 100)) {
+        const row = document.createElement("tr");
+        const detail = { ...event }; for (const key of ["event", "step", "timestamp_utc", "session_id"]) delete detail[key];
+        for (const value of [event.event || "—", finite(event.step) ? String(event.step) : "—", localTime(event.timestamp_utc), JSON.stringify(detail)]) {
+          const cell = document.createElement("td"); cell.textContent = value; row.append(cell);
+        }
+        $("eventsBody").append(row);
+      }
+      const consoleText = snapshot?.console || "";
+      $("consoleSection").hidden = !consoleText;
+      $("console").textContent = consoleText || "尚无日志";
+      $("consoleSource").textContent = snapshot?.task?.source?.console || snapshot?.task_data?.source?.console || "所选任务自己的 console tail";
+    }
+    function chartPointLabel(row, index) {
+      const timestamp = finite(row.sampled_at_unix_ms)
+        ? row.sampled_at_unix_ms
+        : finite(row.time)
+          ? row.time
+          : row.timestamp_utc;
+      if (timestamp) {
+        const date = new Date(timestamp);
+        if (!Number.isNaN(date.getTime())) {
+          const clock = date.toLocaleTimeString(undefined, { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+          return finite(row.sampled_at_unix_ms) ? `${clock}.${String(date.getMilliseconds()).padStart(3, "0")}` : clock;
+        }
+      }
+      if (finite(row.step)) return `Step ${num(row.step, 0)}`;
+      return `数据点 ${index + 1}`;
+    }
+    function chartValue(value, item) {
+      const digits = Number.isInteger(item.digits)
+        ? item.digits
+        : Math.abs(value) < 10
+          ? 3
+          : Math.abs(value) < 100
+            ? 1
+            : 0;
+      return `${value.toLocaleString(undefined, { maximumFractionDigits: digits })}${item.unit || ""}`;
+    }
+    function chartTooltip(canvas) {
+      if (canvas._chartTooltip) return canvas._chartTooltip;
+      const node = document.createElement("div");
+      node.className = "chart-tooltip";
+      node.setAttribute("role", "tooltip");
+      node.setAttribute("aria-hidden", "true");
+      canvas.parentElement.append(node);
+      canvas._chartTooltip = node;
+      return node;
+    }
+    function hideChartTooltip(canvas) {
+      const node = canvas._chartTooltip;
+      if (!node) return;
+      node.classList.remove("show");
+      node.setAttribute("aria-hidden", "true");
+    }
+    function updateChartTooltip(canvas, state) {
+      const index = state.hoverIndex;
+      if (!Number.isInteger(index) || !state.pointer || !state.rows[index]) {
+        hideChartTooltip(canvas);
+        return;
+      }
+      const row = state.rows[index];
+      const values = state.usable.filter(item => finite(row[item.key]));
+      if (!values.length) {
+        hideChartTooltip(canvas);
+        return;
+      }
+      const tooltip = chartTooltip(canvas);
+      const title = document.createElement("div");
+      title.className = "chart-tooltip-time";
+      title.textContent = chartPointLabel(row, index);
+      const nodes = [title];
+      for (const item of values) {
+        const line = document.createElement("div"); line.className = "chart-tooltip-row";
+        const dot = document.createElement("span"); dot.className = "chart-tooltip-dot"; dot.style.backgroundColor = item.color;
+        const label = document.createElement("span"); label.className = "chart-tooltip-label"; label.textContent = item.label;
+        const value = document.createElement("span"); value.className = "chart-tooltip-value"; value.textContent = chartValue(row[item.key], item);
+        line.append(dot, label, value); nodes.push(line);
+      }
+      tooltip.replaceChildren(...nodes);
+      tooltip.classList.add("show");
+      tooltip.setAttribute("aria-hidden", "false");
+      const wrap = canvas.parentElement;
+      const anchorX = canvas.offsetLeft + state.pointer.x;
+      const anchorY = canvas.offsetTop + state.pointer.y;
+      const maxLeft = Math.max(8, wrap.clientWidth - tooltip.offsetWidth - 8);
+      let left = Math.min(maxLeft, Math.max(8, anchorX + 12));
+      let top = anchorY - tooltip.offsetHeight - 12;
+      if (top < 8) top = anchorY + 12;
+      top = Math.min(Math.max(8, wrap.clientHeight - tooltip.offsetHeight - 8), top);
+      tooltip.style.left = `${left}px`;
+      tooltip.style.top = `${top}px`;
+    }
+    function ensureChartInteraction(canvas) {
+      if (canvas.dataset.interactiveChart === "true") return;
+      canvas.dataset.interactiveChart = "true";
+      canvas.addEventListener("pointermove", event => {
+        const state = chartStates.get(canvas), geometry = state?.geometry;
+        if (!state || !geometry || !state.rows.length) return;
+        const rect = canvas.getBoundingClientRect();
+        const pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+        const { pad, width, height } = geometry;
+        if (pointer.x < pad.left || pointer.x > width - pad.right || pointer.y < pad.top || pointer.y > height - pad.bottom) {
+          state.hoverIndex = null; state.pointer = null; hideChartTooltip(canvas); paintChart(canvas, state); return;
+        }
+        const ratio = (pointer.x - pad.left) / (width - pad.left - pad.right);
+        state.hoverIndex = state.rows.length === 1 ? 0 : Math.round(ratio * (state.rows.length - 1));
+        state.pointer = pointer;
+        paintChart(canvas, state);
+        updateChartTooltip(canvas, state);
+      });
+      canvas.addEventListener("pointerleave", () => {
+        const state = chartStates.get(canvas);
+        if (!state) return;
+        state.hoverIndex = null; state.pointer = null; hideChartTooltip(canvas); paintChart(canvas, state);
+      });
+    }
+    function paintChart(canvas, state) {
+      const { rows, series, options } = state;
+      const rect = canvas.getBoundingClientRect();
+      const width = Math.max(260, rect.width || 600), height = Math.max(170, rect.height || 220), dpr = window.devicePixelRatio || 1;
+      const pixelWidth = Math.round(width * dpr), pixelHeight = Math.round(height * dpr);
+      if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) { canvas.width = pixelWidth; canvas.height = pixelHeight; }
+      const ctx = canvas.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, width, height);
+      const usable = series.filter(item => rows.some(row => finite(row[item.key])));
+      state.usable = usable;
+      if (!rows.length || !usable.length) {
+        state.geometry = null; hideChartTooltip(canvas);
+        ctx.fillStyle = "#737c8b"; ctx.font = "12px system-ui"; ctx.fillText("等待数据", 12, 22); return;
+      }
+      const leftSeries = usable.filter(item => item.axis !== "right"), rightSeries = usable.filter(item => item.axis === "right");
+      ctx.font = "10px system-ui";
+      const legend = []; let legendX = 48, legendRow = 0;
+      for (const item of usable) {
+        const itemWidth = 26 + ctx.measureText(item.label).width;
+        if (legendX > 48 && legendX + itemWidth > width - 18) { legendX = 48; legendRow += 1; }
+        legend.push({ item, x: legendX, y: 10 + legendRow * 14 });
+        legendX += itemWidth;
+      }
+      const pad = { left: 48, right: rightSeries.length ? 52 : 18, top: 26 + legendRow * 14, bottom: 25 };
+      const bounds = (list, configuredMax) => {
+        const values = list.flatMap(item => rows.map(row => row[item.key]).filter(finite));
+        let min = options.zero ? 0 : Math.min(...values), max = finite(configuredMax) ? configuredMax : Math.max(...values);
+        if (min === max) { const delta = Math.abs(min || 1) * .1; min -= options.zero ? 0 : delta; max += delta; }
+        const span = max - min;
+        if (!options.zero && !finite(configuredMax)) { min -= span * .08; max += span * .08; }
+        return { min, max };
+      };
+      const left = bounds(leftSeries.length ? leftSeries : usable, options.maxValue);
+      const right = rightSeries.length ? bounds(rightSeries, options.rightMaxValue) : left;
+      const plotWidth = width - pad.left - pad.right, plotHeight = height - pad.top - pad.bottom;
+      const x = index => pad.left + plotWidth * (rows.length === 1 ? .5 : index / (rows.length - 1));
+      const y = (value, range) => pad.top + (range.max - value) / (range.max - range.min) * plotHeight;
+      state.geometry = { pad, width, height, left, right };
+      canvas.setAttribute("aria-label", `${usable.map(item => item.label).join("、")}折线图；移动鼠标查看具体数值`);
+
+      ctx.strokeStyle = "#343a46"; ctx.lineWidth = 1; ctx.fillStyle = "#737c8b"; ctx.textAlign = "left";
+      for (let index = 0; index <= 4; index++) {
+        const py = pad.top + plotHeight * index / 4;
+        ctx.beginPath(); ctx.moveTo(pad.left, py); ctx.lineTo(width - pad.right, py); ctx.stroke();
+        const leftValue = left.max - (left.max - left.min) * index / 4;
+        ctx.fillText(num(leftValue, Math.abs(leftValue) < 10 ? 2 : 0), 4, py + 3);
+        if (rightSeries.length) {
+          const rightValue = right.max - (right.max - right.min) * index / 4;
+          ctx.textAlign = "right"; ctx.fillText(num(rightValue, Math.abs(rightValue) < 10 ? 2 : 0), width - 4, py + 3); ctx.textAlign = "left";
+        }
+      }
+      for (const entry of legend) {
+        ctx.strokeStyle = entry.item.color; ctx.lineWidth = 1.7; ctx.setLineDash(entry.item.dash || []);
+        ctx.beginPath(); ctx.moveTo(entry.x, entry.y - 3); ctx.lineTo(entry.x + 12, entry.y - 3); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = "#9aa2af"; ctx.fillText(entry.item.label, entry.x + 17, entry.y);
+      }
+      ctx.save(); ctx.beginPath(); ctx.rect(pad.left, pad.top, plotWidth, plotHeight); ctx.clip();
+      for (const item of usable) {
+        ctx.strokeStyle = item.color; ctx.lineWidth = 1.7; ctx.setLineDash(item.dash || []); ctx.beginPath(); let started = false;
+        rows.forEach((row, index) => {
+          const value = row[item.key];
+          if (!finite(value)) { started = false; return; }
+          const px = x(index), py = y(value, item.axis === "right" ? right : left);
+          if (!started) { ctx.moveTo(px, py); started = true; } else ctx.lineTo(px, py);
+        });
+        ctx.stroke(); ctx.setLineDash([]);
+        if (rows.length === 1 && finite(rows[0][item.key])) {
+          ctx.fillStyle = item.color; ctx.beginPath(); ctx.arc(x(0), y(rows[0][item.key], item.axis === "right" ? right : left), 2.5, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+      if (Number.isInteger(state.hoverIndex) && rows[state.hoverIndex]) {
+        const px = x(state.hoverIndex), row = rows[state.hoverIndex];
+        ctx.strokeStyle = "#8c96a6"; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(px, pad.top); ctx.lineTo(px, height - pad.bottom); ctx.stroke(); ctx.setLineDash([]);
+        for (const item of usable) {
+          const value = row[item.key]; if (!finite(value)) continue;
+          ctx.fillStyle = item.color; ctx.strokeStyle = "#f2f5f8"; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(px, y(value, item.axis === "right" ? right : left), 3.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+    function drawChart(canvas, rows, series, options = {}) {
+      const previous = chartStates.get(canvas) || {};
+      const hoverIndex = Number.isInteger(previous.hoverIndex) && previous.hoverIndex < rows.length ? previous.hoverIndex : null;
+      const state = { rows, series, options, hoverIndex, pointer: hoverIndex === null ? null : previous.pointer };
+      chartStates.set(canvas, state); ensureChartInteraction(canvas); paintChart(canvas, state);
+      if (state.pointer) updateChartTooltip(canvas, state); else hideChartTooltip(canvas);
+    }
+    function render() {
+      if (!snapshot?.task) return;
+      const tasks = snapshot.tasks || bootstrap?.tasks || [];
+      rememberProgress();
+      renderTaskList(tasks); renderOverview(); renderGpu(); renderTaskProgress(); renderTrainingCharts(); renderEvaluation(); renderEventsAndConsole();
+    }
+    async function refresh() {
+      if (!bootstrap || refreshing || busy) return;
+      const key = selectedTaskKey || bootstrap.active_task_key || bootstrap.default_task_key;
+      if (!key) return;
+      refreshing = true;
+      try {
+        const data = await request(`/api/snapshot?task=${encodeURIComponent(key)}&limit=1600`);
+        snapshot = data;
+        if (!selectedTaskKey || !(data.tasks || []).some(task => task.key === selectedTaskKey)) selectedTaskKey = data.active_task_key || data.default_task_key || data.task?.key || "";
+        $("connDot").className = "dot ok"; $("connText").textContent = "已连接"; render();
+      } catch (error) {
+        try {
+          const fresh = await request("/api/bootstrap");
+          const fallback = fresh.active_task_key || fresh.default_task_key || fresh.tasks?.[0]?.key || "";
+          if (fallback && fallback !== key) {
+            bootstrap = fresh; selectedTaskKey = fallback; syncLaunchProfiles();
+            snapshot = await request(`/api/snapshot?task=${encodeURIComponent(fallback)}&limit=1600`);
+            $("connDot").className = "dot ok"; $("connText").textContent = "已连接"; render(); return;
+          }
+        } catch (_) {}
+        $("connDot").className = "dot bad"; $("connText").textContent = "连接异常"; toast(error.message, true);
+      } finally { refreshing = false; }
+    }
+    async function action(kind) {
+      if (!snapshot?.task || snapshot.task.kind !== "training") return;
+      const status = snapshot.status || {}, profile = status.profile_id || snapshot.task.profile_id;
+      const confirmation = kind === "start" ? status.start_confirmation : kind === "save" ? status.save_confirmation : status.stop_confirmation;
+      if (!profile || !confirmation) return;
+      const typed = window.prompt(`安全确认：请输入\n${confirmation}`); if (typed === null) return;
+      busy = true; renderOverview();
+      try {
+        const url = kind === "start" ? "/api/start" : "/api/signal";
+        const body = kind === "start" ? { profile_id: profile, confirmation: typed } : { profile_id: profile, action: kind, confirmation: typed };
+        await request(url, { method: "POST", headers: { "Content-Type": "application/json", "X-Twen-CSRF": csrf }, body: JSON.stringify(body) });
+        toast(kind === "start" ? "启动请求已接受" : kind === "save" ? "checkpoint 请求已发送" : "优雅停止请求已发送");
+      } catch (error) { toast(error.message, true); }
+      finally { busy = false; setTimeout(refresh, 400); }
+    }
+    async function launchConfiguredProfile() {
+      const profileId = $("launchSelect").value;
+      const profile = (bootstrap?.profiles || []).find(item => item.profile_id === profileId && item.start_available === true);
+      if (!profile) return;
+      const confirmation = profile.start_confirmation;
+      const typed = window.prompt(`安全确认：请输入\n${confirmation}`); if (typed === null) return;
+      busy = true; $("launchBtn").disabled = true;
+      try {
+        await request("/api/start", { method: "POST", headers: { "Content-Type": "application/json", "X-Twen-CSRF": csrf }, body: JSON.stringify({ profile_id: profile.profile_id, confirmation: typed }) });
+        toast(`${profile.start_action === "resume" ? "恢复" : "启动"}请求已接受；任务通过 preflight 后会进入运行中列表`);
+        bootstrap = await request("/api/bootstrap"); selectedTaskKey = bootstrap.active_task_key || selectedTaskKey;
+      } catch (error) { toast(error.message, true); }
+      finally { busy = false; $("launchBtn").disabled = false; syncLaunchProfiles(); setTimeout(refresh, 400); }
+    }
+    async function init() {
+      try {
+        bootstrap = await request("/api/bootstrap"); csrf = bootstrap.csrf_token;
+        selectedTaskKey = bootstrap.active_task_key || bootstrap.default_task_key || bootstrap.tasks?.[0]?.key || "";
+        syncLaunchProfiles();
+        $("refreshBtn").addEventListener("click", refresh);
+        $("launchBtn").addEventListener("click", launchConfiguredProfile);
+        $("startBtn").addEventListener("click", () => action("start"));
+        $("saveBtn").addEventListener("click", () => action("save"));
+        $("stopBtn").addEventListener("click", () => action("stop"));
+        window.addEventListener("resize", () => requestAnimationFrame(() => snapshot && render()));
+        await refresh(); timer = setInterval(refresh, bootstrap.poll_interval_ms || 1000);
+      } catch (error) {
+        $("connDot").className = "dot bad"; $("connText").textContent = "无法连接"; toast(error.message, true);
+      }
+    }
+    init();
+  </script>
+</body>
+</html>

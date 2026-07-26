@@ -1,0 +1,42 @@
+{
+  "schema_version": 2,
+  "hardware_target": "NVIDIA Blackwell sm_120",
+  "cuda_toolkit": {
+    "selection": "CUDA_HOME must be exported before importing TileLang",
+    "default_path": "/usr/local/cuda",
+    "validated_path": "/usr/local/cuda-13.2",
+    "sdk_version": "13.2.0",
+    "nvcc_version": "13.2.51",
+    "cudart_version": "13.2.51",
+    "cccl_version": "3.2.0",
+    "cuda_cccl_component_version": "13.2.27",
+    "architecture": "sm_120a",
+    "launcher": "scripts/with_cuda_toolchain.sh",
+    "checker": "scripts/check_cuda_toolchain.py --compile",
+    "reason": "TileLang JIT requires nvcc and CUDART headers with the same major.minor; the unified optional-serving wheel environment may contain independently upgraded cu13 compiler/header packages"
+  },
+  "packages": [
+    {
+      "name": "flash-linear-attention",
+      "version": "0.5.1",
+      "repository": "https://github.com/fla-org/flash-linear-attention.git",
+      "commit": "2e38c1fab332174d056928feaf29f8c5fd5ac550",
+      "runtime": {
+        "tilelang": "0.1.9",
+        "production_backend": "Triton",
+        "FLA_TILELANG": "0 by default; 1 only for the compiler/JIT smoke",
+        "reason": "TileLang compiles with the coherent CUDA 13.2 toolkit but its T=4096 gated-delta backward raises a misaligned-address fault on sm_120"
+      }
+    },
+    {
+      "name": "causal-conv1d",
+      "version": "1.6.2.post1",
+      "repository": "https://github.com/Dao-AILab/causal-conv1d.git",
+      "commit": "4f6ae4e26ae5fe8af9372f8d312ab25cc4595223",
+      "build": {
+        "CAUSAL_CONV1D_FORCE_BUILD": "TRUE",
+        "reason": "No upstream torch 2.11+cu130 CPython 3.12 wheel; source includes sm_120"
+      }
+    }
+  ]
+}
