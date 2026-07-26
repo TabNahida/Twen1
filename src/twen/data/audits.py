@@ -1022,7 +1022,10 @@ def _load_rejection_ledger(
 
 def _filtered_output_name(role: str, source_id: str, index: int) -> str:
     safe_source = re.sub(r"[^A-Za-z0-9._-]+", "-", source_id).strip("-.") or "unknown"
-    return f"filtered/{role}/{safe_source}-{index:06d}.jsonl"
+    # Keep the canonical role basename because the authenticated source-map
+    # contract derives output ownership from ``train.jsonl`` and
+    # ``validation.jsonl`` entries in each source chunk.
+    return f"filtered/{safe_source}/chunk-{index:06d}/{role}.jsonl"
 
 
 def materialize_filtered_base_corpus(
@@ -1061,10 +1064,32 @@ def materialize_filtered_base_corpus(
     root.parent.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix=f".{root.name}.incomplete-", dir=root.parent))
     role_files: dict[str, list[dict[str, object]]] = {"train": [], "validation": []}
+    source_map_outputs: dict[str, list[dict[str, object]]] = {
+        "train": [],
+        "validation": [],
+    }
     source_outputs: dict[str, dict[str, object]] = {}
     kept_document_keys: set[tuple[str, str, str]] = set()
     role_documents = {"train": 0, "validation": 0}
+    source_role_documents: dict[str, dict[str, int]] = {
+        "train": {},
+        "validation": {},
+    }
     rejected_documents = {"train": 0, "validation": 0}
+    contract_names = (
+        "source_map",
+        "source_mix",
+        "format_audit",
+        "license_audit",
+        "materialization_audit",
+    )
+    contract_presence = [name in candidate.value for name in contract_names]
+    if any(contract_presence) and not all(contract_presence):
+        # The corpus validator normally catches this first.  Keep the
+        # materializer fail-closed if a different authenticated loader is ever
+        # introduced.
+        raise DataAuditError("candidate corpus has a partial data-contract audit")
+    has_data_contract = all(contract_presence)
     try:
         for role, corpus in (("train", candidate), ("validation", frozen)):
             for index, (source, relative, source_id, category) in enumerate(corpus.files(role)):
@@ -1102,8 +1127,12 @@ def materialize_filtered_base_corpus(
                     output.unlink()
                     continue
                 role_documents[role] += written
+                source_role_documents[role][source_id] = (
+                    source_role_documents[role].get(source_id, 0) + written
+                )
                 entry = _file_identity(output, relative=output_relative)
                 role_files[role].append(entry)
+                source_map_outputs[role].append({"source_id": source_id, **entry})
                 source_entry = source_outputs.setdefault(
                     source_id,
                     {
@@ -1115,6 +1144,10 @@ def materialize_filtered_base_corpus(
                         "outputs": [],
                     },
                 )
+                if source_entry["category"] != category:
+                    raise DataAuditError(
+                        f"source {source_id!r} has conflicting candidate/frozen categories"
+                    )
                 raw_outputs = source_entry["outputs"]
                 assert isinstance(raw_outputs, list)
                 raw_outputs.append(entry)
@@ -1124,7 +1157,12 @@ def materialize_filtered_base_corpus(
         attribution_output = work / "filtered/attribution/attribution.jsonl"
         attribution_output.parent.mkdir(parents=True, exist_ok=True)
         attribution_rows = 0
+        attributed_document_keys: set[tuple[str, str, str]] = set()
         role_tokens = {"train": 0, "validation": 0}
+        source_role_tokens: dict[str, dict[str, int]] = {
+            "train": {},
+            "validation": {},
+        }
         with attribution_output.open("w", encoding="utf-8") as output_handle:
             for role, corpus in (("train", candidate), ("validation", frozen)):
                 raw_inventory = corpus.value.get("attribution_files")
@@ -1137,8 +1175,14 @@ def materialize_filtered_base_corpus(
                     with (corpus.manifest_path.parent / relative).open(
                         "r", encoding="utf-8"
                     ) as handle:
-                        for line in handle:
-                            record = json.loads(line)
+                        for line_number, line in enumerate(handle, start=1):
+                            try:
+                                record = json.loads(line)
+                            except json.JSONDecodeError as error:
+                                raise DataAuditError(
+                                    "invalid parent attribution JSONL at "
+                                    f"{relative}:{line_number}"
+                                ) from error
                             if not isinstance(record, Mapping) or record.get("split") != role:
                                 continue
                             key = (
@@ -1148,13 +1192,40 @@ def materialize_filtered_base_corpus(
                             )
                             if key not in kept_document_keys:
                                 continue
+                            if key in attributed_document_keys:
+                                raise DataAuditError(
+                                    "duplicate parent attribution identity for retained "
+                                    f"{role} document {key[2]}"
+                                )
+                            token_count = record.get("token_count_with_eos")
+                            if (
+                                isinstance(token_count, bool)
+                                or not isinstance(token_count, int)
+                                or token_count <= 0
+                            ):
+                                raise DataAuditError(
+                                    "retained attribution token_count_with_eos must be "
+                                    "a positive integer"
+                                )
                             output_handle.write(
                                 json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"
                             )
+                            attributed_document_keys.add(key)
                             attribution_rows += 1
-                            token_count = record.get("token_count_with_eos")
-                            if isinstance(token_count, int) and not isinstance(token_count, bool):
-                                role_tokens[role] += token_count
+                            role_tokens[role] += token_count
+                            source_id = key[1]
+                            source_role_tokens[role][source_id] = (
+                                source_role_tokens[role].get(source_id, 0) + token_count
+                            )
+        if has_data_contract:
+            missing_attribution = kept_document_keys - attributed_document_keys
+            unexpected_attribution = attributed_document_keys - kept_document_keys
+            if missing_attribution or unexpected_attribution:
+                raise DataAuditError(
+                    "filtered data-contract corpus attribution does not cover retained "
+                    f"documents exactly (missing={len(missing_attribution)}, "
+                    f"unexpected={len(unexpected_attribution)})"
+                )
         attribution_files: list[dict[str, object]] = []
         if attribution_rows:
             attribution_files.append(
@@ -1166,7 +1237,11 @@ def materialize_filtered_base_corpus(
         else:
             attribution_output.unlink()
 
-        for inventory in (*role_files.values(), attribution_files):
+        for inventory in (
+            *role_files.values(),
+            *source_map_outputs.values(),
+            attribution_files,
+        ):
             inventory.sort(key=lambda item: str(item["path"]))
         inventories = {
             "train": role_files["train"],
@@ -1185,9 +1260,16 @@ def materialize_filtered_base_corpus(
         sources = []
         for item in sorted(source_outputs.values(), key=lambda entry: str(entry["source_id"])):
             outputs = item.pop("outputs")
+            source_id = str(item["source_id"])
             sources.append(
                 {
                     **item,
+                    "actual_train_tokens": source_role_tokens["train"].get(source_id, 0),
+                    "actual_validation_tokens": source_role_tokens["validation"].get(
+                        source_id, 0
+                    ),
+                    "train_rows": source_role_documents["train"].get(source_id, 0),
+                    "validation_rows": source_role_documents["validation"].get(source_id, 0),
                     "chunks": [
                         {
                             "shard_id": "audit-filtered",
@@ -1198,6 +1280,197 @@ def materialize_filtered_base_corpus(
                 }
             )
         attestation_fingerprint = str(value["attestation_fingerprint"])
+        contract_identity: dict[str, object] = {}
+        if has_data_contract:
+            raw_parent_mix = candidate.value.get("source_mix")
+            if not isinstance(raw_parent_mix, Mapping):
+                raise DataAuditError("candidate source_mix contract is invalid")
+            raw_mix_sources = raw_parent_mix.get("sources")
+            if not isinstance(raw_mix_sources, list) or not raw_mix_sources:
+                raise DataAuditError("candidate source_mix source inventory is invalid")
+            retained_train_source_ids = set(source_role_documents["train"])
+            output_source_ids = set(source_outputs)
+            mix_source_ids: set[str] = set()
+            filtered_mix_sources: list[dict[str, object]] = []
+            for index, raw_source in enumerate(raw_mix_sources):
+                if not isinstance(raw_source, Mapping):
+                    raise DataAuditError(
+                        f"candidate source_mix source {index} is invalid"
+                    )
+                source_id = raw_source.get("source_id")
+                if (
+                    not isinstance(source_id, str)
+                    or not source_id
+                    or source_id in mix_source_ids
+                ):
+                    raise DataAuditError(
+                        f"candidate source_mix source_id is invalid/duplicate: {source_id!r}"
+                    )
+                mix_source_ids.add(source_id)
+                retained_tokens = source_role_tokens["train"].get(source_id, 0)
+                if source_id not in retained_train_source_ids or retained_tokens <= 0:
+                    raise DataAuditError(
+                        "filtering removed every train document from contracted source "
+                        f"{source_id!r}; refusing to renormalize the declared source mix"
+                    )
+                copied_source = json.loads(
+                    json.dumps(
+                        raw_source,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    )
+                )
+                copied_source["actual_train_tokens"] = retained_tokens
+                filtered_mix_sources.append(copied_source)
+            if retained_train_source_ids != mix_source_ids:
+                raise DataAuditError(
+                    "filtered train source ownership differs from candidate source_mix"
+                )
+            if output_source_ids != mix_source_ids:
+                raise DataAuditError(
+                    "frozen validation introduces source ownership outside the "
+                    "candidate source_mix"
+                )
+
+            source_map_unsigned = {
+                "schema_version": candidate.value["source_map"]["schema_version"],
+                "algorithm": candidate.value["source_map"]["algorithm"],
+                "roles": source_map_outputs,
+            }
+            source_map = {
+                **source_map_unsigned,
+                "fingerprint": _canonical_sha256(source_map_unsigned),
+            }
+            source_mix_unsigned = {
+                "schema_version": raw_parent_mix.get("schema_version"),
+                "algorithm": raw_parent_mix.get("algorithm"),
+                "unit": raw_parent_mix.get("unit"),
+                "basis_points_total": raw_parent_mix.get("basis_points_total"),
+                "profile": raw_parent_mix.get("profile"),
+                "sources": filtered_mix_sources,
+            }
+            source_mix = {
+                **source_mix_unsigned,
+                "fingerprint": _canonical_sha256(source_mix_unsigned),
+            }
+
+            raw_format_audit = candidate.value.get("format_audit")
+            raw_license_audit = candidate.value.get("license_audit")
+            raw_materialization_audit = candidate.value.get("materialization_audit")
+            if not all(
+                isinstance(item, Mapping)
+                for item in (
+                    raw_format_audit,
+                    raw_license_audit,
+                    raw_materialization_audit,
+                )
+            ):
+                raise DataAuditError("candidate data-contract lineage is invalid")
+            parent_format_audit = json.loads(
+                json.dumps(raw_format_audit, ensure_ascii=False, sort_keys=True)
+            )
+            parent_license_audit = json.loads(
+                json.dumps(raw_license_audit, ensure_ascii=False, sort_keys=True)
+            )
+            parent_materialization_audit = json.loads(
+                json.dumps(raw_materialization_audit, ensure_ascii=False, sort_keys=True)
+            )
+            frozen_format = frozen.value.get("format_audit")
+            frozen_license = frozen.value.get("license_audit")
+            frozen_materialization = frozen.value.get("materialization_audit")
+            projection_identity = {
+                "method": "complete-audit-rejection-ledger-projection-v1",
+                "parent_candidate_manifest_sha256": candidate.manifest_sha256,
+                "parent_frozen_validation_manifest_sha256": frozen.manifest_sha256,
+                "audit_attestation_sha256": sha256_file(attestation),
+                "audit_attestation_fingerprint": attestation_fingerprint,
+                "rejection_ledger": json.loads(
+                    json.dumps(
+                        value["rejection_ledger"],
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    )
+                ),
+            }
+            format_audit = {
+                **parent_format_audit,
+                "complete": True,
+                "projection": projection_identity,
+                "filtered_outputs": {
+                    role: [
+                        {
+                            "source_id": str(item["source_id"]),
+                            "path": str(item["path"]),
+                            "size": int(item["size"]),
+                            "sha256": str(item["sha256"]),
+                        }
+                        for item in source_map_outputs[role]
+                    ]
+                    for role in ("train", "validation")
+                },
+                "frozen_validation_parent_audit": (
+                    json.loads(
+                        json.dumps(frozen_format, ensure_ascii=False, sort_keys=True)
+                    )
+                    if isinstance(frozen_format, Mapping)
+                    else None
+                ),
+            }
+            license_audit = {
+                **parent_license_audit,
+                "complete": True,
+                "parent_attribution_inventory": parent_license_audit.get(
+                    "attribution_inventory"
+                ),
+                "attribution_inventory": file_lists["attribution"],
+                "projection": projection_identity,
+                "frozen_validation_parent_audit": (
+                    json.loads(
+                        json.dumps(frozen_license, ensure_ascii=False, sort_keys=True)
+                    )
+                    if isinstance(frozen_license, Mapping)
+                    else None
+                ),
+            }
+            materialization_audit = {
+                "complete": True,
+                "network_policy": "offline-audit-materialization",
+                **projection_identity,
+                "parent_candidate_audit": parent_materialization_audit,
+                "parent_frozen_validation_audit": (
+                    json.loads(
+                        json.dumps(
+                            frozen_materialization,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        )
+                    )
+                    if isinstance(frozen_materialization, Mapping)
+                    else None
+                ),
+                "sources": [
+                    {
+                        "source_id": source_id,
+                        "method": "jsonl_rejection_ledger_projection",
+                        "train_output_count": sum(
+                            item["source_id"] == source_id
+                            for item in source_map_outputs["train"]
+                        ),
+                        "validation_output_count": sum(
+                            item["source_id"] == source_id
+                            for item in source_map_outputs["validation"]
+                        ),
+                    }
+                    for source_id in sorted(mix_source_ids)
+                ],
+            }
+            contract_identity = {
+                "source_map": source_map,
+                "source_mix": source_mix,
+                "format_audit": format_audit,
+                "license_audit": license_audit,
+                "materialization_audit": materialization_audit,
+            }
         identity = {
             "recipe_id": str(candidate.value.get("recipe_id")),
             "recipe_sha256": str(candidate.value.get("recipe_sha256")),
@@ -1210,6 +1483,7 @@ def materialize_filtered_base_corpus(
             "validation_files": inventories["validation"],
             "attribution_files": inventories["attribution"],
             "file_lists": file_lists,
+            **contract_identity,
         }
         corpus_fingerprint = _canonical_sha256(identity)
         parent_audits = candidate.value.get("audits")

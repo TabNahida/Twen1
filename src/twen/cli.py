@@ -11,7 +11,7 @@ import dataclasses
 import json
 import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -189,9 +189,51 @@ def _cmd_data_index_kd(args: argparse.Namespace) -> int:
     return 0
 
 
+def _prepared_identity_payload(
+    manifest_path: str | Path,
+    prepared: Any,
+) -> dict[str, object]:
+    """Return the exact identities needed to configure prepared-text training."""
+
+    from .data import AuthenticatedSourceMap
+    from .utils import sha256_file
+
+    lineage = prepared.lineage if isinstance(prepared.lineage, Mapping) else {}
+    data_contract = lineage.get("data_contract")
+    prepared_source_map_sha256: str | None = None
+    extracted_source_map_sha256: str | None = None
+    source_mix_algorithm: str | None = None
+    source_mix_basis_points: dict[str, int] = {}
+    # AuthenticatedSourceMap describes the train cursor only. Validation
+    # prepared artifacts intentionally retain the extracted contract for
+    # lineage, but must not be projected into a train source map.
+    if isinstance(data_contract, Mapping) and lineage.get("role") == "train":
+        extracted_source_map = data_contract.get("source_map")
+        extracted_source_mix = data_contract.get("source_mix")
+        if not isinstance(extracted_source_map, Mapping) or not isinstance(
+            extracted_source_mix, Mapping
+        ):
+            raise ValueError("prepared data_contract source identities are incomplete")
+        source_map = AuthenticatedSourceMap.from_prepared_manifest(prepared)
+        prepared_source_map_sha256 = source_map.fingerprint
+        extracted_source_map_sha256 = str(extracted_source_map["fingerprint"])
+        source_mix_algorithm = str(extracted_source_mix["algorithm"])
+        source_mix_basis_points = source_map.source_mix_weights
+    path = Path(manifest_path)
+    return {
+        "manifest": str(path),
+        "sha256": sha256_file(path),
+        "prepared_manifest_sha256": sha256_file(path),
+        "prepared_dataset_fingerprint": prepared.dataset_fingerprint,
+        "prepared_source_map_sha256": prepared_source_map_sha256,
+        "extracted_source_map_sha256": extracted_source_map_sha256,
+        "source_mix_algorithm": source_mix_algorithm,
+        "source_mix_basis_points": source_mix_basis_points,
+    }
+
+
 def _cmd_data_prepare(args: argparse.Namespace) -> int:
     from .data import prepare_jsonl_corpus, read_prepared_manifest
-    from .utils import sha256_file
 
     output = prepare_jsonl_corpus(
         args.input,
@@ -211,11 +253,32 @@ def _cmd_data_prepare(args: argparse.Namespace) -> int:
     _print_json(
         {
             "ok": True,
-            "manifest": str(output),
-            "sha256": sha256_file(output),
+            **_prepared_identity_payload(output, prepared),
             "lineage_kind": lineage.get("kind"),
             "research_only": lineage.get("research_only"),
             "pending_audits": lineage.get("pending_audits", []),
+        }
+    )
+    return 0
+
+
+def _cmd_data_inspect_prepared(args: argparse.Namespace) -> int:
+    from .data import validate_prepared_corpus
+
+    prepared = validate_prepared_corpus(args.manifest)
+    lineage = prepared.lineage if isinstance(prepared.lineage, Mapping) else {}
+    _print_json(
+        {
+            "ok": True,
+            "operation": "inspect-prepared",
+            **_prepared_identity_payload(args.manifest, prepared),
+            "lineage_kind": lineage.get("kind"),
+            "research_only": lineage.get("research_only"),
+            "ready_for_training": lineage.get("ready_for_training"),
+            "pending_audits": lineage.get("pending_audits", []),
+            "sequence_length": prepared.sequence_length,
+            "sequence_count": prepared.sequence_count,
+            "token_count": prepared.token_count,
         }
     )
     return 0
@@ -310,38 +373,98 @@ def _cmd_data_generate_cooldown_policy(args: argparse.Namespace) -> int:
 
 
 def _cmd_data_resolve_sources(args: argparse.Namespace) -> int:
-    from .data.sources import resolve_base_data_sources
+    from .data.sources import (
+        metadata_fetcher_from_fixture,
+        plan_base_data_source_resolution,
+        resolve_base_data_sources,
+    )
     from .io.download import DownloadManager
     from .io.proxy import ProxySettings
     from .utils import sha256_file
 
-    manager = DownloadManager(
-        proxy_settings=ProxySettings.from_environment(proxy_url=args.proxy),
-        check_proxy=True,
-        network_policy=args.network_policy,
+    metadata_fetcher = (
+        metadata_fetcher_from_fixture(args.metadata_fixture)
+        if args.metadata_fixture
+        else None
+    )
+    if args.dry_run:
+        payload = plan_base_data_source_resolution(
+            args.recipe,
+            metadata_fetcher=metadata_fetcher,
+            verify_remote=metadata_fetcher is not None,
+        )
+        _print_json(
+            {
+                "ok": True,
+                "operation": "resolve",
+                "dry_run": True,
+                "offline": True,
+                "remote_identity_verification": (
+                    "offline_fixture"
+                    if metadata_fetcher is not None
+                    else "deferred"
+                ),
+                "planned_lock": payload,
+                "output": str(Path(args.output).resolve()),
+                "network_accessed": False,
+                "files_written": False,
+                "training_started": False,
+            }
+        )
+        return 0
+    manager = (
+        None
+        if metadata_fetcher is not None
+        else DownloadManager(
+            proxy_settings=ProxySettings.from_environment(proxy_url=args.proxy),
+            check_proxy=True,
+            network_policy=args.network_policy,
+        )
     )
     output = resolve_base_data_sources(
         args.recipe,
         args.output,
         manager=manager,
         token=args.token,
+        metadata_fetcher=metadata_fetcher,
     )
     _print_json(
         {
             "ok": True,
             "resolved_lock": str(output),
             "sha256": sha256_file(output),
-            "network_policy": manager.effective_network_policy,
-            "proxy_fallback_used": manager.proxy_fallback_used,
+            "network_policy": (
+                "offline-fixture"
+                if manager is None
+                else manager.effective_network_policy
+            ),
+            "proxy_fallback_used": (
+                False if manager is None else manager.proxy_fallback_used
+            ),
+            "offline_fixture": metadata_fetcher is not None,
         }
     )
     return 0
 
 
 def _cmd_data_build_base(args: argparse.Namespace) -> int:
-    from .data.sources import CorpusBuildStopped, build_base_jsonl_corpus
+    from .data.sources import (
+        CorpusBuildStopped,
+        build_base_jsonl_corpus,
+        plan_base_jsonl_corpus,
+    )
     from .utils import sha256_file
 
+    if args.dry_run:
+        _print_json(
+            plan_base_jsonl_corpus(
+                args.recipe,
+                args.resolved_lock,
+                tokenizer_manifest_sha256=args.tokenizer_manifest_sha256,
+                profile=args.profile,
+            )
+        )
+        return 0
     try:
         output = build_base_jsonl_corpus(
             args.recipe,
@@ -376,6 +499,13 @@ def _cmd_data_build_base(args: argparse.Namespace) -> int:
             "training_started": False,
         }
     )
+    return 0
+
+
+def _cmd_data_inspect_recipe(args: argparse.Namespace) -> int:
+    from .data.sources import inspect_base_data_recipe
+
+    _print_json(inspect_base_data_recipe(args.recipe))
     return 0
 
 
@@ -814,14 +944,35 @@ def build_parser() -> argparse.ArgumentParser:
 
     data = sub.add_parser("data", help="data/KD shard operations")
     data_sub = data.add_subparsers(dest="data_command", required=True)
+    inspect_recipe = data_sub.add_parser(
+        "inspect-recipe",
+        aliases=["inspect"],
+        help="offline-inspect source recipe activation, mix, formats, and licenses",
+    )
+    inspect_recipe.add_argument(
+        "--recipe",
+        default="locks/base-data-sources.json",
+    )
+    inspect_recipe.set_defaults(func=_cmd_data_inspect_recipe)
     resolve_sources = data_sub.add_parser(
         "resolve-sources",
-        help="lock native Base Parquet paths to immutable Hub LFS identities",
+        aliases=["resolve"],
+        help="lock Base source paths to immutable Hub LFS identities",
     )
     resolve_sources.add_argument("--recipe", default="locks/base-data-sources.json")
     resolve_sources.add_argument("--output", required=True)
     resolve_sources.add_argument("--proxy", default=None)
     resolve_sources.add_argument("--token", default=None)
+    resolve_sources.add_argument(
+        "--metadata-fixture",
+        default=None,
+        help="offline Hub metadata fixture; never contacts the network",
+    )
+    resolve_sources.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="validate activation and print the exact lock plan without writing",
+    )
     resolve_sources.add_argument(
         "--network-policy",
         choices=("github-only", "fallback", "proxy", "direct"),
@@ -831,14 +982,19 @@ def build_parser() -> argparse.ArgumentParser:
     resolve_sources.set_defaults(func=_cmd_data_resolve_sources)
     build_base = data_sub.add_parser(
         "build-base",
-        help="range-stream pinned Parquet into resumable train/validation JSONL",
+        aliases=["build"],
+        help="materialize pinned Parquet/gzip JSONL into resumable train/validation JSONL",
     )
     build_base.add_argument("--recipe", default="locks/base-data-sources.json")
     build_base.add_argument("--resolved-lock", required=True)
     build_base.add_argument("--output", required=True)
     build_base.add_argument("--tokenizer", required=True)
     build_base.add_argument("--tokenizer-manifest-sha256", required=True)
-    build_base.add_argument("--profile", choices=("poc", "dense", "sparse"), default="dense")
+    build_base.add_argument(
+        "--profile",
+        default="dense",
+        help="profile declared by the selected recipe (for example smoke/pilot/dense)",
+    )
     build_base.add_argument("--proxy", default=None)
     build_base.add_argument("--token", default=None)
     build_base.add_argument(
@@ -861,6 +1017,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--progress",
         choices=("auto", "always", "never"),
         default="auto",
+    )
+    build_base.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="authenticate recipe/lock/tokenizer identity and print a no-I/O plan",
     )
     build_base.set_defaults(func=_cmd_data_build_base)
     plan_base_refill = data_sub.add_parser(
@@ -1021,6 +1182,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="stderr shard progress; auto only renders on a TTY",
     )
     prepare.set_defaults(func=_cmd_data_prepare)
+    inspect_prepared = data_sub.add_parser(
+        "inspect-prepared",
+        help=(
+            "validate prepared tensors and print manifest, dataset, extracted-map, "
+            "and config-ready prepared source-map identities"
+        ),
+    )
+    inspect_prepared.add_argument("--manifest", required=True)
+    inspect_prepared.set_defaults(func=_cmd_data_inspect_prepared)
     generate_kd = data_sub.add_parser("generate-kd")
     generate_kd.add_argument("--prepared-manifest", required=True)
     generate_kd.add_argument("--output", required=True)

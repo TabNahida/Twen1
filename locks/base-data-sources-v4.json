@@ -1,12 +1,12 @@
 {
   "schema_version": 2,
-  "schema_status": "draft",
-  "kind": "twen_base_data_source_recipe_v2_draft",
-  "recipe_id": "base-v4-20260726",
+  "schema_status": "stable",
+  "kind": "twen_base_data_source_recipe_v2",
+  "recipe_id": "base-v4-20260726-r3",
   "activation": {
-    "runnable": false,
-    "current_parser_compatible": false,
-    "reason": "The current v1 resolver accepts only native Parquet. This draft also locks immutable JSON Lines gzip inputs and dotted metadata fields.",
+    "runnable": true,
+    "current_parser_compatible": true,
+    "reason": "Schema-v2 resolution, immutable gzip JSONL materialization, canonical license filtering, authenticated source lineage, and token-deficit-corrected deterministic source mixing are runtime-verified before resolve/build.",
     "required_implementation": [
       "schema-v2 validation",
       "immutable jsonl_gzip download with LFS SHA256 verification",
@@ -50,7 +50,7 @@
       "train_tokens": 500000000
     }
   },
-  "validation_tokens": 20000000,
+  "validation_tokens": 2000000,
   "mix_contract": {
     "basis_points_total": 10000,
     "existing_sources_basis_points": 7000,
@@ -148,7 +148,7 @@
         "pilot": 60000000,
         "dense": 120000000
       },
-      "validation_token_quota": 4800000,
+      "validation_token_quota": 480000,
       "min_characters": 200,
       "max_document_tokens": 32768
     },
@@ -196,7 +196,7 @@
         "pilot": 45000000,
         "dense": 90000000
       },
-      "validation_token_quota": 3600000,
+      "validation_token_quota": 360000,
       "min_characters": 100,
       "max_document_tokens": 32768
     },
@@ -244,7 +244,7 @@
         "pilot": 35000000,
         "dense": 70000000
       },
-      "validation_token_quota": 2800000,
+      "validation_token_quota": 280000,
       "min_characters": 200,
       "max_document_tokens": 32768
     },
@@ -308,7 +308,7 @@
         "pilot": 20000000,
         "dense": 40000000
       },
-      "validation_token_quota": 1600000,
+      "validation_token_quota": 160000,
       "min_characters": 80,
       "max_document_tokens": 16384
     },
@@ -357,7 +357,7 @@
         "pilot": 7500000,
         "dense": 15000000
       },
-      "validation_token_quota": 600000,
+      "validation_token_quota": 60000,
       "min_characters": 200,
       "max_document_tokens": 32768
     },
@@ -406,7 +406,7 @@
         "pilot": 7500000,
         "dense": 15000000
       },
-      "validation_token_quota": 600000,
+      "validation_token_quota": 60000,
       "min_characters": 200,
       "max_document_tokens": 32768
     },
@@ -481,48 +481,43 @@
         "pilot": 17500000,
         "dense": 35000000
       },
-      "validation_token_quota": 1400000,
+      "validation_token_quota": 140000,
       "min_characters": 200,
       "max_document_tokens": 32768
     },
     {
-      "source_id": "education_oercommons_permissive",
+      "source_id": "public_domain_usgpo",
       "origin_group": "new",
       "mix_basis_points": 200,
-      "category": "education_open",
-      "repo_id": "common-pile/oercommons_filtered",
-      "revision": "506b6159dadcbc0dc67611cea024eedb04232fb2",
+      "category": "government_public_domain",
+      "repo_id": "common-pile/usgpo_filtered",
+      "revision": "b150cc22211de4d57f1b7f570097a00e65042424",
       "config": "default",
       "split": "train",
       "storage_format": "jsonl_gzip",
       "file_patterns": [
-        "oercommons-0000.json.gz"
+        "usgpo-0000.json.gz"
       ],
       "locked_files": [
         {
-          "path": "oercommons-0000.json.gz",
-          "size": 17028282,
-          "sha256": "e1c5fcbd9232183cbbd3d1967f637cc0371fcc6fce3e14d9da7f75ee2c66bec5"
+          "path": "usgpo-0000.json.gz",
+          "size": 760402814,
+          "sha256": "4b99b5043d40e205e578b26e0827f86541bd86f4f11bd04868f61e4259fe4c20"
         }
       ],
       "verified_scale": {
-        "documents": 5249,
-        "datasets_server_decoded_bytes": 53764491
+        "documents": 2148548,
+        "card_claimed_utf8_gb": 36.1,
+        "scope_note": "This recipe locks only usgpo-0000; quota admission uses exact materialized token counts."
       },
-      "license_declaration": "per-document Public Domain, CC BY or CC BY-SA",
-      "license_scope": "Only normalized Public Domain, CC0 and CC BY rows are admitted by this draft.",
+      "license_declaration": "per-document Public Domain",
+      "license_scope": "Official U.S. federal publications; only rows normalized to Public Domain are admitted.",
       "license_field": "metadata.license",
       "license_value_mode": "canonical_after_normalization",
       "license_allowlist": [
-        "public-domain",
-        "cc0-1.0",
-        "cc-by-1.0",
-        "cc-by-2.0",
-        "cc-by-2.5",
-        "cc-by-3.0",
-        "cc-by-4.0"
+        "public-domain"
       ],
-      "card_url": "https://huggingface.co/datasets/common-pile/oercommons_filtered/blob/506b6159dadcbc0dc67611cea024eedb04232fb2/README.md",
+      "card_url": "https://huggingface.co/datasets/common-pile/usgpo_filtered/blob/b150cc22211de4d57f1b7f570097a00e65042424/README.md",
       "gated": false,
       "trust_remote_code": false,
       "text_field": "text",
@@ -530,7 +525,7 @@
         "id"
       ],
       "split_group_fields": [
-        "id"
+        "metadata.url"
       ],
       "required_fields": [
         "id",
@@ -542,9 +537,11 @@
       "attribution_fields": [
         "id",
         "source",
+        "author",
+        "collection",
+        "date",
+        "title",
         "metadata.url",
-        "metadata.title",
-        "metadata.author",
         "metadata.license",
         "metadata.provenance"
       ],
@@ -553,48 +550,43 @@
         "pilot": 5000000,
         "dense": 10000000
       },
-      "validation_token_quota": 400000,
-      "min_characters": 100,
-      "max_document_tokens": 32768
+      "validation_token_quota": 40000,
+      "min_characters": 200,
+      "max_document_tokens": 131072
     },
     {
-      "source_id": "education_pressbooks_permissive",
+      "source_id": "public_domain_project_gutenberg",
       "origin_group": "new",
       "mix_basis_points": 400,
-      "category": "education_open",
-      "repo_id": "common-pile/pressbooks_filtered",
-      "revision": "1a1d3b50d77f834370f8eb4c0d174668dd1676bb",
+      "category": "books_public_domain",
+      "repo_id": "common-pile/project_gutenberg_filtered",
+      "revision": "3cdf6879c807f4e4e063f2ceb23bc268d8c29ab7",
       "config": "default",
       "split": "train",
       "storage_format": "jsonl_gzip",
       "file_patterns": [
-        "pressbooks-0000.json.gz"
+        "project_gutenberg-dolma-0000.json.gz"
       ],
       "locked_files": [
         {
-          "path": "pressbooks-0000.json.gz",
-          "size": 191725499,
-          "sha256": "dd251acfa9b535a0aadeb7f61743a61934a1783bd1bdac947d4d136781b22d22"
+          "path": "project_gutenberg-dolma-0000.json.gz",
+          "size": 570083371,
+          "sha256": "f7e3716e1e2be607a044920ffec69d1395598cca178d4ccbbd343f206b31effb"
         }
       ],
       "verified_scale": {
-        "documents": 54455,
-        "datasets_server_decoded_bytes": 607688680
+        "documents": 55454,
+        "card_claimed_utf8_gb": 20.1,
+        "scope_note": "This recipe locks only project_gutenberg-dolma-0000; quota admission uses exact materialized token counts."
       },
-      "license_declaration": "per-document Public Domain, CC BY or CC BY-SA",
-      "license_scope": "Only normalized Public Domain, CC0 and CC BY rows are admitted by this draft.",
+      "license_declaration": "per-document Public Domain",
+      "license_scope": "English Project Gutenberg/PG19 books marked Public Domain; only normalized Public Domain rows are admitted.",
       "license_field": "metadata.license",
       "license_value_mode": "canonical_after_normalization",
       "license_allowlist": [
-        "public-domain",
-        "cc0-1.0",
-        "cc-by-1.0",
-        "cc-by-2.0",
-        "cc-by-2.5",
-        "cc-by-3.0",
-        "cc-by-4.0"
+        "public-domain"
       ],
-      "card_url": "https://huggingface.co/datasets/common-pile/pressbooks_filtered/blob/1a1d3b50d77f834370f8eb4c0d174668dd1676bb/README.md",
+      "card_url": "https://huggingface.co/datasets/common-pile/project_gutenberg_filtered/blob/3cdf6879c807f4e4e063f2ceb23bc268d8c29ab7/README.md",
       "gated": false,
       "trust_remote_code": false,
       "text_field": "text",
@@ -602,7 +594,7 @@
         "id"
       ],
       "split_group_fields": [
-        "metadata.book_url"
+        "metadata.url"
       ],
       "required_fields": [
         "id",
@@ -615,11 +607,8 @@
         "id",
         "source",
         "metadata.url",
-        "metadata.book_url",
         "metadata.title",
-        "metadata.author",
-        "metadata.institution",
-        "metadata.subject",
+        "metadata.language",
         "metadata.license",
         "metadata.provenance"
       ],
@@ -628,9 +617,9 @@
         "pilot": 10000000,
         "dense": 20000000
       },
-      "validation_token_quota": 800000,
+      "validation_token_quota": 80000,
       "min_characters": 200,
-      "max_document_tokens": 32768
+      "max_document_tokens": 131072
     },
     {
       "source_id": "science_arxiv_open_permissive",
@@ -700,7 +689,7 @@
         "pilot": 12500000,
         "dense": 25000000
       },
-      "validation_token_quota": 1000000,
+      "validation_token_quota": 100000,
       "min_characters": 200,
       "max_document_tokens": 32768
     },
@@ -777,7 +766,7 @@
         "pilot": 10000000,
         "dense": 20000000
       },
-      "validation_token_quota": 800000,
+      "validation_token_quota": 80000,
       "min_characters": 80,
       "max_document_tokens": 16384
     },
@@ -884,7 +873,7 @@
         "pilot": 20000000,
         "dense": 40000000
       },
-      "validation_token_quota": 1600000,
+      "validation_token_quota": 160000,
       "min_characters": 200,
       "max_document_tokens": 32768
     }

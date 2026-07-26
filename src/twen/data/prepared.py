@@ -18,10 +18,12 @@ from .shards import ShardTransaction, is_shard_complete
 PREPARED_SCHEMA_VERSION = 2
 PREPARED_TENSORS = "tokens.safetensors"
 PREPARED_SHARD_MANIFEST = "prepared_manifest.json"
-# Schema-v2 corpora already emitted by the original generator bind this exact
-# identity.  Audit-attested preparation uses the current source hash below so
-# adding governance authentication does not invalidate the frozen v1 token/KD
-# artifacts while every new audited artifact remains source-bound.
+# Schema-v2 corpora already emitted by the original explicit-input generator
+# bind this exact identity.  Every new artifact derived from an authenticated
+# extracted manifest uses the current source hash below, including research-only
+# preparation while governance audits are still pending.  This preserves the
+# frozen v1 token/KD artifacts without giving new extracted data a legacy
+# generator identity.
 PREPARED_GENERATOR_SOURCE_SHA256 = (
     "9dce6baac242fac4881d28566c613fce720ce0294a76553e23003f6b43db6a28"
 )
@@ -43,6 +45,15 @@ _EXTRACTED_IDENTITY_KEYS = (
     "attribution_files",
     "file_lists",
 )
+_EXTRACTED_CONTRACT_IDENTITY_KEYS = (
+    "source_map",
+    "source_mix",
+    "format_audit",
+    "license_audit",
+    "materialization_audit",
+)
+_SOURCE_MAP_ALGORITHM = "authenticated-extracted-output-map-v1"
+_SOURCE_MIX_ALGORITHM = "token-deficit-corrected-source-mix-bp-v2"
 _EXTRACTED_FILE_LIST_NAMES = {
     "train": "train-files.txt",
     "validation": "validation-files.txt",
@@ -210,6 +221,37 @@ def _normalized_prepared_lineage(
             _required_string(item.get("sha256"), f"source_files[{index}].sha256"),
             f"source_files[{index}].sha256",
         )
+    data_contract = result.get("data_contract")
+    if data_contract is not None:
+        if not isinstance(data_contract, dict):
+            raise ValueError("prepared data_contract lineage must be an object")
+        expected_contract_fields = {
+            "schema_version",
+            *_EXTRACTED_CONTRACT_IDENTITY_KEYS,
+            "contract_fingerprint",
+        }
+        if set(data_contract) != expected_contract_fields:
+            raise ValueError("prepared data_contract lineage fields differ")
+        if data_contract.get("schema_version") != 1:
+            raise ValueError("unsupported prepared data_contract lineage")
+        for field in _EXTRACTED_CONTRACT_IDENTITY_KEYS:
+            if not isinstance(data_contract.get(field), dict):
+                raise ValueError(f"prepared data_contract.{field} must be an object")
+        if data_contract["source_map"].get("algorithm") != _SOURCE_MAP_ALGORITHM:
+            raise ValueError("prepared data_contract source_map algorithm differs")
+        if data_contract["source_mix"].get("algorithm") != _SOURCE_MIX_ALGORITHM:
+            raise ValueError("prepared data_contract source_mix algorithm differs")
+        unsigned_contract = {
+            field: data_contract[field]
+            for field in (
+                "schema_version",
+                *_EXTRACTED_CONTRACT_IDENTITY_KEYS,
+            )
+        }
+        if data_contract.get("contract_fingerprint") != _canonical_sha256(
+            unsigned_contract
+        ):
+            raise ValueError("prepared data_contract lineage fingerprint mismatch")
     quality = result.get("quality_cooldown")
     if quality is not None:
         if not isinstance(quality, dict):
@@ -487,6 +529,129 @@ def _resolved_extracted_file(root: Path, relative: PurePosixPath, field: str) ->
     return candidate
 
 
+def _validated_extracted_data_contract(
+    value: Mapping[str, object],
+    inventories: Mapping[str, list[dict[str, object]]],
+) -> dict[str, object] | None:
+    presence = [name in value for name in _EXTRACTED_CONTRACT_IDENTITY_KEYS]
+    if not any(presence):
+        return None
+    if not all(presence):
+        raise ValueError("extracted corpus has a partial data contract audit")
+    contract = {
+        field: _canonical_json_copy(value[field])
+        for field in _EXTRACTED_CONTRACT_IDENTITY_KEYS
+        if isinstance(value[field], Mapping)
+    }
+    if set(contract) != set(_EXTRACTED_CONTRACT_IDENTITY_KEYS):
+        raise ValueError("extracted corpus data contract entries must be objects")
+
+    source_map = contract["source_map"]
+    if (
+        source_map.get("schema_version") != 1
+        or source_map.get("algorithm") != _SOURCE_MAP_ALGORITHM
+    ):
+        raise ValueError("unsupported extracted source_map contract")
+    source_map_unsigned = {
+        key: source_map.get(key)
+        for key in ("schema_version", "algorithm", "roles")
+    }
+    if source_map.get("fingerprint") != _canonical_sha256(source_map_unsigned):
+        raise ValueError("extracted source_map contract fingerprint mismatch")
+    roles = source_map.get("roles")
+    if not isinstance(roles, dict) or set(roles) != {"train", "validation"}:
+        raise ValueError("extracted source_map roles are invalid")
+    source_ids: set[str] = set()
+    for role in ("train", "validation"):
+        raw_outputs = roles.get(role)
+        if not isinstance(raw_outputs, list):
+            raise ValueError(f"extracted source_map {role} inventory is invalid")
+        normalized_outputs: list[dict[str, object]] = []
+        for index, item in enumerate(raw_outputs):
+            if not isinstance(item, dict):
+                raise ValueError(
+                    f"extracted source_map {role}[{index}] must be an object"
+                )
+            source_ids.add(
+                _required_string(
+                    item.get("source_id"),
+                    f"source_map.{role}[{index}].source_id",
+                )
+            )
+            normalized_outputs.append(
+                {
+                    "path": _safe_extracted_relative_path(
+                        item.get("path"),
+                        f"source_map.{role}[{index}].path",
+                    ).as_posix(),
+                    "size": _required_file_size(
+                        item.get("size"),
+                        f"source_map.{role}[{index}].size",
+                    ),
+                    "sha256": _normalized_sha256(
+                        _required_string(
+                            item.get("sha256"),
+                            f"source_map.{role}[{index}].sha256",
+                        ),
+                        f"source_map.{role}[{index}].sha256",
+                    ),
+                }
+            )
+        if normalized_outputs != inventories[role]:
+            raise ValueError(
+                f"extracted source_map {role} differs from role inventory"
+            )
+
+    source_mix = contract["source_mix"]
+    if (
+        source_mix.get("schema_version") != 1
+        or source_mix.get("algorithm") != _SOURCE_MIX_ALGORITHM
+        or source_mix.get("unit") != "valid_tokens"
+    ):
+        raise ValueError("unsupported extracted source_mix contract")
+    source_mix_unsigned = {
+        key: source_mix.get(key)
+        for key in (
+            "schema_version",
+            "algorithm",
+            "unit",
+            "basis_points_total",
+            "profile",
+            "sources",
+        )
+    }
+    if source_mix.get("fingerprint") != _canonical_sha256(source_mix_unsigned):
+        raise ValueError("extracted source_mix contract fingerprint mismatch")
+    raw_mix_sources = source_mix.get("sources")
+    if not isinstance(raw_mix_sources, list):
+        raise ValueError("extracted source_mix source inventory is invalid")
+    mix_ids = {
+        _required_string(item.get("source_id"), "source_mix.source_id")
+        for item in raw_mix_sources
+        if isinstance(item, dict)
+    }
+    if len(mix_ids) != len(raw_mix_sources) or mix_ids != source_ids:
+        raise ValueError("extracted source_mix/source_map source sets differ")
+    weights = [item.get("mix_basis_points") for item in raw_mix_sources]
+    if any(
+        isinstance(weight, bool)
+        or not isinstance(weight, int)
+        or weight <= 0
+        for weight in weights
+    ):
+        raise ValueError("extracted source_mix weights must be positive integers")
+    if (
+        sum(int(weight) for weight in weights)
+        != source_mix.get("basis_points_total")
+        or source_mix.get("basis_points_total") != 10_000
+    ):
+        raise ValueError("extracted source_mix must total 10,000 basis points")
+    for audit_name in ("format_audit", "license_audit", "materialization_audit"):
+        if contract[audit_name].get("complete") is not True:
+            raise ValueError(f"extracted {audit_name} is incomplete")
+    return contract
+
+
 def _authenticate_extracted_prepare_inputs(
     manifest_path: str | Path,
     *,
@@ -599,7 +764,11 @@ def _authenticate_extracted_prepare_inputs(
             "sha256": digest,
         }
 
-    identity = {name: value.get(name) for name in _EXTRACTED_IDENTITY_KEYS}
+    data_contract = _validated_extracted_data_contract(value, inventories)
+    identity_keys = _EXTRACTED_IDENTITY_KEYS
+    if data_contract is not None:
+        identity_keys = (*identity_keys, *_EXTRACTED_CONTRACT_IDENTITY_KEYS)
+    identity = {name: value.get(name) for name in identity_keys}
     actual_fingerprint = hashlib.sha256(
         json.dumps(identity, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
@@ -712,6 +881,15 @@ def _authenticate_extracted_prepare_inputs(
         "ready_for_training": ready_for_training,
         "research_only": not ready_for_training,
     }
+    if data_contract is not None:
+        contract_unsigned = {
+            "schema_version": 1,
+            **data_contract,
+        }
+        lineage["data_contract"] = {
+            **contract_unsigned,
+            "contract_fingerprint": _canonical_sha256(contract_unsigned),
+        }
     if audit_lineage is not None:
         lineage["audit_attestation"] = audit_lineage
     normalized_lineage = _normalized_prepared_lineage(lineage)
@@ -925,7 +1103,7 @@ def prepare_jsonl_corpus(
         lineage = _explicit_unreviewed_lineage()
     generator_source_sha256 = (
         AUDITED_PREPARED_GENERATOR_SOURCE_SHA256
-        if audit_attestation is not None
+        if extracted_manifest is not None
         else PREPARED_GENERATOR_SOURCE_SHA256
     )
     pipeline_fingerprint = _prepared_pipeline_fingerprint(

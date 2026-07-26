@@ -53,15 +53,15 @@ EXPECTED_LOCKED_FILES = {
         115_037_937,
         "71851a2b5acfccf80659729a0eccd07ab6ed737f0edc659a662aa9c1cd2194db",
     ),
-    "education_oercommons_permissive": (
-        "oercommons-0000.json.gz",
-        17_028_282,
-        "e1c5fcbd9232183cbbd3d1967f637cc0371fcc6fce3e14d9da7f75ee2c66bec5",
+    "public_domain_usgpo": (
+        "usgpo-0000.json.gz",
+        760_402_814,
+        "4b99b5043d40e205e578b26e0827f86541bd86f4f11bd04868f61e4259fe4c20",
     ),
-    "education_pressbooks_permissive": (
-        "pressbooks-0000.json.gz",
-        191_725_499,
-        "dd251acfa9b535a0aadeb7f61743a61934a1783bd1bdac947d4d136781b22d22",
+    "public_domain_project_gutenberg": (
+        "project_gutenberg-dolma-0000.json.gz",
+        570_083_371,
+        "f7e3716e1e2be607a044920ffec69d1395598cca178d4ccbbd343f206b31effb",
     ),
     "science_arxiv_open_permissive": (
         "arxiv-papers-0007.json.gz",
@@ -85,13 +85,13 @@ EXPECTED_NEW_REVISIONS = {
         "common-pile/libretexts_filtered",
         "70388bca52b4a93515e14b1d56618fd7944988fd",
     ),
-    "education_oercommons_permissive": (
-        "common-pile/oercommons_filtered",
-        "506b6159dadcbc0dc67611cea024eedb04232fb2",
+    "public_domain_usgpo": (
+        "common-pile/usgpo_filtered",
+        "b150cc22211de4d57f1b7f570097a00e65042424",
     ),
-    "education_pressbooks_permissive": (
-        "common-pile/pressbooks_filtered",
-        "1a1d3b50d77f834370f8eb4c0d174668dd1676bb",
+    "public_domain_project_gutenberg": (
+        "common-pile/project_gutenberg_filtered",
+        "3cdf6879c807f4e4e063f2ceb23bc268d8c29ab7",
     ),
     "science_arxiv_open_permissive": (
         "common-pile/arxiv_papers_filtered",
@@ -127,16 +127,16 @@ def _sources_by_id(recipe: dict[str, object]) -> dict[str, dict[str, object]]:
     return sources
 
 
-def test_v4_recipe_is_an_explicit_non_runnable_schema_v2_draft() -> None:
+def test_v4_recipe_is_an_explicit_runtime_verified_schema_v2_recipe() -> None:
     recipe = _recipe()
 
     assert recipe["schema_version"] == 2
-    assert recipe["schema_status"] == "draft"
-    assert recipe["kind"] == "twen_base_data_source_recipe_v2_draft"
+    assert recipe["schema_status"] == "stable"
+    assert recipe["kind"] == "twen_base_data_source_recipe_v2"
     activation = recipe["activation"]
     assert isinstance(activation, dict)
-    assert activation["runnable"] is False
-    assert activation["current_parser_compatible"] is False
+    assert activation["runnable"] is True
+    assert activation["current_parser_compatible"] is True
     assert "immutable jsonl_gzip download with LFS SHA256 verification" in activation[
         "required_implementation"
     ]
@@ -191,8 +191,12 @@ def test_v4_profile_and_origin_quotas_are_exact() -> None:
     assert (
         sum(int(source["validation_token_quota"]) for source in sources.values())
         == recipe["validation_tokens"]
-        == 20_000_000
+        == 2_000_000
     )
+    for source in sources.values():
+        assert int(source["validation_token_quota"]) == (
+            recipe["validation_tokens"] * int(source["mix_basis_points"]) // 10_000
+        )
 
 
 def test_v4_sources_use_only_audited_immutable_minimum_files() -> None:
@@ -289,8 +293,8 @@ def test_v4_jsonl_gzip_sources_are_data_only_but_require_the_v2_reader() -> None
 
     assert gzip_source_ids == {
         "education_libretexts_permissive",
-        "education_oercommons_permissive",
-        "education_pressbooks_permissive",
+        "public_domain_usgpo",
+        "public_domain_project_gutenberg",
         "science_arxiv_open_permissive",
         "code_stackv2_edu_permissive",
     }

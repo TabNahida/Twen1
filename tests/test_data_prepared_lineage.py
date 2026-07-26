@@ -9,6 +9,8 @@ from unittest.mock import patch
 
 from twen.cli import build_parser
 from twen.data.prepared import (
+    AUDITED_PREPARED_GENERATOR_SOURCE_SHA256,
+    PREPARED_GENERATOR_SOURCE_SHA256,
     _authenticate_extracted_prepare_inputs,
     prepare_jsonl_corpus,
     read_prepared_manifest,
@@ -195,6 +197,10 @@ class PreparedExtractedLineageTest(unittest.TestCase):
             assert prepared.lineage is not None
             self.assertEqual(prepared.lineage["kind"], "authenticated_extracted_corpus")
             self.assertEqual(prepared.lineage["role"], "validation")
+            self.assertEqual(
+                prepared.generator_source_sha256,
+                AUDITED_PREPARED_GENERATOR_SOURCE_SHA256,
+            )
             self.assertEqual(len(prepared.shards), 1)
             self.assertEqual(
                 Path(prepared.shards[0].source_path).name,
@@ -228,6 +234,10 @@ class PreparedExtractedLineageTest(unittest.TestCase):
             prepared = validate_prepared_corpus(output)
             assert prepared.lineage is not None
             self.assertEqual(prepared.lineage["kind"], "explicit_unreviewed")
+            self.assertEqual(
+                prepared.generator_source_sha256,
+                PREPARED_GENERATOR_SOURCE_SHA256,
+            )
             self.assertTrue(prepared.lineage["research_only"])
 
 

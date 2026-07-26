@@ -17,6 +17,7 @@ from twen.data.audits import (
     materialize_filtered_base_corpus,
     validate_base_audit_attestation,
 )
+from twen.data.cursor import AuthenticatedSourceMap
 from twen.data.prepared import (
     AUDITED_PREPARED_GENERATOR_SOURCE_SHA256,
     _authenticate_extracted_prepare_inputs,
@@ -109,6 +110,261 @@ def _write_extracted(
         "actual_train_tokens": len(train_texts) * 100,
         "actual_validation_tokens": len(validation_texts) * 100,
         "network_policy": "direct",
+        "audits": {
+            "output_sha256": "complete",
+            "cross_source_near_dedup": "pending",
+            "full_contextual_pii_scan": "pending",
+            "project_benchmark_13gram_scan": "pending",
+        },
+        "ready_for_data_prepare": True,
+        "ready_for_training": False,
+    }
+    manifest = root / "corpus-manifest.json"
+    manifest.write_text(json.dumps(manifest_value, sort_keys=True), encoding="utf-8")
+    (root / "COMPLETE").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "twen_extracted_base_jsonl_complete",
+                "corpus_fingerprint": fingerprint,
+                "manifest": manifest.name,
+                "manifest_sha256": sha256_file(manifest),
+                "file_lists": file_lists,
+                "ready_for_training": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return manifest
+
+
+def _write_extracted_v2(
+    root: Path,
+    *,
+    train_by_source: dict[str, list[str]],
+    validation_by_source: dict[str, list[str]],
+    mix_basis_points: dict[str, int],
+) -> Path:
+    source_ids = sorted(train_by_source)
+    assert source_ids
+    assert set(validation_by_source) == set(source_ids)
+    assert set(mix_basis_points) == set(source_ids)
+    assert sum(mix_basis_points.values()) == 10_000
+    root.mkdir(parents=True)
+    inventories: dict[str, list[dict[str, object]]] = {
+        "train": [],
+        "validation": [],
+        "attribution": [],
+    }
+    source_map_roles: dict[str, list[dict[str, object]]] = {
+        "train": [],
+        "validation": [],
+    }
+    sources: list[dict[str, object]] = []
+    actual_tokens: dict[str, dict[str, int]] = {
+        "train": {},
+        "validation": {},
+    }
+    for source_id in source_ids:
+        directory = root / f"extracted/{source_id}/chunk-000000"
+        directory.mkdir(parents=True)
+        outputs: list[dict[str, object]] = []
+        attribution_rows: list[dict[str, object]] = []
+        for role, texts in (
+            ("train", train_by_source[source_id]),
+            ("validation", validation_by_source[source_id]),
+        ):
+            output = directory / f"{role}.jsonl"
+            output.write_text(
+                "".join(json.dumps({"text": text}) + "\n" for text in texts),
+                encoding="utf-8",
+            )
+            relative = output.relative_to(root).as_posix()
+            entry = _entry(root, relative)
+            inventories[role].append(entry)
+            source_map_roles[role].append({"source_id": source_id, **entry})
+            outputs.append(entry)
+            token_total = 0
+            for index, text in enumerate(texts):
+                token_count = len(text) + 1
+                token_total += token_count
+                normalized = " ".join(text.strip().split())
+                attribution_rows.append(
+                    {
+                        "source_id": source_id,
+                        "split": role,
+                        "stable_id": hashlib.sha256(
+                            f"{source_id}\0{role}\0{index}".encode()
+                        ).hexdigest(),
+                        "text_sha256": hashlib.sha256(normalized.encode()).hexdigest(),
+                        "token_count_with_eos": token_count,
+                        "normalized_license": "cc-by-4.0",
+                    }
+                )
+            actual_tokens[role][source_id] = token_total
+        attribution = directory / "attribution.jsonl"
+        attribution.write_text(
+            "".join(
+                json.dumps(row, sort_keys=True) + "\n"
+                for row in attribution_rows
+            ),
+            encoding="utf-8",
+        )
+        attribution_entry = _entry(
+            root,
+            attribution.relative_to(root).as_posix(),
+        )
+        inventories["attribution"].append(attribution_entry)
+        outputs.append(attribution_entry)
+        sources.append(
+            {
+                "source_id": source_id,
+                "category": "general",
+                "repo_id": f"fixture/{source_id}",
+                "revision": "e" * 40,
+                "config": "default",
+                "split": "train",
+                "storage_format": "jsonl_gzip",
+                "license": "CC-BY-4.0",
+                "license_scope": "per-document",
+                "target_train_tokens": actual_tokens["train"][source_id],
+                "actual_train_tokens": actual_tokens["train"][source_id],
+                "target_validation_tokens": actual_tokens["validation"][source_id],
+                "actual_validation_tokens": actual_tokens["validation"][source_id],
+                "train_rows": len(train_by_source[source_id]),
+                "validation_rows": len(validation_by_source[source_id]),
+                "chunks": [
+                    {
+                        "shard_id": "chunk-000000",
+                        "outputs": outputs,
+                        "statistics": {},
+                    }
+                ],
+            }
+        )
+    for inventory in (*inventories.values(), *source_map_roles.values()):
+        inventory.sort(key=lambda item: str(item["path"]))
+    file_lists: dict[str, dict[str, object]] = {}
+    for role, entries in inventories.items():
+        sidecar = root / f"{role}-files.txt"
+        sidecar.write_text(
+            "".join(f"{entry['path']}\n" for entry in entries),
+            encoding="utf-8",
+        )
+        file_lists[role] = _entry(root, sidecar.name)
+    source_map_unsigned = {
+        "schema_version": 1,
+        "algorithm": "authenticated-extracted-output-map-v1",
+        "roles": source_map_roles,
+    }
+    source_map = {
+        **source_map_unsigned,
+        "fingerprint": hashlib.sha256(
+            json.dumps(
+                source_map_unsigned,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest(),
+    }
+    source_mix_unsigned = {
+        "schema_version": 1,
+        "algorithm": "token-deficit-corrected-source-mix-bp-v2",
+        "unit": "valid_tokens",
+        "basis_points_total": 10_000,
+        "profile": "dense",
+        "sources": [
+            {
+                "source_id": source_id,
+                "origin_group": "existing",
+                "mix_basis_points": mix_basis_points[source_id],
+                "target_train_tokens": actual_tokens["train"][source_id],
+                "actual_train_tokens": actual_tokens["train"][source_id],
+            }
+            for source_id in source_ids
+        ],
+    }
+    source_mix = {
+        **source_mix_unsigned,
+        "fingerprint": hashlib.sha256(
+            json.dumps(
+                source_mix_unsigned,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest(),
+    }
+    format_audit = {
+        "complete": True,
+        "sources": [
+            {
+                "source_id": source_id,
+                "storage_format": "jsonl_gzip",
+                "resolved_file_count": 1,
+                "resolved_bytes": 1,
+            }
+            for source_id in source_ids
+        ],
+    }
+    license_audit = {
+        "complete": True,
+        "normalization": "canonical_allowlist_before_acceptance",
+        "attribution_inventory": file_lists["attribution"],
+        "sources": [
+            {
+                "source_id": source_id,
+                "declaration": "CC-BY-4.0",
+                "scope": "per-document",
+                "field": "license",
+                "value_mode": "canonical_after_normalization",
+                "allowlist": ["cc-by-4.0"],
+            }
+            for source_id in source_ids
+        ],
+    }
+    materialization_audit = {
+        "complete": True,
+        "network_policy": "offline-fixture",
+        "sources": [
+            {
+                "source_id": source_id,
+                "storage_format": "jsonl_gzip",
+                "method": "fixture",
+                "input_files": [],
+                "output_chunk_count": 1,
+            }
+            for source_id in source_ids
+        ],
+    }
+    identity = {
+        "recipe_id": "audit-v2-fixture",
+        "recipe_sha256": "a" * 64,
+        "resolved_source_lock_sha256": "b" * 64,
+        "tokenizer_manifest_sha256": TOKENIZER_SHA,
+        "extractor_source_sha256": "d" * 64,
+        "profile": "dense",
+        "sources": sources,
+        "train_files": inventories["train"],
+        "validation_files": inventories["validation"],
+        "attribution_files": inventories["attribution"],
+        "file_lists": file_lists,
+        "source_map": source_map,
+        "source_mix": source_mix,
+        "format_audit": format_audit,
+        "license_audit": license_audit,
+        "materialization_audit": materialization_audit,
+    }
+    fingerprint = hashlib.sha256(
+        json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    manifest_value = {
+        "schema_version": 1,
+        "kind": "twen_extracted_base_jsonl_corpus",
+        **identity,
+        "corpus_fingerprint": fingerprint,
+        "actual_train_tokens": sum(actual_tokens["train"].values()),
+        "actual_validation_tokens": sum(actual_tokens["validation"].values()),
+        "network_policy": "offline-fixture",
         "audits": {
             "output_sha256": "complete",
             "cross_source_near_dedup": "pending",
@@ -330,6 +586,184 @@ def test_exact_and_near_validation_leakage_fail_closed() -> None:
             root / "filtered-audit",
         )
         assert validate_base_audit_attestation(rescanned)["ready_for_training"] is True
+
+
+def test_v2_materialization_preserves_source_contract_through_reaudit_and_prepare() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        shared = " ".join(f"shared{index}" for index in range(80))
+        retained_a = (
+            "A retained source-a document about ceramics, mineral glazes, firing "
+            "temperatures, and careful studio practice."
+        )
+        retained_b = (
+            "A retained source-b document about orchestral voicing, counterpoint, "
+            "cadences, and acoustic balance."
+        )
+        candidate = _write_extracted_v2(
+            root / "candidate-v2",
+            train_by_source={
+                "source_a": [shared, retained_a],
+                "source_b": [retained_b],
+            },
+            validation_by_source={
+                "source_a": ["unused candidate validation about botany"],
+                "source_b": ["unused candidate validation about navigation"],
+            },
+            mix_basis_points={"source_a": 6_000, "source_b": 4_000},
+        )
+        frozen = _write_extracted_v2(
+            root / "frozen-v2",
+            train_by_source={
+                "source_a": ["unused frozen train about sculpture"],
+                "source_b": ["unused frozen train about architecture"],
+            },
+            validation_by_source={
+                "source_a": [
+                    shared,
+                    "Frozen validation about harmonic analysis and musical form.",
+                ],
+                "source_b": [
+                    "Frozen validation about marine ecology and coral reef surveys."
+                ],
+            },
+            mix_basis_points={"source_a": 6_000, "source_b": 4_000},
+        )
+        registry, benchmark_root = _write_registry(
+            root,
+            benchmark_text=(
+                "one two three four five six seven eight nine ten eleven twelve thirteen"
+            ),
+        )
+        attestation = build_base_audit_attestation(
+            candidate,
+            frozen,
+            registry,
+            benchmark_root,
+            root / "audit-v2",
+        )
+        audited = validate_base_audit_attestation(attestation)
+        assert audited["ready_for_training"] is False
+        assert audited["metrics"]["train_validation_exact_matches"] == 1
+
+        filtered = materialize_filtered_base_corpus(
+            attestation,
+            root / "filtered-v2",
+        )
+        report = validate_extracted_base_corpus(filtered)
+        assert report["ready_for_training"] is False
+        assert report["source_map"] is not None
+        assert report["source_mix"] is not None
+        assert report["format_audit"]["complete"] is True
+        assert report["license_audit"]["complete"] is True
+        assert report["materialization_audit"]["complete"] is True
+        filtered_value = json.loads(filtered.read_text(encoding="utf-8"))
+        mix = {
+            item["source_id"]: item
+            for item in filtered_value["source_mix"]["sources"]
+        }
+        assert {
+            source_id: item["mix_basis_points"]
+            for source_id, item in mix.items()
+        } == {"source_a": 6_000, "source_b": 4_000}
+        assert mix["source_a"]["target_train_tokens"] == (
+            len(shared) + len(retained_a) + 2
+        )
+        assert mix["source_a"]["actual_train_tokens"] == len(retained_a) + 1
+        assert mix["source_b"]["actual_train_tokens"] == len(retained_b) + 1
+        assert (
+            filtered_value["license_audit"]["attribution_inventory"]
+            == filtered_value["file_lists"]["attribution"]
+        )
+        assert filtered_value["materialization_audit"][
+            "parent_candidate_manifest_sha256"
+        ] == sha256_file(candidate)
+        assert filtered_value["materialization_audit"][
+            "parent_frozen_validation_manifest_sha256"
+        ] == sha256_file(frozen)
+        assert filtered_value["materialization_audit"][
+            "audit_attestation_sha256"
+        ] == sha256_file(attestation)
+
+        rescanned = build_base_audit_attestation(
+            filtered,
+            filtered,
+            registry,
+            benchmark_root,
+            root / "filtered-v2-audit",
+        )
+        assert validate_base_audit_attestation(rescanned)["ready_for_training"] is True
+        with (
+            patch("twen.io.offline.enforce_offline_environment"),
+            patch("twen.io.offline.verify_local_download_directory"),
+            patch("transformers.AutoTokenizer.from_pretrained", return_value=_Tokenizer()),
+        ):
+            prepared_path = prepare_jsonl_corpus(
+                None,
+                root / "prepared-v2",
+                tokenizer_path=root / "tokenizer",
+                tokenizer_sha256=TOKENIZER_SHA,
+                sequence_length=32,
+                progress="never",
+                extracted_manifest=filtered,
+                role="train",
+                audit_attestation=rescanned,
+            )
+        prepared = validate_prepared_corpus(prepared_path)
+        authenticated = AuthenticatedSourceMap.from_prepared_manifest(prepared)
+        assert authenticated.source_ids == ("source_a", "source_b")
+        assert authenticated.source_mix_weights == {
+            "source_a": 6_000,
+            "source_b": 4_000,
+        }
+
+
+def test_v2_materialization_refuses_to_drop_a_contracted_train_source() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        rejected = " ".join(f"leak{index}" for index in range(80))
+        candidate = _write_extracted_v2(
+            root / "candidate-v2",
+            train_by_source={
+                "source_a": ["Retained source-a training document about geometry."],
+                "source_b": [rejected],
+            },
+            validation_by_source={
+                "source_a": ["Unused candidate validation about poetry."],
+                "source_b": ["Unused candidate validation about geology."],
+            },
+            mix_basis_points={"source_a": 5_000, "source_b": 5_000},
+        )
+        frozen = _write_extracted_v2(
+            root / "frozen-v2",
+            train_by_source={
+                "source_a": ["Unused frozen source-a train."],
+                "source_b": ["Unused frozen source-b train."],
+            },
+            validation_by_source={
+                "source_a": ["Frozen validation about agricultural history."],
+                "source_b": [rejected],
+            },
+            mix_basis_points={"source_a": 5_000, "source_b": 5_000},
+        )
+        registry, benchmark_root = _write_registry(
+            root,
+            benchmark_text=(
+                "one two three four five six seven eight nine ten eleven twelve thirteen"
+            ),
+        )
+        attestation = build_base_audit_attestation(
+            candidate,
+            frozen,
+            registry,
+            benchmark_root,
+            root / "audit-v2",
+        )
+        with pytest.raises(
+            DataAuditError,
+            match="removed every train document from contracted source 'source_b'",
+        ):
+            materialize_filtered_base_corpus(attestation, root / "filtered-v2")
 
 
 def test_contextual_pii_and_benchmark_overlap_are_hashed_not_copied() -> None:
