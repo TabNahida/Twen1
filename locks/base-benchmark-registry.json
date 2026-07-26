@@ -1,0 +1,777 @@
+{
+  "benchmarks": [
+    {
+      "benchmark_id": "gsm8k",
+      "conversion": {
+        "converter_source_sha256": "4242fd4a10c873d6f54548c52d442156cf7b8825551ec2a343cb79429cf53521",
+        "kind": "twen_final_test_benchmark_projection",
+        "record_count": 1319,
+        "schema_version": 1,
+        "selection": "final_test_split_only",
+        "source_inventory_sha256": "265bc0d802fb086d582b8fc07b81a103371461aef8e19a044f268df5daf8aa46"
+      },
+      "dataset_id": "openai/gsm8k",
+      "declared_license": "MIT",
+      "files": [
+        {
+          "format": "jsonl",
+          "path": "gsm8k.jsonl",
+          "records": 1319,
+          "sha256": "f4fa76cefcf7b82d3aaccccd41fd2b0221554008b80f4eb3a16666701a707e18",
+          "size": 904784,
+          "text_fields": [
+            "prompt",
+            "reference"
+          ]
+        }
+      ],
+      "license_evidence": {
+        "card_license": "MIT",
+        "git_blob_sha1": "ad25b2c451d0fcd2793678b2baa917c962acf281",
+        "path": "README.md",
+        "size": 7935,
+        "source": "pinned_huggingface_dataset_card",
+        "url": "https://huggingface.co/datasets/openai/gsm8k/blob/740312add88f781978c0658806c59bc2815b9866/README.md"
+      },
+      "license_review": "metadata_verified_at_pinned_revision",
+      "provider": "huggingface",
+      "required": true,
+      "revision": "740312add88f781978c0658806c59bc2815b9866",
+      "selection": {
+        "configs": [
+          "main"
+        ],
+        "rationale": "Canonical final evaluation split; training and socratic variants are excluded.",
+        "splits": [
+          "test"
+        ]
+      },
+      "source_files": [
+        {
+          "format": "parquet",
+          "path": "main/test-00000-of-00001.parquet",
+          "sha256": "ee7b8da9e381df27b9e3f7758a159ab2bdaa4dbaa910546cbbc47e0cb44e4f59",
+          "size": 419088
+        }
+      ],
+      "source_url": "https://huggingface.co/datasets/openai/gsm8k",
+      "status": "ready"
+    },
+    {
+      "benchmark_id": "math",
+      "conversion": {
+        "converter_source_sha256": "4242fd4a10c873d6f54548c52d442156cf7b8825551ec2a343cb79429cf53521",
+        "kind": "twen_final_test_benchmark_projection",
+        "record_count": 5000,
+        "schema_version": 1,
+        "selection": "final_test_split_only",
+        "source_inventory_sha256": "8f015742b2fc230b3752a610b96f868c27de10bab61adc606669ec6731dfd58a"
+      },
+      "dataset_id": "EleutherAI/hendrycks_math",
+      "declared_license": "MIT",
+      "files": [
+        {
+          "format": "jsonl",
+          "path": "math.jsonl",
+          "records": 5000,
+          "sha256": "a57fa74807a4870c76f3ae6efc8cb539ad61182faeb0949f5dc803a88685f2f2",
+          "size": 4522011,
+          "text_fields": [
+            "prompt",
+            "reference"
+          ]
+        }
+      ],
+      "license_evidence": {
+        "card_license": "MIT",
+        "git_blob_sha1": "9ab6422553ffa7c65f5c11386d1599fc77149101",
+        "path": "README.md",
+        "size": 3926,
+        "source": "pinned_huggingface_dataset_card",
+        "url": "https://huggingface.co/datasets/EleutherAI/hendrycks_math/blob/21a5633873b6a120296cce3e2df9d5550074f4a3/README.md"
+      },
+      "license_review": "metadata_verified_at_pinned_revision",
+      "provider": "huggingface",
+      "required": true,
+      "revision": "21a5633873b6a120296cce3e2df9d5550074f4a3",
+      "selection": {
+        "configs": [
+          "algebra",
+          "counting_and_probability",
+          "geometry",
+          "intermediate_algebra",
+          "number_theory",
+          "prealgebra",
+          "precalculus"
+        ],
+        "rationale": "All seven canonical MATH final evaluation subject splits; train is excluded.",
+        "splits": [
+          "test"
+        ]
+      },
+      "source_files": [
+        {
+          "format": "parquet",
+          "path": "algebra/test-00000-of-00001.parquet",
+          "sha256": "0e04a850dac9cfc758eac0c80afd2d0cc65e29ea72f916c8ac1045b12af937f5",
+          "size": 353114
+        },
+        {
+          "format": "parquet",
+          "path": "counting_and_probability/test-00000-of-00001.parquet",
+          "sha256": "c324818949c75a6227c0328a8499d58023cbbf6757cfc1736f5ab24cc8d87966",
+          "size": 175032
+        },
+        {
+          "format": "parquet",
+          "path": "geometry/test-00000-of-00001.parquet",
+          "sha256": "98720f3a8134ad9784fd8951195245264495df03ffc5c9485a9a54ff5ae2431a",
+          "size": 263835
+        },
+        {
+          "format": "parquet",
+          "path": "intermediate_algebra/test-00000-of-00001.parquet",
+          "sha256": "e859f72486c951c2017da880541ca729940eaa986b0364eb23e238983df9bfeb",
+          "size": 394797
+        },
+        {
+          "format": "parquet",
+          "path": "number_theory/test-00000-of-00001.parquet",
+          "sha256": "ba156c9c9fa2040836ba12135fd964e6e67d6bccd8c469ec4a3ad941f8f6fbe9",
+          "size": 182003
+        },
+        {
+          "format": "parquet",
+          "path": "prealgebra/test-00000-of-00001.parquet",
+          "sha256": "301e5d8ade5c7b5038032532e498bdc9dca799e7f1061a63f2e7d980803240cc",
+          "size": 267729
+        },
+        {
+          "format": "parquet",
+          "path": "precalculus/test-00000-of-00001.parquet",
+          "sha256": "da37474ba3761ae5727af3844a7ba963a735bd6a14c65e6137593669a4fe3b9c",
+          "size": 242241
+        }
+      ],
+      "source_url": "https://huggingface.co/datasets/EleutherAI/hendrycks_math",
+      "status": "ready"
+    },
+    {
+      "benchmark_id": "mmlu",
+      "conversion": {
+        "converter_source_sha256": "4242fd4a10c873d6f54548c52d442156cf7b8825551ec2a343cb79429cf53521",
+        "kind": "twen_final_test_benchmark_projection",
+        "record_count": 14042,
+        "schema_version": 1,
+        "selection": "final_test_split_only",
+        "source_inventory_sha256": "5a1b154f827fe22bcad7b5d67ae6b705edcd2b2e82b8cc09157ecf0e8cf35335"
+      },
+      "dataset_id": "cais/mmlu",
+      "declared_license": "MIT",
+      "files": [
+        {
+          "format": "jsonl",
+          "path": "mmlu.jsonl",
+          "records": 14042,
+          "sha256": "3d2ab578639c49a8218183d17b95e7d7c43486d8512c32797524dd025c5207a8",
+          "size": 8363610,
+          "text_fields": [
+            "prompt"
+          ]
+        }
+      ],
+      "license_evidence": {
+        "card_license": "MIT",
+        "git_blob_sha1": "08de94c560ad7420252bff6e4729f1d1683def4f",
+        "path": "README.md",
+        "size": 53221,
+        "source": "pinned_huggingface_dataset_card",
+        "url": "https://huggingface.co/datasets/cais/mmlu/blob/c30699e8356da336a370243923dbaf21066bb9fe/README.md"
+      },
+      "license_review": "metadata_verified_at_pinned_revision",
+      "provider": "huggingface",
+      "required": true,
+      "revision": "c30699e8356da336a370243923dbaf21066bb9fe",
+      "selection": {
+        "configs": [
+          "all"
+        ],
+        "rationale": "Canonical aggregate MMLU final test split; dev, validation, and auxiliary_train are excluded.",
+        "splits": [
+          "test"
+        ]
+      },
+      "source_files": [
+        {
+          "format": "parquet",
+          "path": "all/test-00000-of-00001.parquet",
+          "sha256": "74a41822ce7d3def56e1682f958469c04642a5336a5ce912fa375fdb90fb25d7",
+          "size": 3504718
+        }
+      ],
+      "source_url": "https://huggingface.co/datasets/cais/mmlu",
+      "status": "ready"
+    },
+    {
+      "benchmark_id": "arc",
+      "conversion": {
+        "converter_source_sha256": "4242fd4a10c873d6f54548c52d442156cf7b8825551ec2a343cb79429cf53521",
+        "kind": "twen_final_test_benchmark_projection",
+        "record_count": 3548,
+        "schema_version": 1,
+        "selection": "final_test_split_only",
+        "source_inventory_sha256": "be3bc5564ad6dd068aa73a9bf03fdfae0105a4a183b9826295c24c533f7561e2"
+      },
+      "dataset_id": "allenai/ai2_arc",
+      "declared_license": "CC-BY-SA-4.0",
+      "files": [
+        {
+          "format": "jsonl",
+          "path": "arc.jsonl",
+          "records": 3548,
+          "sha256": "5595da94d27740239ccf83e0ed2da93490881d6b2477df400e3fd702d3d8a921",
+          "size": 1464818,
+          "text_fields": [
+            "prompt"
+          ]
+        }
+      ],
+      "license_evidence": {
+        "card_license": "CC-BY-SA-4.0",
+        "git_blob_sha1": "d50d3b885a6d04fe8cb16cc9947f64dff0ba941a",
+        "path": "README.md",
+        "size": 9001,
+        "source": "pinned_huggingface_dataset_card",
+        "url": "https://huggingface.co/datasets/allenai/ai2_arc/blob/210d026faf9955653af8916fad021475a3f00453/README.md"
+      },
+      "license_review": "metadata_verified_at_pinned_revision",
+      "provider": "huggingface",
+      "required": true,
+      "revision": "210d026faf9955653af8916fad021475a3f00453",
+      "selection": {
+        "configs": [
+          "ARC-Challenge",
+          "ARC-Easy"
+        ],
+        "rationale": "Both published ARC final test configurations; train and validation are excluded.",
+        "splits": [
+          "test"
+        ]
+      },
+      "source_files": [
+        {
+          "format": "parquet",
+          "path": "ARC-Challenge/test-00000-of-00001.parquet",
+          "sha256": "62f03257e737aed263f55c6abf87c7bb0028a44a6bdd2a26eb1279eb42c1d1e9",
+          "size": 203808
+        },
+        {
+          "format": "parquet",
+          "path": "ARC-Easy/test-00000-of-00001.parquet",
+          "sha256": "4160597d618ae851c7eb04e281574f3f654776216ac6b6641588d64527b47177",
+          "size": 346257
+        }
+      ],
+      "source_url": "https://huggingface.co/datasets/allenai/ai2_arc",
+      "status": "ready"
+    },
+    {
+      "benchmark_id": "humaneval",
+      "conversion": {
+        "converter_source_sha256": "4242fd4a10c873d6f54548c52d442156cf7b8825551ec2a343cb79429cf53521",
+        "kind": "twen_final_test_benchmark_projection",
+        "record_count": 164,
+        "schema_version": 1,
+        "selection": "final_test_split_only",
+        "source_inventory_sha256": "ed0c56221733362c22690651db0940592ccb11339925142a357aac989c080dc6"
+      },
+      "dataset_id": "openai/openai_humaneval",
+      "declared_license": "MIT",
+      "files": [
+        {
+          "format": "jsonl",
+          "path": "humaneval.jsonl",
+          "records": 164,
+          "sha256": "e03caf45ce1d1e03333f1c8d3431e05edcac76b5ab2e0077db41ba2604e58207",
+          "size": 227675,
+          "text_fields": [
+            "prompt",
+            "reference"
+          ]
+        }
+      ],
+      "license_evidence": {
+        "card_license": "MIT",
+        "git_blob_sha1": "09b3df651a754ebd00f7585289da42c9b90862de",
+        "path": "README.md",
+        "size": 6523,
+        "source": "pinned_huggingface_dataset_card",
+        "url": "https://huggingface.co/datasets/openai/openai_humaneval/blob/7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544/README.md"
+      },
+      "license_review": "metadata_verified_at_pinned_revision",
+      "provider": "huggingface",
+      "required": true,
+      "revision": "7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544",
+      "selection": {
+        "configs": [
+          "openai_humaneval"
+        ],
+        "rationale": "The sole canonical HumanEval evaluation split.",
+        "splits": [
+          "test"
+        ]
+      },
+      "source_files": [
+        {
+          "format": "parquet",
+          "path": "openai_humaneval/test-00000-of-00001.parquet",
+          "sha256": "2f2871a15fbc95b6c683043359f4ed8e144c5a1c4f24f25f66bc51f598dfcfb6",
+          "size": 83920
+        }
+      ],
+      "source_url": "https://huggingface.co/datasets/openai/openai_humaneval",
+      "status": "ready"
+    },
+    {
+      "benchmark_id": "mbpp",
+      "conversion": {
+        "converter_source_sha256": "4242fd4a10c873d6f54548c52d442156cf7b8825551ec2a343cb79429cf53521",
+        "kind": "twen_final_test_benchmark_projection",
+        "record_count": 757,
+        "schema_version": 1,
+        "selection": "final_test_split_only",
+        "source_inventory_sha256": "532978aa5efe38466ac841794993b4dafe27023dc73c69af701d201783821f06"
+      },
+      "dataset_id": "google-research-datasets/mbpp",
+      "declared_license": "CC-BY-4.0",
+      "files": [
+        {
+          "format": "jsonl",
+          "path": "mbpp.jsonl",
+          "records": 757,
+          "sha256": "e37ee42ab0a82eb4c649730f16e613947e65c1a4f5d568ce6a8873242fdd3b7b",
+          "size": 472146,
+          "text_fields": [
+            "prompt",
+            "reference"
+          ]
+        }
+      ],
+      "license_evidence": {
+        "card_license": "CC-BY-4.0",
+        "git_blob_sha1": "476c2286e2ef2713058cade8be49c2f9c1514055",
+        "path": "README.md",
+        "size": 9058,
+        "source": "pinned_huggingface_dataset_card",
+        "url": "https://huggingface.co/datasets/google-research-datasets/mbpp/blob/4bb6404fdc6cacfda99d4ac4205087b89d32030c/README.md"
+      },
+      "license_review": "metadata_verified_at_pinned_revision",
+      "provider": "huggingface",
+      "required": true,
+      "revision": "4bb6404fdc6cacfda99d4ac4205087b89d32030c",
+      "selection": {
+        "configs": [
+          "full",
+          "sanitized"
+        ],
+        "rationale": "Both published MBPP final test variants; train, validation, and prompt are excluded.",
+        "splits": [
+          "test"
+        ]
+      },
+      "source_files": [
+        {
+          "format": "parquet",
+          "path": "full/test-00000-of-00001.parquet",
+          "sha256": "566fd53060ffba5766dace1d1e2f4c38906781526de222b0dfbdbc325b696c77",
+          "size": 115824
+        },
+        {
+          "format": "parquet",
+          "path": "sanitized/test-00000-of-00001.parquet",
+          "sha256": "e9e9efa2c0d59ef5e55537a9d126b8f875d5ac010a8d75628d76824884e15850",
+          "size": 60864
+        }
+      ],
+      "source_url": "https://huggingface.co/datasets/google-research-datasets/mbpp",
+      "status": "ready"
+    },
+    {
+      "benchmark_id": "ceval",
+      "conversion": {
+        "converter_source_sha256": "4242fd4a10c873d6f54548c52d442156cf7b8825551ec2a343cb79429cf53521",
+        "kind": "twen_final_test_benchmark_projection",
+        "record_count": 12342,
+        "schema_version": 1,
+        "selection": "final_test_split_only",
+        "source_inventory_sha256": "79262753f1c448b8e5e1725d84f249eff8443e3403d51e43db04046e289ae903"
+      },
+      "dataset_id": "ceval/ceval-exam",
+      "declared_license": "CC-BY-NC-SA-4.0",
+      "files": [
+        {
+          "format": "jsonl",
+          "path": "ceval.jsonl",
+          "records": 12342,
+          "sha256": "c26934c9ed37653e22d7ef99021cd94dc4e42bc138eb528e70194cb26b02b974",
+          "size": 5508190,
+          "text_fields": [
+            "prompt"
+          ]
+        }
+      ],
+      "license_evidence": {
+        "card_license": "CC-BY-NC-SA-4.0",
+        "git_blob_sha1": "7220ea1a2d1786dbe1ad479626cb3d5b68650e0d",
+        "path": "README.md",
+        "size": 40123,
+        "source": "pinned_huggingface_dataset_card",
+        "url": "https://huggingface.co/datasets/ceval/ceval-exam/blob/617524a00b307ff6f9933702f724131fe12ca7ce/README.md"
+      },
+      "license_review": "metadata_verified_at_pinned_revision",
+      "provider": "huggingface",
+      "required": true,
+      "revision": "617524a00b307ff6f9933702f724131fe12ca7ce",
+      "selection": {
+        "configs": [
+          "all 52 published subjects"
+        ],
+        "rationale": "The complete C-Eval final test set released publicly by the dataset maintainers; dev and val are excluded.",
+        "splits": [
+          "test"
+        ]
+      },
+      "source_files": [
+        {
+          "format": "parquet",
+          "path": "accountant/test-00000-of-00001.parquet",
+          "sha256": "37e61cdf5bf63420fe45dfe5a30a306cdd165a485f7dda38b6b4c617ca757eab",
+          "size": 120915
+        },
+        {
+          "format": "parquet",
+          "path": "advanced_mathematics/test-00000-of-00001.parquet",
+          "sha256": "a3758476b61647a8280b3b91b07f815d46258cd0a1e798db9d4b78f8237c0117",
+          "size": 29432
+        },
+        {
+          "format": "parquet",
+          "path": "art_studies/test-00000-of-00001.parquet",
+          "sha256": "17e9479ec72400657424dbe732812655b14ab65989110280a377239dc2a26a89",
+          "size": 33431
+        },
+        {
+          "format": "parquet",
+          "path": "basic_medicine/test-00000-of-00001.parquet",
+          "sha256": "255dba5d3bfccf458fc4b8b9627bd81f5e274bc58e5df87db51dad7c0d6b0e6b",
+          "size": 24965
+        },
+        {
+          "format": "parquet",
+          "path": "business_administration/test-00000-of-00001.parquet",
+          "sha256": "cb452864f24eb1aff0ea67286f1ccd9aa2e2fb15ca6a650479e1c5197f6e7d1e",
+          "size": 54589
+        },
+        {
+          "format": "parquet",
+          "path": "chinese_language_and_literature/test-00000-of-00001.parquet",
+          "sha256": "70d7d6f575a2c48d0b781502113d69fb748f86d7392cff28f8a25eb5c28a421c",
+          "size": 29887
+        },
+        {
+          "format": "parquet",
+          "path": "civil_servant/test-00000-of-00001.parquet",
+          "sha256": "015630aa00e7e36494e82dc33df43afc0eb48c7d884a83536f80a0ac185d51ba",
+          "size": 145167
+        },
+        {
+          "format": "parquet",
+          "path": "clinical_medicine/test-00000-of-00001.parquet",
+          "sha256": "546522335722adee9929b48bff62f880591caaa1b6ccec1689717d16ef4e9f4a",
+          "size": 35030
+        },
+        {
+          "format": "parquet",
+          "path": "college_chemistry/test-00000-of-00001.parquet",
+          "sha256": "14910c6d4de700e38c72f392aeddd43815faeda553e280ce8daf6c0124d70e1e",
+          "size": 36901
+        },
+        {
+          "format": "parquet",
+          "path": "college_economics/test-00000-of-00001.parquet",
+          "sha256": "9e81cca6de049895a6b57936ef46c7f1de4d197022fb7182d2710601d8f4212b",
+          "size": 81419
+        },
+        {
+          "format": "parquet",
+          "path": "college_physics/test-00000-of-00001.parquet",
+          "sha256": "17ebbf4776138eff0bbae90e5d213194d948df4749ad71a57bf856dfa8e16871",
+          "size": 43439
+        },
+        {
+          "format": "parquet",
+          "path": "college_programming/test-00000-of-00001.parquet",
+          "sha256": "e5fc86f55e628ca58e9b2502d8d9016b702ea1d9fb5c98af9fa37741d8b9f3dd",
+          "size": 60932
+        },
+        {
+          "format": "parquet",
+          "path": "computer_architecture/test-00000-of-00001.parquet",
+          "sha256": "4d786875f9a9b395fd38518dfd63cf62c98fd8dc9f65c7ec2d8887b760d5c0e4",
+          "size": 32213
+        },
+        {
+          "format": "parquet",
+          "path": "computer_network/test-00000-of-00001.parquet",
+          "sha256": "add0701bdef50f2bac363f2c807e91880f7814e71613f1aaf6a77c25ea999f47",
+          "size": 28484
+        },
+        {
+          "format": "parquet",
+          "path": "discrete_mathematics/test-00000-of-00001.parquet",
+          "sha256": "af0a3fbd33a8aa99cd36b01c97aaee4eb899c5a23bf38abba66aa751175b117e",
+          "size": 28380
+        },
+        {
+          "format": "parquet",
+          "path": "education_science/test-00000-of-00001.parquet",
+          "sha256": "94dbb1eccbef4cf3ca9d1da33e0dcdc68701b6c2747bfa29abaeb8480972d164",
+          "size": 43150
+        },
+        {
+          "format": "parquet",
+          "path": "electrical_engineer/test-00000-of-00001.parquet",
+          "sha256": "460ed7b2595eeb6bcb33112091af7282b8a412daa5f433643cfefd615bd09c55",
+          "size": 57135
+        },
+        {
+          "format": "parquet",
+          "path": "environmental_impact_assessment_engineer/test-00000-of-00001.parquet",
+          "sha256": "2f1ec9afd3c07affb5658c2800fe1003c4b2f892b96f9bb90432f8063e2f6925",
+          "size": 56255
+        },
+        {
+          "format": "parquet",
+          "path": "fire_engineer/test-00000-of-00001.parquet",
+          "sha256": "9ade7267f7756c78ef088e4efa1e34d1a54415176c868a9dfd9e20d3943ef655",
+          "size": 60694
+        },
+        {
+          "format": "parquet",
+          "path": "high_school_biology/test-00000-of-00001.parquet",
+          "sha256": "22503cbaff33834f967819f3805582ef6351e622bfd5ddc442745fa86ca334fb",
+          "size": 43851
+        },
+        {
+          "format": "parquet",
+          "path": "high_school_chemistry/test-00000-of-00001.parquet",
+          "sha256": "acb8c36898272d0cde99e0b938efcc6959db62880fd4f8a21f1f5b94fa1cf3a2",
+          "size": 39006
+        },
+        {
+          "format": "parquet",
+          "path": "high_school_chinese/test-00000-of-00001.parquet",
+          "sha256": "208d6e28e6006a4111916912d08d960d6853fe99e464c54426f09db320d474e5",
+          "size": 90743
+        },
+        {
+          "format": "parquet",
+          "path": "high_school_geography/test-00000-of-00001.parquet",
+          "sha256": "bab45b5c483e2828a17405ba92344379a6de4dc6653ce4664e9eafe0504e6566",
+          "size": 34890
+        },
+        {
+          "format": "parquet",
+          "path": "high_school_history/test-00000-of-00001.parquet",
+          "sha256": "97bf3996db04e92ce67679c47313d1f6ef9078705233d945a9762b925dc6ab53",
+          "size": 48941
+        },
+        {
+          "format": "parquet",
+          "path": "high_school_mathematics/test-00000-of-00001.parquet",
+          "sha256": "e87e6eb82977defc7fe98286a881ea5c0a41c08e25f78b11cbeb495572bc88e8",
+          "size": 31435
+        },
+        {
+          "format": "parquet",
+          "path": "high_school_physics/test-00000-of-00001.parquet",
+          "sha256": "20b10402b1a902700fa2e54cef7d7335426b2f60a2680a6b5e15a55d98b03afa",
+          "size": 48480
+        },
+        {
+          "format": "parquet",
+          "path": "high_school_politics/test-00000-of-00001.parquet",
+          "sha256": "8fa737389c8180469dd12604126a350879c49454fb3449836921d168cdf72cd3",
+          "size": 63929
+        },
+        {
+          "format": "parquet",
+          "path": "ideological_and_moral_cultivation/test-00000-of-00001.parquet",
+          "sha256": "f8290d4c9851bf7b56bd5205144f273eaaa3ddd37b5a7466581769bbcd0caeae",
+          "size": 29889
+        },
+        {
+          "format": "parquet",
+          "path": "law/test-00000-of-00001.parquet",
+          "sha256": "91bf9df05a2bece3b89f2f8981d474b373c787a7795ceba5d59a9f8becc2cd94",
+          "size": 61174
+        },
+        {
+          "format": "parquet",
+          "path": "legal_professional/test-00000-of-00001.parquet",
+          "sha256": "65ff9d1b476a67c348979ea46821a9810aa50437624cc9eb50b9f141ac962068",
+          "size": 92880
+        },
+        {
+          "format": "parquet",
+          "path": "logic/test-00000-of-00001.parquet",
+          "sha256": "c8cbd6968a36eb3ab7e3f219fc0ff7d6536f3be38f5b11c554504cc19ab1669c",
+          "size": 106529
+        },
+        {
+          "format": "parquet",
+          "path": "mao_zedong_thought/test-00000-of-00001.parquet",
+          "sha256": "85d790a63f26d5d0f28d2a9cfc9e9c4b2a34136e4e5d6634a6067faec9f5fad2",
+          "size": 39250
+        },
+        {
+          "format": "parquet",
+          "path": "marxism/test-00000-of-00001.parquet",
+          "sha256": "4b063bf7dba93c55ae6bb0db14f953ef627d9afca5356c8afc4191bbbf701442",
+          "size": 30474
+        },
+        {
+          "format": "parquet",
+          "path": "metrology_engineer/test-00000-of-00001.parquet",
+          "sha256": "31940a5ecc45d92227f2857923f213be488eeea719c8380a9649728910875b19",
+          "size": 37170
+        },
+        {
+          "format": "parquet",
+          "path": "middle_school_biology/test-00000-of-00001.parquet",
+          "sha256": "9bf228ba9caf8fe5e34d8be029e129a751a1ed19c84b60b29eafbdebdf13d47b",
+          "size": 39761
+        },
+        {
+          "format": "parquet",
+          "path": "middle_school_chemistry/test-00000-of-00001.parquet",
+          "sha256": "a091b1b544d01025bce7e09f4bcff27486dbacd034352e37b489c9cb37237d1a",
+          "size": 39467
+        },
+        {
+          "format": "parquet",
+          "path": "middle_school_geography/test-00000-of-00001.parquet",
+          "sha256": "6e497cf4d274bca008b863b86a7fd97a9f2787b21b59e9d49c19249bc88f0cdf",
+          "size": 22742
+        },
+        {
+          "format": "parquet",
+          "path": "middle_school_history/test-00000-of-00001.parquet",
+          "sha256": "440ab4d70ece42e8fcc2348cb0778852f1ece6842762153f55f3b5ac3159b735",
+          "size": 40309
+        },
+        {
+          "format": "parquet",
+          "path": "middle_school_mathematics/test-00000-of-00001.parquet",
+          "sha256": "34151a14afee794c3b17d616e4d287e604a94d4fc368dac2b3ac09083716dd75",
+          "size": 27371
+        },
+        {
+          "format": "parquet",
+          "path": "middle_school_physics/test-00000-of-00001.parquet",
+          "sha256": "f8eab15dde69db3eb2d032358e03860ec4a488fd196c6fd174b190c5994c9aa6",
+          "size": 40707
+        },
+        {
+          "format": "parquet",
+          "path": "middle_school_politics/test-00000-of-00001.parquet",
+          "sha256": "ee9c650bb167e5344c14d5c7734fc738e9e23fcb5d36806dfc9b0ddf384441f4",
+          "size": 55395
+        },
+        {
+          "format": "parquet",
+          "path": "modern_chinese_history/test-00000-of-00001.parquet",
+          "sha256": "eb1cbdf6cbd1016f62025be5600b2594a976d0ec8d78575f2f8037f9fa665eb1",
+          "size": 40333
+        },
+        {
+          "format": "parquet",
+          "path": "operating_system/test-00000-of-00001.parquet",
+          "sha256": "6eff3679a30a7eb110a505e137f334470cefba29dd990a63dcee8d70b4402f8f",
+          "size": 25835
+        },
+        {
+          "format": "parquet",
+          "path": "physician/test-00000-of-00001.parquet",
+          "sha256": "b3aefd17ddb4a8217ad9cb37b806b37052637565c5201a53203ddac8d5847c62",
+          "size": 71869
+        },
+        {
+          "format": "parquet",
+          "path": "plant_protection/test-00000-of-00001.parquet",
+          "sha256": "9a6000a5d83b4f9d2159538d7d27af43e744bac006b117c483a899624c136b40",
+          "size": 26584
+        },
+        {
+          "format": "parquet",
+          "path": "probability_and_statistics/test-00000-of-00001.parquet",
+          "sha256": "269538a8921e14c7ccfaef577de6e3ad9492894b7a00d57ca0d59dca96b2eb12",
+          "size": 38609
+        },
+        {
+          "format": "parquet",
+          "path": "professional_tour_guide/test-00000-of-00001.parquet",
+          "sha256": "111d306190c3485d62a4158d21330a56887c99d627f089b5f13d6688ec00e012",
+          "size": 37285
+        },
+        {
+          "format": "parquet",
+          "path": "sports_science/test-00000-of-00001.parquet",
+          "sha256": "a830d825b9dd7909340780c488f20ca983cebb3b44b1e5d06659681bd322b144",
+          "size": 27672
+        },
+        {
+          "format": "parquet",
+          "path": "tax_accountant/test-00000-of-00001.parquet",
+          "sha256": "b1b46763c190519a94704e592052a98e7abb9f62a71d1575bdbdd1f14af00f2e",
+          "size": 116659
+        },
+        {
+          "format": "parquet",
+          "path": "teacher_qualification/test-00000-of-00001.parquet",
+          "sha256": "f5453c2ae95e4af8b6a47ba7d388de81b1fa27009d696a3c6f4bac8fefad9784",
+          "size": 82621
+        },
+        {
+          "format": "parquet",
+          "path": "urban_and_rural_planner/test-00000-of-00001.parquet",
+          "sha256": "bbc6981d82d53ae970b022ff826722667b0e9d84a1afe43b05dafa12cff9d296",
+          "size": 78207
+        },
+        {
+          "format": "parquet",
+          "path": "veterinary_medicine/test-00000-of-00001.parquet",
+          "sha256": "9ebcf8a3f566e6c1c90fb5f53a659374c0dc17b31c37c3f7e63e9f5833627c82",
+          "size": 32296
+        }
+      ],
+      "source_url": "https://huggingface.co/datasets/ceval/ceval-exam",
+      "status": "ready",
+      "use_constraints": [
+        "attribution",
+        "non-commercial",
+        "share-alike",
+        "research-only project scope"
+      ]
+    }
+  ],
+  "kind": "twen_benchmark_13gram_registry",
+  "policy": {
+    "match_action": "reject_training_document",
+    "ngram_size": 13,
+    "normalization": "unicode-nfkc-casefold-lexical-v1",
+    "notes": "Every required entry must be converted to immutable local JSONL, SHA256-locked, and set to ready before the gate can pass. Pending entries are intentionally not treated as empty benchmarks."
+  },
+  "registry_id": "base-v2-default-benchmarks-20260719",
+  "schema_version": 1
+}
