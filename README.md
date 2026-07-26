@@ -1053,7 +1053,9 @@ PYTHONPATH=src .venv/bin/python -m twen web serve \
 
 长期后台使用 [`deploy/systemd/twen-dashboard.service`](deploy/systemd/twen-dashboard.service)
 的 user-systemd 单元，固定 `Restart=always`、`0.0.0.0:8765` 和 mode-0600 HTTP Basic
-凭据；精确安全模型与 profile 说明见 [`WEB_DASHBOARD.md`](WEB_DASHBOARD.md)。
+凭据；unit 通过 CUDA wrapper 启动，使 Web 训练子进程固定 `FLA_TILELANG=0`，避免
+SM 12.0 上 full-T=4096 gated-delta backward 误走 misaligned-address 路径。精确安全
+模型与 profile 说明见 [`WEB_DASHBOARD.md`](WEB_DASHBOARD.md)。
 
 ## 需要回传的信息
 

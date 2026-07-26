@@ -5,7 +5,7 @@ After=default.target
 [Service]
 Type=simple
 WorkingDirectory=/media/data1/Project/AI/Twen1
-ExecStart=/media/data1/Project/AI/Twen1/.venv/bin/python -m twen web serve --dashboard-config configs/web/dashboard.json --host 0.0.0.0 --port 8765 --auth-file .twen/dashboard/http-auth.json
+ExecStart=/usr/bin/bash /media/data1/Project/AI/Twen1/scripts/with_cuda_toolchain.sh /media/data1/Project/AI/Twen1/.venv/bin/python -m twen web serve --dashboard-config configs/web/dashboard.json --host 0.0.0.0 --port 8765 --auth-file .twen/dashboard/http-auth.json
 Restart=always
 RestartSec=3
 KillSignal=SIGTERM
