@@ -153,15 +153,29 @@ class OptimizerBundle:
                 )
 
         self.optimizers = children
-        # Each entry is the underlying mutable group dictionary.  The token LR
-        # scheduler therefore updates the real child optimizer groups.
-        self.param_groups = groups
         self.defaults = {
             "fused": all(
                 bool(getattr(optimizer, "defaults", {}).get("fused", False))
                 for optimizer in children
             )
         }
+
+    @property
+    def param_groups(self) -> list[dict[str, Any]]:
+        """Return the child optimizers' current mutable parameter groups.
+
+        DCP may replace a child optimizer's group dictionaries while restoring
+        its state. A cached flattened list would then become stale: the token
+        scheduler and metrics would update the old dictionaries while Muon and
+        AdamW kept stepping at the checkpoint LR. Rebuilding this lightweight
+        view keeps every consumer attached to the live child groups.
+        """
+
+        return [
+            group
+            for optimizer in self.optimizers
+            for group in optimizer.param_groups
+        ]
 
     def __iter__(self) -> Any:
         return iter(self.optimizers)

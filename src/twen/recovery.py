@@ -29,7 +29,10 @@ def _update_digest(digest: Any, value: Any) -> None:
         digest.update(b"tensor\0")
         digest.update(str(tensor.dtype).encode())
         digest.update(json.dumps(list(tensor.shape)).encode())
-        digest.update(tensor.view(torch.uint8).numpy().tobytes())
+        # ``view(dtype)`` cannot change the element size of a zero-dimensional
+        # tensor. Optimizer checkpoints contain scalar step tensors, so make
+        # the storage explicitly one-dimensional before taking a byte view.
+        digest.update(tensor.reshape(-1).view(torch.uint8).numpy().tobytes())
         return
     if isinstance(value, Mapping):
         digest.update(b"mapping\0")

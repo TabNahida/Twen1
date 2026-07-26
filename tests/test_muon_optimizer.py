@@ -442,6 +442,16 @@ def test_stepped_muon_bundle_scheduler_and_optimizer_resume_exactly(tmp_path) ->
     assert torch.equal(adamw.state[scale]["step"], expected_scale_step)
     assert scheduler.state_dict() == expected_scheduler
 
+    scheduler.step_tokens(256)
+    assert [group["lr"] for group in bundle.param_groups] == [
+        group["lr"]
+        for optimizer in bundle.optimizers
+        for group in optimizer.param_groups
+    ]
+    assert [group["lr"] for group in bundle.param_groups] != list(
+        expected_scheduler["base_lrs"]
+    )
+
 
 @pytest.mark.skipif(
     not TorchDistributedCheckpointBackend.available(),
