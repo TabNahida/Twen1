@@ -5,14 +5,22 @@ Qwen3.5-9B FFN 切成 routed experts，只训练跨宽度适配器、router、La
 和 rank-16 expert LoRA。训练结束后 A/B、LoRA 与尺度全部折叠，导出原生
 `Qwen3_5MoeForCausalLM` BF16 权重。
 
-本仓库遵守一个硬边界：**所有包含 optimizer step 的训练都只能由用户执行**。
+本仓库遵守一个硬边界：**所有包含 optimizer step 的训练都必须由用户明确授权**；
 项目代码不会自动跨阶段。Base Dense v1、v2 与 v3 均已由用户完成：v1 为 383 steps /
 100,151,046 committed input tokens；v2、v3 均为 1,912 steps /
 500,009,962 committed input tokens。三轮 final validation 都通过 10% dense gap gate；
 最新不可变 checkpoint 为
 `runs/base-dense-v3-500m/step-000000001912-milestone-complete`。v1 运行时没有 MTP，
-v2/v3 则显式使用 Qwen3.5 原生 MTP loss `0.1`。由于没有训练中多 checkpoint
-validation 时间序列，三轮 final 都不能称为 validation-selected best。
+v2/v3 的日志中显式使用 MTP loss `0.1` 并严格加载 15 张原生 `mtp.*` 参数；但事后审查
+发现两轮的 RoPE position 错位一 token，因此不能称为完全原生对齐，详见
+[v3 报告勘误](docs/reports/base-dense-v3-500m-final-validation/REPORT.zh-CN.md)。
+由于没有训练中多 checkpoint validation 时间序列，三轮 final 都不能称为
+validation-selected best。
+
+v4 的实现、治理数据和候选配置已完成，当前处于真实 GPU optimizer-step 门禁：
+`configs/base/dense-v4-16m-smoke.yaml` 从 v3 final model-only fork，使用纯文本
+NTP + 原生 MTP、Muon/AdamW、较低 peak LR 和全程 cosine；不会读取 9B teacher
+logits。它是 16.014M unique-token 的 governed smoke，不是 250M/500M 正式质量实验。
 
 ## 架构与实现状态
 
@@ -44,6 +52,8 @@ flowchart LR
 当 `losses.mtp > 0` 时，loader 会从 0.8B checkpoint 严格读取原生的 15 个顶层
 `mtp.*` tensor；缺失、多余、shape 或 dtype 不符都会 fail closed。它遵循 Qwen3.5 的
 `h_t + embed(x_(t+1)) -> x_(t+2)` 语义，对长度 `L` 的序列只使用 `L-2` 个有效目标。
+提交 `c9a08cf` 同时确保 MTP decoder 对这些 shifted states 使用 `t+1` 的 RoPE
+position，并用独立位置 oracle 覆盖默认 2D/3D/4D position IDs；v2/v3 均早于这项修复。
 MTP 自身参数保持 frozen，也不进入 optimizer；forward 不包 `no_grad`，因此 MTP loss 仍会
 沿 main-model hidden state 回传到 trainable A/B。15 个 source tensor 共 20,452,864 个
 BF16 参数（约 39.01MiB）；MTP body 本体和分块 vocabulary loss 都支持 activation
@@ -471,6 +481,15 @@ peak LR 从 `2e-4` 降到 `1.8e-4`，scale/router 从 `1e-3` 降到 `9e-4`；仍
 warmup，但从 250M token 起执行覆盖后半程的 cosine decay，并在 450M token 切换同一份
 quality-cooldown 数据。v3 已完成，不得把其目录当作新实验重新启动。
 
+Base v4 governed smoke 使用独立
+`configs/base/dense-v4-16m-smoke.yaml`：prepared-text 直接读取经两轮治理审计的
+16,013,672-token train corpus，NTP/MTP 权重为 `1.0/0.1`，teacher KD、anchor KL 和
+hidden alignment 均为零。48 个二维 Adapter 由 Muon 更新，24 个 scale 由 AdamW 更新；
+nominal peak LR 为 `1e-4/3e-4`，5M warmup 后全程 cosine 到 `0.1` 倍。pass-001
+过滤后 USGPO 只剩 6,873 token，因此 smoke 显式认证 lineage/effective 两组 source
+weights，以 unique-token 容量采样，避免按原 2% 权重重复几十遍。完整数据身份、findings
+和容量限定见 [`docs/V4_DATA_SOURCES.zh-CN.md`](docs/V4_DATA_SOURCES.zh-CN.md)。
+
 finalizer 成功后，必须对最终新 lineage 重新执行以下只读检查和无 optimizer graph smoke：
 
 ```bash
@@ -775,18 +794,23 @@ NLL cursor，每个 shard 写 `COMPLETE`，Ctrl-C 只会重放当前未提交 mi
 RTX 5090 是目标执行路径；20,014,392 validation token 通常约 1–6 小时，最终以进度 ETA
 为准。输出只有统计和哈希，通常小于 100MB。
 
-### v4 方向（设计中，尚未实现或启动）
+### v4 governed smoke（已实现，GPU 门禁中）
 
-v4 计划改为 Base 纯文本预训练：保留 NTP `1.0` 与 Qwen3.5 原生 MTP `0.1`，
+v4 已改为 Base 纯文本预训练：保留 NTP `1.0` 与 Qwen3.5 原生 MTP `0.1`，
 不再读取 9B logits/KD tensors，也不使用 teacher KD、anchor KL 或 hidden alignment；
 冻结的 9B donor FFN 仍作为 expert 来源。48 张二维 A/B adapter 候选使用 Muon，24 张
 一维 scale 继续使用 AdamW；候选 nominal peak LR 分别为 `1e-4` 与 `3e-4`，配 5M
 warmup、全程 cosine decay 和 `0.1` min ratio。
 
-数据侧计划加入按 token deficit 校正的确定性 source mixing，并扩充开放教材、论文、
-许可过滤代码与 permissive corpus。以上都只是待验证设计：正式长跑前还必须完成真实
-optimizer-step 的 micro-batch 1/2/4 容量/吞吐 A/B、恢复测试与 20M-token pilot；
-不得把 v4 描述成已经实现、发布或开始训练。
+数据侧已经加入按有效 token deficit 校正的确定性 source mixing，并扩充到 12 个
+开放教材、论文、许可过滤代码、公共领域与 permissive corpus 来源。raw r3 为
+20,081,154 train token；PII/benchmark/near-duplicate 治理后保留 16,013,672 unique
+token，复审为 0 findings，prepared lineage 为 `ready_for_training=true`。
+
+这轮 16M 只用于验证纯文本目标、Muon、较低 LR、batch geometry、checkpoint 恢复和
+Web 遥测。启动前仍必须完成真实 optimizer-step 的 micro-batch 1/2/4 容量/吞吐/功耗
+A/B；250M/500M formal 还需要新 recipe/refill 扩大 unique clean 数据，不能循环当前
+16M 来冒充正式训练容量。
 
 ## 7. Fold 与 sparse 蒸馏
 
@@ -1004,8 +1028,9 @@ loss、NTP/MTP/KD/anchor/hidden、吞吐、显存、LR、gradient norm 与 check
 `configs/web/dashboard.json` 中固定且启动后 SHA 不变的 profile；start 还需要页面二次输入确认，
 stop 会在核验 rank-zero hostname/PID/cmdline/config 身份后发送 SIGTERM，让引擎先 checkpoint。
 
-当前 `base-dense-v1` 是 completed monitor-only，`launch_enabled=false`。v2 配置通过 preflight、
-dry-run 和 graph-smoke 后，才能新增固定 launch profile 并显式开启。前台只读验收命令：
+当前 v1/v2/v3 均为 completed monitor-only。v4 16M profile 已加入固定 allowlist，但在
+真实 B1/B2/B4、graph-smoke 和恢复门完成前保持 `launch_enabled=false`；最终胜出的
+microbatch 会重新计算 config SHA 后再开启。前台只读验收命令：
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m twen web serve \
@@ -1014,8 +1039,9 @@ PYTHONPATH=src .venv/bin/python -m twen web serve \
   --auth-file .twen/dashboard/http-auth.json
 ```
 
-普通后台进程的精确启动命令、安全模型和 v2 profile 示例见
-[`WEB_DASHBOARD.md`](WEB_DASHBOARD.md)。Dashboard 不注册 service，不会随 WSL 启动自动恢复。
+长期后台使用 [`deploy/systemd/twen-dashboard.service`](deploy/systemd/twen-dashboard.service)
+的 user-systemd 单元，固定 `Restart=always`、`0.0.0.0:8765` 和 mode-0600 HTTP Basic
+凭据；精确安全模型与 profile 说明见 [`WEB_DASHBOARD.md`](WEB_DASHBOARD.md)。
 
 ## 需要回传的信息
 
