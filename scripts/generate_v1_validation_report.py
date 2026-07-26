@@ -47,6 +47,60 @@ GPU_MEASUREMENT_PATTERN = re.compile(
     r"(?:\s*(?P<unit>[%A-Za-z]+))?",
     flags=re.IGNORECASE,
 )
+V3_RUN_ID = "base-dense-v3-500m"
+V3_MTP_AFFECTED_SOURCE_PATH = "src/twen/modeling/mtp.py"
+V3_MTP_AFFECTED_GIT_BLOB_SHA1 = "6e5ba4fd397946ce224252948bed7b692db97ecf"
+V3_MTP_FIX_COMMIT = "c9a08cfec134ba7b3fa808f5a76836b62b5646b5"
+
+
+def _methodology_errata_for_run(run_id: str) -> list[dict[str, Any]]:
+    if run_id != V3_RUN_ID:
+        return []
+    return [
+        {
+            "id": "mtp_rope_position_alignment",
+            "disclosed_on": "2026-07-26",
+            "affected_source": {
+                "path": V3_MTP_AFFECTED_SOURCE_PATH,
+                "git_blob_sha1": V3_MTP_AFFECTED_GIT_BLOB_SHA1,
+            },
+            "observed_rope_position_offset_tokens": 0,
+            "required_rope_position_offset_tokens": 1,
+            "validation_objective": "ntp_only",
+            "fully_native_aligned_mtp_claim_supported": False,
+            "causal_mtp_benefit_claim_supported": False,
+            "fixed_by_commit": V3_MTP_FIX_COMMIT,
+        }
+    ]
+
+
+def _methodology_erratum_section(run_id: str, *, zh_cn: bool) -> str:
+    if not _methodology_errata_for_run(run_id):
+        return ""
+    if zh_cn:
+        return """\
+> **方法学勘误 (2026-07-26)**: 训练后独立代码审查确认, 本轮虽然严格加载了
+> Qwen3.5 checkpoint 的 15 张原生 `mtp.*` 参数, 并按
+> `h_t + embed(x_(t+1)) -> x_(t+2)` 构造辅助目标, 但 MTP decoder 的 RoPE
+> `position_ids` 错用了 `t`, 正确位置应为 `t+1`。因此, 本报告记录的 NTP-only
+> candidate/shared/teacher validation NLL、PPL、吞吐和训练日志仍是原始实测事实;
+> 但 v3 的 MTP 路径不能再称为“完全原生对齐”, 也不能据此作 MTP 增益的因果结论。
+> 该问题已在 v4 启动前由提交 `c9a08cf` 修复并加入独立位置对齐回归测试。
+
+"""
+    return """\
+> **Methodology erratum (2026-07-26):** A post-training independent code audit
+> confirmed that this run strictly loaded all 15 native `mtp.*` tensors and
+> formed the auxiliary `h_t + embed(x_(t+1)) -> x_(t+2)` objective, but the MTP
+> decoder applied RoPE position `t` instead of the correct shifted position
+> `t+1`. The NTP-only candidate/shared/teacher validation NLL, perplexity,
+> throughput, and recorded training telemetry in this report remain the
+> measurements that were actually produced. However, v3's MTP path must not be
+> described as fully native-aligned or used for a causal MTP-benefit claim.
+> Commit `c9a08cf` fixed the issue and added an independent position-alignment
+> regression test before v4 launch.
+
+"""
 
 
 def _sha256_file(path: Path) -> str:
@@ -401,10 +455,7 @@ def _source_conditioned_training_analysis(
     )
     source_means: dict[str, dict[str, Any]] = {}
     for source in all_sources:
-        weights = [
-            float(row["_source_fractions"].get(source, 0.0))
-            for row in post_warmup_primary
-        ]
+        weights = [float(row["_source_fractions"].get(source, 0.0)) for row in post_warmup_primary]
         total_weight = sum(weights)
         if total_weight <= 0:
             continue
@@ -418,10 +469,7 @@ def _source_conditioned_training_analysis(
                 )
                 / total_weight
                 for metric in ("loss", "ntp", "teacher_kd", "mtp", "anchor_kl")
-                if any(
-                    _finite(row.get(metric)) is not None
-                    for row in post_warmup_primary
-                )
+                if any(_finite(row.get(metric)) is not None for row in post_warmup_primary)
             }
         )
         source_means[source] = values
@@ -462,8 +510,7 @@ def _parse_gpu_measurement(
     if unit is not None and unit != expected_unit:
         expected = "a bare number" if expected_unit is None else f"{expected_unit!r} or no unit"
         raise ValueError(
-            f"unexpected unit for GPU runtime sample field {field}: "
-            f"{unit!r}; expected {expected}"
+            f"unexpected unit for GPU runtime sample field {field}: {unit!r}; expected {expected}"
         )
     result = float(match.group("number"))
     if not math.isfinite(result):
@@ -784,9 +831,7 @@ def _summarize_training_lifecycle(
         "train_start_count": len(train_starts),
         "resume_count": len(resumes),
         "graceful_stop_count": len(graceful_stops),
-        "sessions_without_terminal_event_count": len(
-            started_session_ids - terminal_session_ids
-        ),
+        "sessions_without_terminal_event_count": len(started_session_ids - terminal_session_ids),
         "events": lifecycle_events,
         "accounting_caveat": (
             "Elapsed wall spans the first train_start through train_complete. The canonical "
@@ -1304,9 +1349,9 @@ def _cross_version_history_from_authenticated_baseline(
             "input_token_count",
             "shard_count",
         ):
-            if nested_current_prepared.get(field) != baseline_validation[
-                "prepared_manifest"
-            ].get(field):
+            if nested_current_prepared.get(field) != baseline_validation["prepared_manifest"].get(
+                field
+            ):
                 raise ValueError(
                     "nested baseline current prepared-manifest differs from "
                     f"authenticated baseline: {field}"
@@ -1319,9 +1364,7 @@ def _cross_version_history_from_authenticated_baseline(
             for metric in ("mean_nll", "perplexity"):
                 metric_comparison = role_comparison.get(metric)
                 if not isinstance(metric_comparison, Mapping):
-                    raise ValueError(
-                        f"nested baseline comparison is missing {role} {metric}"
-                    )
+                    raise ValueError(f"nested baseline comparison is missing {role} {metric}")
                 nested_current_value = _require_finite_number(
                     metric_comparison.get("current"),
                     field=f"nested.roles.{role}.{metric}.current",
@@ -1339,20 +1382,15 @@ def _cross_version_history_from_authenticated_baseline(
             token_comparison = role_comparison.get("predicted_tokens")
             if (
                 not isinstance(token_comparison, Mapping)
-                or int(token_comparison.get("current", -1))
-                != int(direct_role["predicted_tokens"])
+                or int(token_comparison.get("current", -1)) != int(direct_role["predicted_tokens"])
                 or token_comparison.get("match") is not True
             ):
-                raise ValueError(
-                    f"nested baseline current {role} token count is inconsistent"
-                )
+                raise ValueError(f"nested baseline current {role} token count is inconsistent")
         nested_gap_current = _require_finite_number(
             nested_gap.get("current"),
             field="nested.teacher_gap_closed_fraction.current",
         )
-        direct_gap = float(
-            baseline_validation["acceptance"]["teacher_gap_closed_fraction"]
-        )
+        direct_gap = float(baseline_validation["acceptance"]["teacher_gap_closed_fraction"])
         if not math.isclose(
             nested_gap_current,
             direct_gap,
@@ -1360,8 +1398,7 @@ def _cross_version_history_from_authenticated_baseline(
             abs_tol=1e-12,
         ):
             raise ValueError(
-                "nested baseline current teacher-gap-closed differs from "
-                "authenticated baseline"
+                "nested baseline current teacher-gap-closed differs from authenticated baseline"
             )
         prior_candidate = _require_finite_number(
             nested_roles["candidate"]["mean_nll"].get("baseline"),
@@ -1379,12 +1416,8 @@ def _cross_version_history_from_authenticated_baseline(
                 "run_id": prior_run_id,
                 "candidate_mean_nll": prior_candidate,
                 "teacher_gap_closed_fraction": prior_gap,
-                "checkpoint_manifest_sha256": nested_baseline.get(
-                    "checkpoint_manifest_sha256"
-                ),
-                "evaluation_manifest_sha256": nested_baseline.get(
-                    "evaluation_manifest_sha256"
-                ),
+                "checkpoint_manifest_sha256": nested_baseline.get("checkpoint_manifest_sha256"),
+                "evaluation_manifest_sha256": nested_baseline.get("evaluation_manifest_sha256"),
                 "provenance": "authenticated_nested_baseline_comparison",
                 "authenticated_by_summary_sha256": authenticated_by,
             }
@@ -1393,37 +1426,23 @@ def _cross_version_history_from_authenticated_baseline(
         (
             {
                 "run_id": baseline_run_id,
-                "candidate_mean_nll": float(
-                    baseline_validation["roles"]["candidate"]["mean_nll"]
-                ),
+                "candidate_mean_nll": float(baseline_validation["roles"]["candidate"]["mean_nll"]),
                 "teacher_gap_closed_fraction": float(
-                    baseline_validation["acceptance"][
-                        "teacher_gap_closed_fraction"
-                    ]
+                    baseline_validation["acceptance"]["teacher_gap_closed_fraction"]
                 ),
-                "checkpoint_manifest_sha256": baseline_training["checkpoint"][
-                    "manifest_sha256"
-                ],
-                "evaluation_manifest_sha256": baseline_validation["identity"][
-                    "manifest_sha256"
-                ],
+                "checkpoint_manifest_sha256": baseline_training["checkpoint"]["manifest_sha256"],
+                "evaluation_manifest_sha256": baseline_validation["identity"]["manifest_sha256"],
                 "provenance": "authenticated_baseline_report_summary",
                 "authenticated_by_summary_sha256": authenticated_by,
             },
             {
                 "run_id": str(training["run_id"]),
-                "candidate_mean_nll": float(
-                    validation["roles"]["candidate"]["mean_nll"]
-                ),
+                "candidate_mean_nll": float(validation["roles"]["candidate"]["mean_nll"]),
                 "teacher_gap_closed_fraction": float(
                     validation["acceptance"]["teacher_gap_closed_fraction"]
                 ),
-                "checkpoint_manifest_sha256": training["checkpoint"][
-                    "manifest_sha256"
-                ],
-                "evaluation_manifest_sha256": validation["identity"][
-                    "manifest_sha256"
-                ],
+                "checkpoint_manifest_sha256": training["checkpoint"]["manifest_sha256"],
+                "evaluation_manifest_sha256": validation["identity"]["manifest_sha256"],
                 "provenance": "current_authenticated_evaluation",
             },
         )
@@ -1557,13 +1576,9 @@ def _validated_cross_version_history(
         if not isinstance(run_id, str) or not run_id:
             raise ValueError(f"cross-version history row {index} has no run_id")
         if candidate_nll is None or candidate_nll < 0:
-            raise ValueError(
-                f"cross-version history row {index} has invalid candidate mean NLL"
-            )
+            raise ValueError(f"cross-version history row {index} has invalid candidate mean NLL")
         if gap_closed is None:
-            raise ValueError(
-                f"cross-version history row {index} has invalid teacher-gap-closed"
-            )
+            raise ValueError(f"cross-version history row {index} has invalid teacher-gap-closed")
         history.append((run_id, candidate_nll, gap_closed))
     run_ids = [run_id for run_id, _, _ in history]
     if len(run_ids) != len(set(run_ids)):
@@ -1865,11 +1880,7 @@ def _make_charts(
             path,
             title="Candidate validation NLL across authenticated versions",
             groups=run_ids,
-            series={
-                "candidate mean NLL": [
-                    candidate_nll for _, candidate_nll, _ in history
-                ]
-            },
+            series={"candidate mean NLL": [candidate_nll for _, candidate_nll, _ in history]},
             y_label="Mean NLL (lower is better)",
         )
         paths.append(path)
@@ -1878,11 +1889,7 @@ def _make_charts(
             path,
             title="Teacher gap closed across authenticated versions",
             groups=run_ids,
-            series={
-                "teacher gap closed": [
-                    gap_closed * 100.0 for _, _, gap_closed in history
-                ]
-            },
+            series={"teacher gap closed": [gap_closed * 100.0 for _, _, gap_closed in history]},
             y_label="Teacher gap closed (%)",
         )
         paths.append(path)
@@ -2065,9 +2072,7 @@ itself authenticated by `COMPLETE`:
 """
 
 
-def _build_training_lifecycle_section(
-    training: Mapping[str, Any], *, zh_cn: bool
-) -> str:
+def _build_training_lifecycle_section(training: Mapping[str, Any], *, zh_cn: bool) -> str:
     lifecycle = training.get("lifecycle")
     if not isinstance(lifecycle, Mapping):
         return ""
@@ -2099,12 +2104,8 @@ def _build_training_lifecycle_section(
                 )
             )
     elapsed_hours = float(lifecycle["elapsed_wall_seconds"]) / 3600.0
-    canonical_hours = (
-        float(lifecycle["canonical_committed_step_wall_seconds"]) / 3600.0
-    )
-    outside_hours = (
-        float(lifecycle["outside_canonical_committed_step_wall_seconds"]) / 3600.0
-    )
+    canonical_hours = float(lifecycle["canonical_committed_step_wall_seconds"]) / 3600.0
+    outside_hours = float(lifecycle["outside_canonical_committed_step_wall_seconds"]) / 3600.0
     session_count = int(lifecycle["session_count"])
     resume_count = int(lifecycle["resume_count"])
     graceful_count = int(lifecycle["graceful_stop_count"])
@@ -2200,6 +2201,8 @@ def _build_report(
     anchor_change = float(last["anchor_kl"]) - float(first["anchor_kl"])
     run_id = str(training["run_id"])
     config = training["config"]
+    methodology_errata = _methodology_errata_for_run(run_id)
+    methodology_erratum_section = _methodology_erratum_section(run_id, zh_cn=False)
     baseline_section = _build_baseline_comparison_section(baseline_comparison, zh_cn=False)
     lifecycle_section = _build_training_lifecycle_section(training, zh_cn=False)
     if config["lr_schedule"] == "warmup-stable-decay":
@@ -2216,11 +2219,20 @@ def _build_report(
             f"{config['max_tokens']:,} tokens"
         )
     if config["mtp_present"] and config["mtp_weight"] > 0:
-        mtp_description = (
-            f"The immutable run enabled the native Qwen3.5 MTP objective at weight "
-            f"**{config['mtp_weight']}**.  Its source head remained frozen and outside the "
-            "optimizer, while its loss propagated through the student hidden states."
-        )
+        if methodology_errata:
+            mtp_description = (
+                f"The immutable run logged an MTP objective at weight **{config['mtp_weight']}**. "
+                "Its 15 checkpoint-native parameters remained frozen and outside the optimizer, "
+                "while its loss propagated through the student hidden states. Because of the "
+                "one-token RoPE offset disclosed above, this describes the path that actually "
+                "ran and is not a claim of fully native-aligned Qwen3.5 MTP execution."
+            )
+        else:
+            mtp_description = (
+                f"The immutable run enabled the native Qwen3.5 MTP objective at weight "
+                f"**{config['mtp_weight']}**.  Its source head remained frozen and outside the "
+                "optimizer, while its loss propagated through the student hidden states."
+            )
         smoothed_loss_figure = (
             "\n![Training losses, 50-step moving mean](charts/training_loss_smoothed.svg)\n"
         )
@@ -2335,6 +2347,7 @@ This bundle evaluates the immutable final checkpoint at step {training["steps"]:
 authenticated validation corpus.  Evaluation is forward-only (`inference_mode`): no optimizer
 state, backward pass, or parameter update is involved.
 
+{methodology_erratum_section}\
 ## Executive result
 
 {_markdown_table(("role", "predicted tokens", "mean NLL", "perplexity", "wall tok/s"), role_rows)}
@@ -2485,6 +2498,8 @@ def _build_report_zh_cn(
     last = training["last_50_weighted"]
     run_id = str(training["run_id"])
     config = training["config"]
+    methodology_errata = _methodology_errata_for_run(run_id)
+    methodology_erratum_section = _methodology_erratum_section(run_id, zh_cn=True)
     baseline_section = _build_baseline_comparison_section(baseline_comparison, zh_cn=True)
     lifecycle_section = _build_training_lifecycle_section(training, zh_cn=True)
     gap = acceptance.get("teacher_gap_closed_fraction")
@@ -2526,11 +2541,19 @@ def _build_report_zh_cn(
             f"{config['min_lr_ratio']:.3f} 倍"
         )
     if config["mtp_present"] and config["mtp_weight"] > 0:
-        mtp_text = (
-            f"本轮明确启用了 **Qwen3.5 原生 MTP**, loss 权重为 "
-            f"**{config['mtp_weight']}**。MTP 源头的 15 张参数保持 frozen、不进入 optimizer, "
-            "但 MTP loss 会经 student hidden state 回传到可训练适配矩阵。"
-        )
+        if methodology_errata:
+            mtp_text = (
+                f"本轮 loss 日志中明确启用了 MTP `{config['mtp_weight']}`; 15 张 checkpoint "
+                "原生参数保持 frozen、不进入 optimizer, MTP loss 会经 student hidden state "
+                "回传到可训练适配矩阵。但其 RoPE 位置存在上述一 token 错位, 因此这里只陈述"
+                "实际执行路径, 不再把它表述为完全对齐的 Qwen3.5 原生 MTP forward。"
+            )
+        else:
+            mtp_text = (
+                f"本轮明确启用了 **Qwen3.5 原生 MTP**, loss 权重为 "
+                f"**{config['mtp_weight']}**。MTP 源头的 15 张参数保持 frozen、不进入 optimizer, "
+                "但 MTP loss 会经 student hidden state 回传到可训练适配矩阵。"
+            )
         smoothed_loss_figure = (
             "\n![训练 loss 分量 (50-step 滑动平均)](charts/training_loss_smoothed.svg)\n"
         )
@@ -2664,6 +2687,7 @@ total loss 的来源组成解释了 {float(regressions["loss"]["r_squared"]) * 1
 candidate/shared/teacher 三角色的全量 NLL 评测。评测全程为 `torch.inference_mode()` 前向:
 没有 optimizer state、没有 backward, 也没有任何参数更新。
 
+{methodology_erratum_section}\
 ## 核心结论
 
 {_markdown_table(("角色", "预测 token", "平均 NLL", "困惑度", "wall tok/s"), role_rows)}
@@ -2830,11 +2854,13 @@ def generate_report(
         validation,
         baseline_comparison,
     )
+    methodology_errata = _methodology_errata_for_run(str(training["run_id"]))
     summary = {
         "schema_version": 1,
         "kind": "twen_dense_final_validation_report",
         "training": training,
         "validation": validation,
+        **({"methodology_errata": methodology_errata} if methodology_errata else {}),
         **({"baseline_comparison": baseline_comparison} if baseline_comparison is not None else {}),
     }
     summary_path = output_dir / "summary.json"

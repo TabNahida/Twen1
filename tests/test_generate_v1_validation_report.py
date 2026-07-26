@@ -51,7 +51,13 @@ def _checkpoint(root: Path, *, steps: int, tokens: int) -> Path:
     return checkpoint
 
 
-def _run_fixture(root: Path, checkpoint: Path) -> Path:
+def _run_fixture(
+    root: Path,
+    checkpoint: Path,
+    *,
+    run_id: str = "fixture-v3-current",
+    mtp_weight: float | None = None,
+) -> Path:
     run = root / "run"
     metrics = []
     telemetry = []
@@ -110,8 +116,11 @@ def _run_fixture(root: Path, checkpoint: Path) -> Path:
             },
         ],
     )
+    losses = {"ntp": 1.0, "teacher_kd": 1.0}
+    if mtp_weight is not None:
+        losses["mtp"] = mtp_weight
     config = {
-        "run_id": "fixture-v3-current",
+        "run_id": run_id,
         "track": "base",
         "stage": "dense-oracle",
         "optimizer": {
@@ -120,7 +129,7 @@ def _run_fixture(root: Path, checkpoint: Path) -> Path:
             "warmup_tokens": 30,
         },
         "data": {"micro_batch_size": 1, "global_batch_tokens": 100},
-        "losses": {"ntp": 1.0, "teacher_kd": 1.0},
+        "losses": losses,
     }
     (run / "resolved_config.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
     return run
@@ -320,8 +329,7 @@ def _baseline_report_fixture(
                         baseline=prior_role_nll[role],
                         current=(
                             nested_current_candidate_mean_nll
-                            if role == "candidate"
-                            and nested_current_candidate_mean_nll is not None
+                            if role == "candidate" and nested_current_candidate_mean_nll is not None
                             else role_nll[role]
                         ),
                         lower_is_better=True,
@@ -413,9 +421,60 @@ def test_report_generator_builds_authenticated_svg_bundle(tmp_path: Path) -> Non
     assert "research_only=true" in report_zh
     assert "没有触及 600 W 功耗墙" in report_zh
     summary = json.loads((output / "summary.json").read_text())
+    assert "methodology_errata" not in summary
     gpu_sample = summary["validation"]["runtime_gpu_sample"]
     assert gpu_sample["statistics"]["power_draw_w"]["mean"] == pytest.approx(425.0)
     assert gpu_sample["statistics"]["gpu_utilization_percent"]["mean"] == pytest.approx(85.0)
+
+
+def test_v3_report_emits_authenticated_mtp_position_erratum(tmp_path: Path) -> None:
+    checkpoint = _checkpoint(tmp_path / "checkpoints", steps=3, tokens=300)
+    run = _run_fixture(
+        tmp_path,
+        checkpoint,
+        run_id=reporting.V3_RUN_ID,
+        mtp_weight=0.1,
+    )
+    prepared = tmp_path / "prepared" / "manifest.json"
+    evaluation = _evaluation_fixture(tmp_path, prepared)
+    output = tmp_path / "report"
+
+    reporting.generate_report(
+        run_dir=run,
+        evaluation_dir=evaluation,
+        prepared_manifest=prepared,
+        output_dir=output,
+    )
+
+    summary = json.loads((output / "summary.json").read_text())
+    assert summary["methodology_errata"] == [
+        {
+            "id": "mtp_rope_position_alignment",
+            "disclosed_on": "2026-07-26",
+            "affected_source": {
+                "path": reporting.V3_MTP_AFFECTED_SOURCE_PATH,
+                "git_blob_sha1": reporting.V3_MTP_AFFECTED_GIT_BLOB_SHA1,
+            },
+            "observed_rope_position_offset_tokens": 0,
+            "required_rope_position_offset_tokens": 1,
+            "validation_objective": "ntp_only",
+            "fully_native_aligned_mtp_claim_supported": False,
+            "causal_mtp_benefit_claim_supported": False,
+            "fixed_by_commit": reporting.V3_MTP_FIX_COMMIT,
+        }
+    ]
+    report = (output / "REPORT.md").read_text(encoding="utf-8")
+    report_zh = (output / "REPORT.zh-CN.md").read_text(encoding="utf-8")
+    assert "Methodology erratum (2026-07-26)" in report
+    assert "not a claim of fully native-aligned Qwen3.5 MTP execution" in report
+    assert "方法学勘误 (2026-07-26)" in report_zh
+    assert "不再把它表述为完全对齐的 Qwen3.5 原生 MTP forward" in report_zh
+    manifest = json.loads((output / "MANIFEST.json").read_text(encoding="utf-8"))
+    assert manifest["files"]["summary.json"] == {
+        "sha256": _sha(output / "summary.json"),
+        "size": (output / "summary.json").stat().st_size,
+    }
+    assert (output / "COMPLETE").read_text().strip() == _sha(output / "MANIFEST.json")
 
 
 def test_gpu_sample_accepts_bare_numeric_values(tmp_path: Path) -> None:
@@ -449,8 +508,7 @@ def test_gpu_sample_rejects_wrong_units_and_non_finite_values(
 ) -> None:
     sample = tmp_path / "runtime-gpu-sample.csv"
     sample.write_text(
-        "timestamp,pstate,power.draw [W]\n"
-        f"2026/01/01 00:00:00.000,P1,{value}\n",
+        f"timestamp,pstate,power.draw [W]\n2026/01/01 00:00:00.000,P1,{value}\n",
         encoding="utf-8",
     )
 
@@ -489,12 +547,8 @@ def test_report_generator_compares_authenticated_version_history(tmp_path: Path)
         "fixture-v2-baseline",
         "fixture-v3-current",
     ]
-    assert [row["candidate_mean_nll"] for row in history] == pytest.approx(
-        [2.7, 2.5, 2.1]
-    )
-    assert [row["teacher_gap_closed_fraction"] for row in history] == pytest.approx(
-        [0.2, 0.3, 0.5]
-    )
+    assert [row["candidate_mean_nll"] for row in history] == pytest.approx([2.7, 2.5, 2.1])
+    assert [row["teacher_gap_closed_fraction"] for row in history] == pytest.approx([0.2, 0.3, 0.5])
     assert history[0]["provenance"] == "authenticated_nested_baseline_comparison"
     assert history[1]["provenance"] == "authenticated_baseline_report_summary"
     figure_names = {Path(path).name for path in result["figures"]}
