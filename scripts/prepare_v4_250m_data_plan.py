@@ -616,7 +616,7 @@ def _make_capacity_attestation() -> dict[str, Any]:
         "stages": {"primary": primary, "cooldown": cooldown},
         "phase_disjointness": {
             "stable_id_exact": {
-                "algorithm": "authenticated-stable-id-set-intersection-v1",
+                "algorithm": "source-scoped-authenticated-stable-id-intersection-v1",
                 "result": None,
                 "passed": False,
             },

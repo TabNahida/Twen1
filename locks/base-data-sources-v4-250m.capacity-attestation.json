@@ -26,7 +26,7 @@
       "result": null
     },
     "stable_id_exact": {
-      "algorithm": "authenticated-stable-id-set-intersection-v1",
+      "algorithm": "source-scoped-authenticated-stable-id-intersection-v1",
       "passed": false,
       "result": null
     }
