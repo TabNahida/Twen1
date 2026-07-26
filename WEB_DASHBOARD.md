@@ -38,7 +38,8 @@ min/mean/p95/max/last，写入 `.twen/dashboard/gpu-telemetry.jsonl`；文件达
 
 - 只有 `configs/web/dashboard.json` 中列出的 profile 才可能执行 start/save/stop；API 不接受
   shell、命令行参数或任意文件路径。
-- 历史运行只读。`launch_enabled` 默认为 `false`；当前 v1 profile 明确禁止启动。
+- 历史运行只读。`launch_enabled` 默认为 `false`；当前 v1/v2/v3 profile 明确禁止
+  启动，只有已经通过 GPU A/B、功耗/trace 和恢复门的 v4 16M smoke 可启动。
 - start 必须由页面按钮发起，并再次逐字输入 `START <profile-id>`。服务端同时验证 CSRF token、
   固定 profile、finalizer 固化的 `config_sha256` 和全局无重复训练；跨进程文件锁还会拒绝从第二个
   Dashboard 实例并发启动。
@@ -80,8 +81,9 @@ PYTHONPATH=src .venv/bin/python -m twen web serve \
 .venv/bin/python -c 'import json; print(json.load(open(".twen/dashboard/http-auth.json"))["password"])'
 ```
 
-当前 v1 是 monitor-only，启动按钮禁用。HTTP Basic 在明文 HTTP 上传输，局域网若不完全受信，
-应在反向代理上启用 HTTPS 或改用 SSH/VPN；不要做公网端口转发。
+当前 v1/v2/v3 是 monitor-only，启动按钮禁用；v4 16M smoke 是唯一可启动 profile。
+HTTP Basic 在明文 HTTP 上传输，局域网若不完全受信，应在反向代理上启用 HTTPS 或改用
+SSH/VPN；不要做公网端口转发。
 
 ## user-systemd 后台服务
 

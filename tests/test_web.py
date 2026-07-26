@@ -478,7 +478,7 @@ def test_controller_defaults_to_persistent_gpu_journal(tmp_path: Path) -> None:
     assert controller.gpu_monitor.journal_path == settings.state_dir / "gpu-telemetry.jsonl"
 
 
-def test_real_dashboard_config_has_completed_and_gated_profiles_and_is_confined() -> None:
+def test_real_dashboard_config_only_admits_v4_and_is_confined() -> None:
     project_root = Path(__file__).resolve().parents[1]
     settings = load_dashboard_settings(project_root / "configs/web/dashboard.json")
     assert settings.project_root == project_root.resolve()
@@ -488,9 +488,9 @@ def test_real_dashboard_config_has_completed_and_gated_profiles_and_is_confined(
         "base-dense-v3-500m",
         "base-dense-v4-16m-smoke",
     ]
-    launchable = [profile for profile in settings.profiles if profile.launch_enabled]
-    assert launchable == []
     _, v2, v3, v4 = settings.profiles
+    launchable = [profile for profile in settings.profiles if profile.launch_enabled]
+    assert launchable == [v4]
     assert v2.resume == v3.resume == v4.resume == "none"
     assert v2.fork_from == v3.fork_from
     assert v3.fork_from == (

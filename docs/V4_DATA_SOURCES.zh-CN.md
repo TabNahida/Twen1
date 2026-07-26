@@ -461,8 +461,21 @@ preflight 会同时认证 lineage 与 effective weights，并把
 
 `sources.donor` 仍作为冻结 FFN/Adapter 架构血缘存在；`sources.teacher` 因 schema
 兼容保留但不会构造在线 teacher。真正保证“不读取 9B logits/KD”的是 prepared-text
-路径和三个 teacher-side loss 为零。真实 B1/B2/B4 optimizer-step A/B 及恢复门通过前，
-Web profile 保持 `launch_enabled=false`。
+路径和三个 teacher-side loss 为零。
+
+真实 optimizer-step 门禁已经完成：
+
+| 候选 | 结论 | aggregate wall tok/s | peak reserved | 物理显存/功耗证据 |
+|---|---|---:|---:|---|
+| B1 | **采用** | 8,028 | 25.75 GiB | 最小 headroom 6.09 GiB；util p95 98%；power p95 604.19 W |
+| B2 + AC20 | 可运行但拒绝 | 7,131 | 28.20 GiB | 比 B1 慢约 12.6%，headroom 仅 3.64 GiB |
+| B2 无 checkpoint | 拒绝 | — | 外部峰值约 32,067 MiB | 首次 forward 触发 WSL/CUDA driver 容量边界 |
+| B4 | 拒绝 | — | — | 即使 AC24 graph-smoke 仍失败 |
+
+连续运行与 STOP → resume → SIGUSR1 分支在 1,048,576 token 后逐字节等价；最终
+`artifacts/configuration/v4-optimizer-ab/summary.json` 同时要求 power、完整 profiler
+trace 与 recovery，结论为 `accepted=true`。因此 Web allowlist 现在只对 v4 设
+`launch_enabled=true`；v1/v2/v3 继续 monitor-only。
 
 ## 9. 明确排除的候选
 

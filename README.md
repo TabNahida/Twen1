@@ -17,10 +17,11 @@ v2/v3 的日志中显式使用 MTP loss `0.1` 并严格加载 15 张原生 `mtp.
 由于没有训练中多 checkpoint validation 时间序列，三轮 final 都不能称为
 validation-selected best。
 
-v4 的实现、治理数据和候选配置已完成，当前处于真实 GPU optimizer-step 门禁：
+v4 的实现、治理数据、真实 GPU optimizer-step A/B 与中断恢复门均已完成并通过：
 `configs/base/dense-v4-16m-smoke.yaml` 从 v3 final model-only fork，使用纯文本
 NTP + 原生 MTP、Muon/AdamW、较低 peak LR 和全程 cosine；不会读取 9B teacher
-logits。它是 16.014M unique-token 的 governed smoke，不是 250M/500M 正式质量实验。
+logits。Dashboard 只开放该 v4 profile 启动；它是 16.014M unique-token 的 governed
+smoke，不是 250M/500M 正式质量实验。
 
 ## 架构与实现状态
 
@@ -794,7 +795,7 @@ NLL cursor，每个 shard 写 `COMPLETE`，Ctrl-C 只会重放当前未提交 mi
 RTX 5090 是目标执行路径；20,014,392 validation token 通常约 1–6 小时，最终以进度 ETA
 为准。输出只有统计和哈希，通常小于 100MB。
 
-### v4 governed smoke（已实现，GPU 门禁中）
+### v4 governed smoke（GPU 门禁通过，已准入）
 
 v4 已改为 Base 纯文本预训练：保留 NTP `1.0` 与 Qwen3.5 原生 MTP `0.1`，
 不再读取 9B logits/KD tensors，也不使用 teacher KD、anchor KL 或 hidden alignment；
@@ -808,9 +809,18 @@ warmup、全程 cosine decay 和 `0.1` min ratio。
 token，复审为 0 findings，prepared lineage 为 `ready_for_training=true`。
 
 这轮 16M 只用于验证纯文本目标、Muon、较低 LR、batch geometry、checkpoint 恢复和
-Web 遥测。启动前仍必须完成真实 optimizer-step 的 micro-batch 1/2/4 容量/吞吐/功耗
-A/B；250M/500M formal 还需要新 recipe/refill 扩大 unique clean 数据，不能循环当前
-16M 来冒充正式训练容量。
+Web 遥测。真实 optimizer-step A/B 最终选择 physical micro-batch 1：14 个稳态 step
+的 aggregate wall throughput 为 8,028 tok/s，peak reserved 25.75 GiB，最小观测
+headroom 6.09 GiB，GPU utilization p95 98%，功耗 p95 604.19 W。micro-batch 2 只有在
+20 层 selective FFN checkpoint 下才能完成，wall throughput 为 7,131 tok/s 且
+peak reserved 升到 28.20 GiB；未 checkpoint 的 B2 与 B4 均越过 5090/WSL driver
+容量边界。因此没有用“剩余显存”盲目增大 physical batch。
+
+连续 4-step 与 STOP → resume → SIGUSR1 → complete 分支的 model、Muon/AdamW、
+scheduler、RNG、data cursor、metrics 与全 rank runtime 哈希逐字节一致。最终审计位于
+`artifacts/configuration/v4-optimizer-ab/summary.json`，结论为 `accepted=true`；
+Dashboard 仅将 v4 设为 `launch_enabled=true`。250M/500M formal 仍需要新
+recipe/refill 扩大 unique clean 数据，不能循环当前 16M 来冒充正式训练容量。
 
 ## 7. Fold 与 sparse 蒸馏
 
@@ -1028,9 +1038,11 @@ loss、NTP/MTP/KD/anchor/hidden、吞吐、显存、LR、gradient norm 与 check
 `configs/web/dashboard.json` 中固定且启动后 SHA 不变的 profile；start 还需要页面二次输入确认，
 stop 会在核验 rank-zero hostname/PID/cmdline/config 身份后发送 SIGTERM，让引擎先 checkpoint。
 
-当前 v1/v2/v3 均为 completed monitor-only。v4 16M profile 已加入固定 allowlist，但在
-真实 B1/B2/B4、graph-smoke 和恢复门完成前保持 `launch_enabled=false`；最终胜出的
-microbatch 会重新计算 config SHA 后再开启。前台只读验收命令：
+当前 v1/v2/v3 均为 completed monitor-only。v4 16M profile 已通过 graph-smoke、真实
+B1/B2/B4、功耗/trace 和逐字节恢复门，并作为 allowlist 中唯一
+`launch_enabled=true` 的任务；固定 config SHA 仍为
+`4d13ded603d2cda979fba6d59cb67909287973b6d558dd35dc742538a0b4aa97`。
+前台只读验收命令：
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m twen web serve \
