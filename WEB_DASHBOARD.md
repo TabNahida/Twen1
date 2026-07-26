@@ -43,6 +43,8 @@ min/mean/p95/max/last，写入 `.twen/dashboard/gpu-telemetry.jsonl`；文件达
 - start 必须由页面按钮发起，并再次逐字输入 `START <profile-id>`。服务端同时验证 CSRF token、
   固定 profile、finalizer 固化的 `config_sha256` 和全局无重复训练；跨进程文件锁还会拒绝从第二个
   Dashboard 实例并发启动。
+- Dashboard 同时固定自身 allowlist 文件的路径与 SHA256。常驻期间该文件缺失、被替换或内容
+  改变时，页面会提示必须重启，服务端 fail-closed 拒绝新的 start；已经运行的任务仍可 save/stop。
 - Web 只能执行固定的 `python -m twen train ...` argv，不能从 HTTP 传 shell、额外参数或
   `--dry-run/--graph-smoke` 等模式。该训练入口在导入 PyTorch、创建 optimizer 或执行训练前，
   无条件运行 coordinated training preflight；Web 没有跳过 preflight 的开关。
@@ -96,7 +98,15 @@ TileLang 路径。unit 同时固定 `LimitNOFILE=1048576`；完整模型在 WSL2
 DXG/CUDA 共享资源句柄，systemd 默认的 1024 soft limit 会在首次训练 forward 中表现为
 `CUDA driver error: unknown error`。Dashboard 收到 `SIGTERM` 后会停止并回收自己的
 `nvidia-smi` 子进程，同时 flush 当前 10 秒遥测聚合桶；它不会把该信号转发给训练。
-首次安装或 unit 文件更新后执行：
+要让 user service 在用户退出登录后仍由 user manager 保持运行，管理员必须先启用 linger；
+这是稳定后台运行的前置条件，不应只依赖当前 SSH/终端会话：
+
+```bash
+sudo loginctl enable-linger "$USER"
+loginctl show-user "$USER" -p Linger
+```
+
+第二条应显示 `Linger=yes`。完成该前置设置后，首次安装或 unit 文件更新执行：
 
 ```bash
 systemctl --user link \

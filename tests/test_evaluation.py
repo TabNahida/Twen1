@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import torch
 
@@ -17,7 +18,9 @@ from twen.evaluation import (
     _normalize_evaluation_device,
     _read_progress,
     _validate_inference_checkpoint_lineage,
+    evaluate_nll,
 )
+from twen.io.locking import FileLock, FileLockTimeout
 from twen.utils import sha256_file
 
 
@@ -26,6 +29,180 @@ class EvaluationCpuTest(unittest.TestCase):
         self.assertEqual(_normalize_evaluation_device("cuda"), "cuda:0")
         self.assertEqual(_normalize_evaluation_device("cuda:1"), "cuda:1")
         self.assertEqual(_normalize_evaluation_device("cpu"), "cpu")
+
+    def test_evaluate_nll_holds_lock_for_entire_worker_lifecycle(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "evaluation"
+            expected = {"ok": True}
+
+            def worker(**kwargs: object) -> dict[str, bool]:
+                self.assertEqual(kwargs["output_dir"], output.resolve())
+                with self.assertRaises(FileLockTimeout):
+                    FileLock(output / ".eval.lock", timeout_seconds=0).acquire()
+                return expected
+
+            with patch(
+                "twen.evaluation._evaluate_nll_while_locked",
+                side_effect=worker,
+            ):
+                result = evaluate_nll(
+                    config_path="unused",
+                    checkpoint_path="unused",
+                    prepared_manifest_path="unused",
+                    output_dir=str(output),
+                )
+            self.assertEqual(result, expected)
+            with FileLock(output / ".eval.lock", timeout_seconds=0):
+                pass
+
+    def test_evaluate_nll_releases_lock_after_worker_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "evaluation"
+            with (
+                patch(
+                    "twen.evaluation._evaluate_nll_while_locked",
+                    side_effect=RuntimeError("simulated worker failure"),
+                ),
+                self.assertRaisesRegex(RuntimeError, "simulated worker failure"),
+            ):
+                evaluate_nll(
+                    config_path="unused",
+                    checkpoint_path="unused",
+                    prepared_manifest_path="unused",
+                    output_dir=str(output),
+                )
+            with FileLock(output / ".eval.lock", timeout_seconds=0):
+                pass
+
+    def test_evaluate_nll_binds_resolved_output_across_symlink_replacement(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = root / "first"
+            second = root / "second"
+            first.mkdir()
+            second.mkdir()
+            output_link = root / "output"
+            output_link.symlink_to(first, target_is_directory=True)
+
+            def worker(**kwargs: object) -> dict[str, bool]:
+                output_link.unlink()
+                output_link.symlink_to(second, target_is_directory=True)
+                bound_output = kwargs["output_dir"]
+                self.assertEqual(bound_output, first.resolve())
+                self.assertIsInstance(bound_output, Path)
+                assert isinstance(bound_output, Path)
+                (bound_output / "BOUND").write_text("first\n", encoding="utf-8")
+                with self.assertRaises(FileLockTimeout):
+                    FileLock(bound_output / ".eval.lock", timeout_seconds=0).acquire()
+                return {"ok": True}
+
+            with patch(
+                "twen.evaluation._evaluate_nll_while_locked",
+                side_effect=worker,
+            ):
+                evaluate_nll(
+                    config_path="unused",
+                    checkpoint_path="unused",
+                    prepared_manifest_path="unused",
+                    output_dir=str(output_link),
+                )
+            self.assertTrue((first / "BOUND").is_file())
+            self.assertFalse((second / "BOUND").exists())
+            self.assertFalse((second / ".eval.lock").exists())
+
+    def test_plan_exists_and_lock_is_held_before_model_and_checkpoint_load(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "evaluation"
+            prepared_path = root / "prepared.json"
+            prepared_path.write_text("{}\n", encoding="utf-8")
+            checkpoint = root / "checkpoint"
+            checkpoint.mkdir()
+            (checkpoint / "COMPLETE").write_text("fixed\n", encoding="utf-8")
+            config = SimpleNamespace(
+                run_id="base-v1",
+                track="base",
+                stage="dense-oracle",
+                runtime=SimpleNamespace(bf16=False),
+                sources=SimpleNamespace(
+                    tokenizer=SimpleNamespace(manifest_sha256="tokenizer"),
+                ),
+                architecture=SimpleNamespace(
+                    expert_initialization="donor",
+                    top_k=2,
+                ),
+                data=SimpleNamespace(global_batch_tokens=4096),
+                checkpoint=SimpleNamespace(output_dir=str(root / "runs")),
+            )
+            report = SimpleNamespace(
+                config_fingerprint="config",
+                data_fingerprint="data",
+            )
+            prepared = SimpleNamespace(
+                tokenizer_sha256="tokenizer",
+                dataset_fingerprint="dataset",
+            )
+            metadata = {
+                "global_step": 7,
+                "committed_tokens": 28_672,
+                "kind": "periodic",
+                "tag": None,
+            }
+            events: list[str] = []
+
+            def assert_plan_and_lock(label: str) -> None:
+                plan_path = output / "PLAN.json"
+                self.assertTrue(plan_path.is_file())
+                self.assertEqual(json.loads(plan_path.read_text())["device_type"], "cpu")
+                with self.assertRaises(FileLockTimeout):
+                    FileLock(output / ".eval.lock", timeout_seconds=0).acquire()
+                events.append(label)
+
+            def build_model(*_args: object, **_kwargs: object) -> SimpleNamespace:
+                assert_plan_and_lock("build")
+                return SimpleNamespace(model=object(), transfer_modules=[])
+
+            def load_checkpoint(*_args: object, **_kwargs: object) -> SimpleNamespace:
+                assert_plan_and_lock("load")
+                return SimpleNamespace(path=checkpoint, metadata=metadata)
+
+            manager = SimpleNamespace(load=load_checkpoint)
+            role_result = {
+                "mean_nll": 2.0,
+                "perplexity": math.exp(2.0),
+                "predicted_tokens": 16,
+                "sequences": 1,
+            }
+            with (
+                patch("twen.evaluation.enforce_offline_environment"),
+                patch("twen.evaluation.load_train_config", return_value=config),
+                patch("twen.evaluation.run_training_preflight", return_value=report),
+                patch("twen.evaluation.validate_prepared_corpus", return_value=prepared),
+                patch(
+                    "twen.evaluation._inspect_inference_evaluation_checkpoint",
+                    return_value=(manager, checkpoint, metadata, {"mode": "test"}),
+                ),
+                patch(
+                    "twen.evaluation._dense_control_fingerprint",
+                    return_value="control",
+                ),
+                patch("twen.training.builder.build_transfer_model", side_effect=build_model),
+                patch(
+                    "twen.training.stateful.TrainableModelState", side_effect=lambda model: model
+                ),
+                patch("twen.evaluation._evaluate_role", return_value=role_result),
+                patch("twen.evaluation._acceptance_metrics", return_value={}),
+            ):
+                result = evaluate_nll(
+                    config_path="config.yaml",
+                    checkpoint_path=str(checkpoint),
+                    prepared_manifest_path=str(prepared_path),
+                    output_dir=str(output),
+                    roles=("candidate",),
+                    device="cpu",
+                )
+            self.assertEqual(events, ["build", "load"])
+            self.assertEqual(result["roles"]["candidate"]["predicted_tokens"], 16)
 
     def test_inference_lineage_allows_recorded_source_tree_drift_only(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

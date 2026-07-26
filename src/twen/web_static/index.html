@@ -134,6 +134,16 @@
     .status.paused { color: #e8cf9f; border-color: #806735; background: #2b2518; }
     .empty { padding: 10px; color: var(--faint); font-size: 12px; }
     .main { min-width: 0; padding: 18px; overflow: hidden; }
+    .configuration-warning {
+      margin-bottom: 14px;
+      padding: 11px 13px;
+      border: 1px solid #806735;
+      border-left-width: 4px;
+      border-radius: var(--radius);
+      background: #2b2518;
+      color: #e8cf9f;
+    }
+    .configuration-warning strong { display: block; margin-bottom: 2px; color: #f0d9a8; }
     .panel {
       border: 1px solid var(--border);
       border-radius: var(--radius);
@@ -318,6 +328,10 @@
     </aside>
 
     <main class="main">
+      <div id="configurationWarning" class="configuration-warning" role="alert" hidden>
+        <strong>Dashboard 配置已变更，需要重启服务</strong>
+        为安全起见，新的训练启动已禁用；运行中的任务仍可保存 checkpoint 或优雅停止。
+      </div>
       <section id="overview" class="panel overview">
         <div class="overview-head">
           <div>
@@ -478,6 +492,16 @@
       return ({ kd: "Teacher KD", data_pipeline: "数据准备", evaluation: "评测", training: "训练" })[kind] || String(kind || "任务");
     }
     function stateLabel(state) { return state === "running" ? "运行中" : state === "paused" ? "可恢复" : state === "completed" ? "已完成" : String(state || "未知"); }
+    function configurationIsStale() {
+      return snapshot?.configuration_stale === true
+        || snapshot?.status?.configuration_stale === true
+        || bootstrap?.configuration_stale === true;
+    }
+    function renderConfigurationWarning() {
+      const stale = configurationIsStale();
+      $("configurationWarning").hidden = !stale;
+      $("launchBtn").disabled = busy || stale;
+    }
     function toast(message, error = false) {
       const node = $("toast"); node.textContent = message; node.className = "toast show" + (error ? " error" : "");
       clearTimeout(node._timer); node._timer = setTimeout(() => node.className = "toast", 3200);
@@ -534,6 +558,7 @@
       const syncButtonLabel = () => {
         const selected = profiles.find(profile => profile.profile_id === select.value);
         button.textContent = selected?.start_action === "resume" ? "恢复训练" : "启动训练";
+        button.disabled = busy || configurationIsStale();
       };
       select.onchange = syncButtonLabel; syncButtonLabel();
       select.hidden = profiles.length === 0; button.hidden = profiles.length === 0;
@@ -1072,6 +1097,7 @@
       if (state.pointer) updateChartTooltip(canvas, state); else hideChartTooltip(canvas);
     }
     function render() {
+      renderConfigurationWarning();
       if (!snapshot?.task) return;
       const tasks = snapshot.tasks || bootstrap?.tasks || [];
       rememberProgress();
@@ -1116,6 +1142,7 @@
       finally { busy = false; setTimeout(refresh, 400); }
     }
     async function launchConfiguredProfile() {
+      if (configurationIsStale()) return;
       const profileId = $("launchSelect").value;
       const profile = (bootstrap?.profiles || []).find(item => item.profile_id === profileId && item.start_available === true);
       if (!profile) return;
@@ -1134,6 +1161,7 @@
         bootstrap = await request("/api/bootstrap"); csrf = bootstrap.csrf_token;
         selectedTaskKey = bootstrap.active_task_key || bootstrap.default_task_key || bootstrap.tasks?.[0]?.key || "";
         syncLaunchProfiles();
+        renderConfigurationWarning();
         $("refreshBtn").addEventListener("click", refresh);
         $("launchBtn").addEventListener("click", launchConfiguredProfile);
         $("startBtn").addEventListener("click", () => action("start"));

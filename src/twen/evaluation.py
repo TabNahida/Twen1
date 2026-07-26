@@ -8,6 +8,7 @@ import json
 import math
 import os
 from collections.abc import Mapping, Sequence
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -125,17 +126,13 @@ def _load_inference_evaluation_checkpoint(
 ) -> tuple[Path, dict[str, Any], dict[str, Any]]:
     """Load trainable deltas under the inference-only compatibility gate."""
 
-    from .runtime.checkpoint import CheckpointManager
     from .training.stateful import TrainableModelState
 
-    manager = CheckpointManager(config.checkpoint.output_dir, rank=0, world_size=1)
-    resolved = manager.resolve(checkpoint_path)
-    metadata = manager.inspect(resolved)
-    lineage = _validate_inference_checkpoint_lineage(
+    manager, resolved, _metadata, lineage = _inspect_inference_evaluation_checkpoint(
         config_path=config_path,
         config=config,
         report=report,
-        metadata=metadata,
+        checkpoint_path=checkpoint_path,
     )
     loaded = manager.load(
         {"model": TrainableModelState(model)},
@@ -149,6 +146,29 @@ def _load_inference_evaluation_checkpoint(
         expected_global_batch_tokens=config.data.global_batch_tokens,
     )
     return loaded.path, dict(loaded.metadata), lineage
+
+
+def _inspect_inference_evaluation_checkpoint(
+    *,
+    config_path: str,
+    config: TrainConfig,
+    report: PreflightReport,
+    checkpoint_path: str,
+) -> tuple[Any, Path, dict[str, Any], dict[str, Any]]:
+    """Authenticate checkpoint metadata without loading tensors into a model."""
+
+    from .runtime.checkpoint import CheckpointManager
+
+    manager = CheckpointManager(config.checkpoint.output_dir, rank=0, world_size=1)
+    resolved = manager.resolve(checkpoint_path)
+    metadata = dict(manager.inspect(resolved))
+    lineage = _validate_inference_checkpoint_lineage(
+        config_path=config_path,
+        config=config,
+        report=report,
+        metadata=metadata,
+    )
+    return manager, resolved, metadata, lineage
 
 
 def _canonical_sha256(value: Any) -> str:
@@ -590,6 +610,38 @@ def evaluate_nll(
     dense_baseline_manifest_path: str | None = None,
     random_baseline_manifest_path: str | None = None,
 ) -> dict[str, Any]:
+    """Own the evaluation lock across the complete CPU/GPU lifecycle."""
+
+    output = Path(output_dir).resolve()
+    output.mkdir(parents=True, exist_ok=True)
+    with FileLock(output / ".eval.lock", timeout_seconds=300.0):
+        return _evaluate_nll_while_locked(
+            config_path=config_path,
+            checkpoint_path=checkpoint_path,
+            prepared_manifest_path=prepared_manifest_path,
+            output_dir=output,
+            roles=roles,
+            batch_size=batch_size,
+            device=device,
+            stop_file=stop_file,
+            dense_baseline_manifest_path=dense_baseline_manifest_path,
+            random_baseline_manifest_path=random_baseline_manifest_path,
+        )
+
+
+def _evaluate_nll_while_locked(
+    *,
+    config_path: str,
+    checkpoint_path: str,
+    prepared_manifest_path: str,
+    output_dir: Path,
+    roles: Sequence[str] | None = None,
+    batch_size: int = 1,
+    device: str = "cuda",
+    stop_file: str | None = None,
+    dense_baseline_manifest_path: str | None = None,
+    random_baseline_manifest_path: str | None = None,
+) -> dict[str, Any]:
     """Evaluate stage/shared/teacher NLL without backward or optimizer state."""
 
     enforce_offline_environment()
@@ -674,35 +726,25 @@ def evaluate_nll(
         "shared",
     } <= set(selected_roles):
         raise ValueError("cross-run acceptance gates require candidate and shared roles")
-    if device.startswith("cuda"):
-        import torch
-
-        if not torch.cuda.is_available():
-            raise RuntimeError("evaluation requested CUDA but CUDA is unavailable")
-        torch.cuda.set_device(torch.device(device))
-
-    output = Path(output_dir).resolve()
+    output = output_dir
     output.mkdir(parents=True, exist_ok=True)
     active_stop_file = Path(stop_file) if stop_file else output / "STOP"
     _check_stop_file(active_stop_file)
 
-    # Resolve and hash the actual checkpoint before freezing the evaluation plan.
+    # Authenticate checkpoint metadata and publish the immutable plan before
+    # allocating the model or loading any checkpoint tensors onto the GPU.
     import torch
 
-    from .training.builder import build_transfer_model
-
     dtype = torch.bfloat16 if config.runtime.bf16 else torch.float32
-    built = build_transfer_model(config, device=device, dtype=dtype)
-    loaded_checkpoint, checkpoint_metadata, checkpoint_lineage = (
-        _load_inference_evaluation_checkpoint(
-            built.model,
+    checkpoint_manager, resolved_checkpoint, checkpoint_metadata, checkpoint_lineage = (
+        _inspect_inference_evaluation_checkpoint(
             config_path=config_path,
             config=config,
             report=report,
             checkpoint_path=checkpoint_path,
         )
     )
-    checkpoint_complete_sha = sha256_file(loaded_checkpoint / "COMPLETE")
+    checkpoint_complete_sha = sha256_file(resolved_checkpoint / "COMPLETE")
     checkpoint_state = {
         "global_step": int(checkpoint_metadata["global_step"]),
         "committed_tokens": int(checkpoint_metadata["committed_tokens"]),
@@ -713,12 +755,16 @@ def evaluate_nll(
         raise ValueError(
             "donor and random-control evaluations must use checkpoints at identical training progress"
         )
+    if device.startswith("cuda"):
+        if not torch.cuda.is_available():
+            raise RuntimeError("evaluation requested CUDA but CUDA is unavailable")
+        torch.cuda.set_device(torch.device(device))
     plan = {
         "schema_version": EVALUATION_SCHEMA_VERSION,
         "kind": "twen_nll_evaluation_plan",
         "config_path": str(Path(config_path).resolve()),
         "config_fingerprint": report.config_fingerprint,
-        "checkpoint": str(loaded_checkpoint.resolve()),
+        "checkpoint": str(resolved_checkpoint.resolve()),
         "checkpoint_complete_sha256": checkpoint_complete_sha,
         "checkpoint_state": checkpoint_state,
         "checkpoint_inference_lineage": checkpoint_lineage,
@@ -754,10 +800,31 @@ def evaluate_nll(
         },
     }
     plan["plan_fingerprint"] = _canonical_sha256(plan)
+    plan_path = _install_or_validate_plan(output, plan)
+
+    from .training.builder import build_transfer_model
+    from .training.stateful import TrainableModelState
+
+    built = build_transfer_model(config, device=device, dtype=dtype)
+    loaded = checkpoint_manager.load(
+        {"model": TrainableModelState(built.model)},
+        resolved_checkpoint,
+        expected_critical_fingerprint=None,
+        expected_data_fingerprint=report.data_fingerprint,
+        expected_run_id=config.run_id,
+        expected_stage=config.stage,
+        expected_global_batch_tokens=config.data.global_batch_tokens,
+    )
+    if (
+        loaded.path != resolved_checkpoint
+        or sha256_file(loaded.path / "COMPLETE") != checkpoint_complete_sha
+    ):
+        raise RuntimeError("evaluation checkpoint identity changed after PLAN publication")
 
     results: dict[str, Any] = {}
-    with FileLock(output / ".eval.lock", timeout_seconds=300.0):
-        plan_path = _install_or_validate_plan(output, plan)
+    # ``evaluate_nll`` already owns .eval.lock. Keep this scope explicit so
+    # every model and teacher cleanup remains inside the locked lifecycle.
+    with nullcontext():
         try:
             candidate_roles = [
                 role for role in selected_roles if role in {"candidate", "shared", "dense-oracle"}

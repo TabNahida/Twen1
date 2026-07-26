@@ -8,6 +8,7 @@ no CUDA work, profiler hooks, or synchronization into the hot path.
 from __future__ import annotations
 
 import base64
+import fcntl
 import hashlib
 import ipaddress
 import json
@@ -18,6 +19,7 @@ import re
 import secrets
 import select
 import signal
+import stat
 import subprocess
 import sys
 import threading
@@ -68,6 +70,7 @@ _GPU_TELEMETRY_JOURNAL_MAX_BYTES = 16 * 1024 * 1024
 _DASHBOARD_ACTION_LOCK_TIMEOUT_SECONDS = 5.0
 _ACTIVE_TRAINING_STATES = frozenset(("running", "launching", "stop_requested"))
 _COMPLETED_TRAINING_STATES = frozenset(("complete", "completed", "already_complete"))
+_KD_ORCHESTRATION_STATUS_KIND = "twen_base_v2_500m_kd_orchestration_status"
 _GPU_TELEMETRY_FIELDS = (
     "power_draw_w",
     "power_limit_w",
@@ -822,6 +825,108 @@ def _existing_directory_inside(root: Path, candidate: Path) -> Path | None:
     return resolved
 
 
+def _read_only_probe_flags() -> int | None:
+    """Return non-blocking, no-follow flags or fail closed on unsupported hosts."""
+
+    no_follow = getattr(os, "O_NOFOLLOW", None)
+    non_blocking = getattr(os, "O_NONBLOCK", None)
+    if not isinstance(no_follow, int) or not isinstance(non_blocking, int):
+        return None
+    return os.O_RDONLY | no_follow | non_blocking | getattr(os, "O_CLOEXEC", 0)
+
+
+def _file_identity(metadata: os.stat_result) -> tuple[int, int, int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def _sha256_regular_file_no_follow(path: Path) -> str | None:
+    """Hash one regular file without following or blocking on special files."""
+
+    flags = _read_only_probe_flags()
+    if flags is None:
+        return None
+    try:
+        path_before = os.stat(path, follow_symlinks=False)
+        if (
+            not stat.S_ISREG(path_before.st_mode)
+            or path_before.st_size < 0
+            or path_before.st_size > 16 * 1024 * 1024
+        ):
+            return None
+        descriptor = os.open(path, flags)
+    except OSError:
+        return None
+    try:
+        opened_before = os.fstat(descriptor)
+        if _file_identity(opened_before) != _file_identity(path_before):
+            return None
+        digest = hashlib.sha256()
+        remaining = opened_before.st_size
+        while remaining:
+            chunk = os.read(descriptor, min(1024 * 1024, remaining))
+            if not chunk:
+                return None
+            digest.update(chunk)
+            remaining -= len(chunk)
+        if os.read(descriptor, 1):
+            return None
+        opened_after = os.fstat(descriptor)
+        path_after = os.stat(path, follow_symlinks=False)
+        expected_identity = _file_identity(opened_before)
+        if (
+            _file_identity(opened_after) != expected_identity
+            or _file_identity(path_after) != expected_identity
+        ):
+            return None
+        return digest.hexdigest()
+    except OSError:
+        return None
+    finally:
+        with suppress(OSError):
+            os.close(descriptor)
+
+
+def _exclusive_advisory_lock_is_held(path: Path) -> bool:
+    """Probe an exclusive ``flock`` through a read-only descriptor.
+
+    Evaluation workers take an exclusive lock.  A non-blocking shared lock is
+    therefore sufficient to distinguish a live worker from an abandoned lock
+    file without creating, truncating, or otherwise modifying that file.
+    """
+
+    flags = _read_only_probe_flags()
+    if flags is None:
+        return False
+    try:
+        descriptor = os.open(path, flags)
+    except OSError:
+        return False
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            return False
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        except OSError:
+            return False
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        except OSError:
+            return False
+        return False
+    finally:
+        with suppress(OSError):
+            os.close(descriptor)
+
+
 @dataclass(frozen=True, slots=True)
 class LaunchProfile:
     """One immutable, server-side training command allowlist entry."""
@@ -852,6 +957,8 @@ class LaunchProfile:
 
 @dataclass(frozen=True, slots=True)
 class DashboardSettings:
+    dashboard_config_path: Path
+    dashboard_config_sha256: str
     project_root: Path
     state_dir: Path
     profiles: tuple[LaunchProfile, ...]
@@ -868,8 +975,9 @@ def load_dashboard_settings(path: str | Path) -> DashboardSettings:
 
     source = Path(path).resolve()
     try:
-        raw = json.loads(source.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+        source_bytes = source.read_bytes()
+        raw = json.loads(source_bytes)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise DashboardError(f"cannot read dashboard config {source}: {error}") from error
     if not isinstance(raw, dict) or raw.get("schema_version") != 1:
         raise DashboardError("dashboard config schema_version must equal 1")
@@ -983,6 +1091,8 @@ def load_dashboard_settings(path: str | Path) -> DashboardSettings:
             )
         )
     return DashboardSettings(
+        dashboard_config_path=source,
+        dashboard_config_sha256=hashlib.sha256(source_bytes).hexdigest(),
         project_root=project_root,
         state_dir=state_dir,
         profiles=tuple(profiles),
@@ -1071,6 +1181,83 @@ def _read_json(path: Path) -> dict[str, Any] | None:
     except (OSError, json.JSONDecodeError):
         return None
     return value if isinstance(value, dict) else None
+
+
+def _authenticated_evaluation_device_type(
+    output: Path,
+    plan_path: Path | None,
+) -> str | None:
+    """Return a fingerprint-authenticated CPU/CUDA declaration from PLAN."""
+
+    raw_plan_path = output / "PLAN.json"
+    if plan_path is None or plan_path != raw_plan_path or raw_plan_path.is_symlink():
+        return None
+    flags = _read_only_probe_flags()
+    if flags is None:
+        return None
+    try:
+        path_before = os.stat(raw_plan_path, follow_symlinks=False)
+        if not stat.S_ISREG(path_before.st_mode) or not 0 < path_before.st_size <= 4 * 1024 * 1024:
+            return None
+        descriptor = os.open(raw_plan_path, flags)
+    except OSError:
+        return None
+    try:
+        opened_before = os.fstat(descriptor)
+        if _file_identity(opened_before) != _file_identity(path_before):
+            return None
+        payload = bytearray()
+        while len(payload) < opened_before.st_size:
+            chunk = os.read(
+                descriptor,
+                min(64 * 1024, opened_before.st_size - len(payload)),
+            )
+            if not chunk:
+                return None
+            payload.extend(chunk)
+        if os.read(descriptor, 1):
+            return None
+        opened_after = os.fstat(descriptor)
+        path_after = os.stat(raw_plan_path, follow_symlinks=False)
+        expected_identity = _file_identity(opened_before)
+        if (
+            _file_identity(opened_after) != expected_identity
+            or _file_identity(path_after) != expected_identity
+        ):
+            return None
+    except OSError:
+        return None
+    finally:
+        with suppress(OSError):
+            os.close(descriptor)
+    try:
+        plan = json.loads(payload)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if (
+        not isinstance(plan, dict)
+        or plan.get("schema_version") != 1
+        or plan.get("kind") != "twen_nll_evaluation_plan"
+    ):
+        return None
+    fingerprint = plan.get("plan_fingerprint")
+    if not isinstance(fingerprint, str) or not re.fullmatch(r"[0-9a-f]{64}", fingerprint):
+        return None
+    unsigned = dict(plan)
+    unsigned.pop("plan_fingerprint", None)
+    try:
+        encoded = json.dumps(
+            unsigned,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    except (TypeError, ValueError):
+        return None
+    if not secrets.compare_digest(fingerprint, hashlib.sha256(encoded).hexdigest()):
+        return None
+    device_type = plan.get("device_type")
+    return device_type if device_type in {"cpu", "cuda"} else None
 
 
 _RUN_ACTIVITY_FILES = (
@@ -1272,6 +1459,22 @@ class DashboardController:
         if current != path:
             raise DashboardError(f"{label} changed after dashboard startup: {current}")
         return current
+
+    def configuration_status(self) -> dict[str, bool]:
+        """Report whether the dashboard's own fixed allowlist needs a restart."""
+
+        current_sha256 = _sha256_regular_file_no_follow(self.settings.dashboard_config_path)
+        configuration_stale = bool(
+            current_sha256 is None
+            or not secrets.compare_digest(
+                current_sha256,
+                self.settings.dashboard_config_sha256,
+            )
+        )
+        return {
+            "configuration_stale": configuration_stale,
+            "restart_required": configuration_stale,
+        }
 
     def _command(
         self,
@@ -1498,10 +1701,12 @@ class DashboardController:
         elif controller_for_profile is not None:
             state = str(controller_for_profile.get("status", "unknown"))
         effectively_active = active or state in _ACTIVE_TRAINING_STATES
+        configuration = self.configuration_status()
         start_available = bool(
             profile.launch_enabled
             and not effectively_active
             and state not in _COMPLETED_TRAINING_STATES
+            and not configuration["configuration_stale"]
         )
         start_action = "start" if state == "not_started" else "resume"
         last_update_unix, last_update_utc = _run_last_update(
@@ -1517,6 +1722,7 @@ class DashboardController:
             "state": state,
             "active": effectively_active,
             "launch_enabled": profile.launch_enabled,
+            **configuration,
             # This is deliberately only a cheap UI/status hint.  It must never
             # inspect or trust checkpoint contents during polling; start()
             # performs the full hash/compatibility admission when clicked.
@@ -1671,27 +1877,76 @@ class DashboardController:
 
         now = time.monotonic()
         if self._operations_cache is not None and now - self._operations_cache[0] < 5.0:
-            return self._operations_cache[1]
+            cached = self._operations_cache[1]
+            raw_evaluations = cached.get("evaluations")
+            for evaluation in raw_evaluations if isinstance(raw_evaluations, list) else []:
+                if not isinstance(evaluation, dict) or not isinstance(evaluation.get("name"), str):
+                    continue
+                output = _existing_directory_inside(
+                    self.settings.project_root,
+                    self.settings.project_root / evaluation["name"],
+                )
+                if output is None:
+                    evaluation["status"] = "paused"
+                    evaluation["gpu_relevant"] = False
+                    continue
+                held = _exclusive_advisory_lock_is_held(output / ".eval.lock")
+                manifest_file = _existing_file_inside(output, output / "manifest.json")
+                complete_file = _existing_file_inside(output, output / "COMPLETE")
+                committed = manifest_file is not None and complete_file is not None
+                plan_path = _existing_file_inside(output, output / "PLAN.json")
+                device_type = _authenticated_evaluation_device_type(output, plan_path)
+                evaluation["status"] = (
+                    "in_progress" if held else ("complete" if committed else "paused")
+                )
+                evaluation["device_type"] = device_type
+                evaluation["gpu_relevant"] = held and device_type == "cuda"
+            return cached
         evaluations: list[dict[str, Any]] = []
-        plan_paths: set[Path] = set()
+        evaluation_outputs: set[Path] = set()
         for evaluation_root_name in ("eval", "artifacts/evaluations"):
             evaluation_root = self.settings.project_root / evaluation_root_name
             if evaluation_root.is_dir():
-                plan_paths.update(evaluation_root.rglob("PLAN.json"))
-        for raw_plan_path in sorted(plan_paths)[:200]:
-            plan_path = _existing_file_inside(self.settings.project_root, raw_plan_path)
-            if plan_path is None:
+                for raw_plan_path in evaluation_root.rglob("PLAN.json"):
+                    plan_path = _existing_file_inside(
+                        self.settings.project_root,
+                        raw_plan_path,
+                    )
+                    if (
+                        plan_path is not None
+                        and plan_path == raw_plan_path
+                        and not raw_plan_path.is_symlink()
+                    ):
+                        evaluation_outputs.add(plan_path.parent)
+                for raw_lock_path in evaluation_root.rglob(".eval.lock"):
+                    lock_path = _existing_file_inside(
+                        self.settings.project_root,
+                        raw_lock_path,
+                    )
+                    if (
+                        lock_path is not None
+                        and lock_path == raw_lock_path
+                        and not raw_lock_path.is_symlink()
+                        and _exclusive_advisory_lock_is_held(lock_path)
+                    ):
+                        output = _existing_directory_inside(
+                            self.settings.project_root,
+                            lock_path.parent,
+                        )
+                        if output is not None:
+                            evaluation_outputs.add(output)
+        for output in sorted(evaluation_outputs)[:200]:
+            plan_path = _existing_file_inside(output, output / "PLAN.json")
+            held = _exclusive_advisory_lock_is_held(output / ".eval.lock")
+            if plan_path is None and not held:
                 continue
-            output = plan_path.parent
             manifest_path = output / "manifest.json"
             complete_path = output / "COMPLETE"
             manifest_file = _existing_file_inside(output, manifest_path)
             complete_file = _existing_file_inside(output, complete_path)
-            status = (
-                "complete"
-                if manifest_file is not None and complete_file is not None
-                else "in_progress"
-            )
+            committed = manifest_file is not None and complete_file is not None
+            status = "in_progress" if held else ("complete" if committed else "paused")
+            device_type = _authenticated_evaluation_device_type(output, plan_path)
             role_completes = sum(
                 1
                 for item in output.rglob("COMPLETE")
@@ -1719,14 +1974,21 @@ class DashboardController:
                     ]
                     if booleans:
                         detail_parts.append(", ".join(booleans))
+            marker = manifest_file or plan_path
+            if marker is None:
+                marker = _existing_file_inside(output, output / ".eval.lock")
+            try:
+                modified_at = marker.stat().st_mtime if marker is not None else 0.0
+            except OSError:
+                modified_at = 0.0
             evaluations.append(
                 {
                     "name": output.relative_to(self.settings.project_root).as_posix(),
                     "status": status,
+                    "device_type": device_type,
+                    "gpu_relevant": held and device_type == "cuda",
                     "detail": " · ".join(detail_parts),
-                    "modified_at": datetime.fromtimestamp(
-                        plan_path.stat().st_mtime, UTC
-                    ).isoformat(),
+                    "modified_at": datetime.fromtimestamp(modified_at, UTC).isoformat(),
                 }
             )
         # Reports are intentionally not a dashboard task and are not scanned.
@@ -1801,6 +2063,8 @@ class DashboardController:
     def _normalized_task_state(state: object, *, active: bool = False) -> str | None:
         if active or state in {"running", "launching", "stop_requested", "in_progress"}:
             return "running"
+        if state == "paused":
+            return "paused"
         if state in {"complete", "completed"}:
             return "completed"
         return None
@@ -1961,6 +2225,7 @@ class DashboardController:
                 "label": str(status["label"]),
                 "state": state,
                 "active": state == "running",
+                "gpu_relevant": state == "running",
                 "phase": phase,
                 "progress": progress,
                 "detail": f"stage {phase}" if phase else "training",
@@ -2022,7 +2287,12 @@ class DashboardController:
             if state is None:
                 continue
             marker = str(payload.get("kind", "")).lower()
-            kind = "kd" if "kd" in marker or "-kd-" in task_root.name else "data_pipeline"
+            authenticated_kd_status = marker == _KD_ORCHESTRATION_STATUS_KIND
+            kind = (
+                "kd"
+                if authenticated_kd_status or "-kd-" in task_root.name
+                else "data_pipeline"
+            )
             current = payload.get("current_phase")
             current = current if isinstance(current, dict) else {}
             phase = self._safe_phase(payload.get("phase") or current.get("name"))
@@ -2059,6 +2329,11 @@ class DashboardController:
                 "label": label,
                 "state": state,
                 "active": state == "running",
+                "gpu_relevant": bool(
+                    state == "running"
+                    and authenticated_kd_status
+                    and phase == "generate-kd"
+                ),
                 "phase": phase,
                 "progress": progress,
                 "detail": self._progress_detail(phase, progress),
@@ -2096,6 +2371,7 @@ class DashboardController:
             plan_path = _existing_file_inside(task_root, task_root / "PLAN.json")
             manifest_path = _existing_file_inside(task_root, task_root / "manifest.json")
             console_path = _existing_file_inside(task_root, task_root / "console.log")
+            lock_path = _existing_file_inside(task_root, task_root / ".eval.lock")
             source = {
                 "plan": self._relative_source(plan_path),
                 "manifest": self._relative_source(manifest_path),
@@ -2130,7 +2406,7 @@ class DashboardController:
                         acceptance[safe_name] = value
                     elif (safe := self._safe_number(value)) is not None:
                         acceptance[safe_name] = safe
-            marker = manifest_path or plan_path
+            marker = manifest_path or plan_path or lock_path
             modified = marker.stat().st_mtime if marker is not None else 0.0
             relative_root = task_root.relative_to(self.settings.project_root).as_posix()
             digest = hashlib.sha256(relative_root.encode()).hexdigest()[:16]
@@ -2145,7 +2421,12 @@ class DashboardController:
                 "label": f"{task_root.name} evaluation",
                 "state": state,
                 "active": state == "running",
-                "phase": "evaluation" if state == "running" else "complete",
+                "gpu_relevant": bool(state == "running" and evaluation.get("gpu_relevant") is True),
+                "phase": (
+                    "evaluation"
+                    if state == "running"
+                    else ("paused" if state == "paused" else "complete")
+                ),
                 "progress": progress,
                 "detail": " ".join(str(evaluation.get("detail", "")).split())[:1000],
                 "updated_at": datetime.fromtimestamp(modified, UTC).isoformat(),
@@ -2244,25 +2525,32 @@ class DashboardController:
         else:
             raise DashboardError(f"unknown task catalog key: {selected_key!r}")
 
-        active_task = next(
-            (task.summary for task in tasks if task.summary["key"] == active_task_key),
+        gpu_task = next(
+            (
+                task.summary
+                for task in tasks
+                if task.summary.get("active") is True and task.summary.get("gpu_relevant") is True
+            ),
             None,
         )
+        gpu_task_key = str(gpu_task["key"]) if gpu_task is not None else None
         gpu_telemetry = dict(self.gpu_monitor.snapshot())
         gpu_telemetry.update(
             {
-                "associated_task_key": active_task_key,
-                "associated_task_kind": active_task.get("kind") if active_task else None,
-                "associated_task_label": active_task.get("label") if active_task else None,
+                "associated_task_key": gpu_task_key,
+                "associated_task_kind": gpu_task.get("kind") if gpu_task else None,
+                "associated_task_label": gpu_task.get("label") if gpu_task else None,
             }
         )
         live_gpu_relevant = bool(
             public_task is not None
             and public_task.get("active") is True
-            and public_task.get("key") == active_task_key
+            and public_task.get("gpu_relevant") is True
+            and public_task.get("key") == gpu_task_key
         )
         return {
             "server_time_utc": _utc_now(),
+            **self.configuration_status(),
             "task": public_task,
             "task_data": task_data,
             "active_task_key": active_task_key,
@@ -2305,6 +2593,11 @@ class DashboardController:
     def start(self, profile_id: str, confirmation: str) -> dict[str, Any]:
         profile = self.settings.profile(profile_id)
         with self._serialized_action():
+            if self.configuration_status()["configuration_stale"]:
+                raise DashboardError(
+                    "dashboard configuration changed after startup; "
+                    "review and restart the dashboard before starting training"
+                )
             if not profile.launch_enabled:
                 raise DashboardError(f"launch is disabled for profile {profile.profile_id!r}")
             if confirmation != profile.start_confirmation:
@@ -2370,6 +2663,11 @@ class DashboardController:
             environment = os.environ.copy()
             environment["PYTHONUNBUFFERED"] = "1"
             with console_path.open("ab", buffering=0) as console:
+                if self.configuration_status()["configuration_stale"]:
+                    raise DashboardError(
+                        "dashboard configuration changed during launch admission; "
+                        "review and restart the dashboard before starting training"
+                    )
                 process = self._process_factory(
                     command,
                     cwd=self.settings.project_root,
@@ -2682,6 +2980,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                     {
                         "ok": True,
                         "csrf_token": self.server.csrf_token,
+                        **self.server.controller.configuration_status(),
                         **task_selection,
                         "profiles": self.server.controller.public_profiles(),
                         "runs": self.server.controller.run_catalog(),

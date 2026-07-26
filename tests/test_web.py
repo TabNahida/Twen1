@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import fcntl
 import hashlib
 import json
 import os
@@ -12,7 +13,7 @@ import time
 from importlib.resources import files
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import call, patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -29,6 +30,8 @@ from twen.web import (
     GpuTelemetryMonitor,
     JsonlTailCache,
     LaunchProfile,
+    _exclusive_advisory_lock_is_held,
+    _sha256_regular_file_no_follow,
     create_dashboard_server,
     ensure_dashboard_auth_file,
     load_dashboard_auth,
@@ -58,11 +61,41 @@ def _profile(tmp_path: Path, *, launch_enabled: bool = False) -> LaunchProfile:
 
 
 def _settings(tmp_path: Path, *, launch_enabled: bool = False) -> DashboardSettings:
+    dashboard_config_path = (tmp_path / "dashboard.json").resolve()
+    dashboard_config_path.write_text('{"schema_version":1}\n', encoding="utf-8")
     return DashboardSettings(
+        dashboard_config_path=dashboard_config_path,
+        dashboard_config_sha256=hashlib.sha256(dashboard_config_path.read_bytes()).hexdigest(),
         project_root=tmp_path.resolve(),
         state_dir=(tmp_path / ".twen/dashboard").resolve(),
         profiles=(_profile(tmp_path, launch_enabled=launch_enabled),),
     )
+
+
+def _write_evaluation_plan(
+    output: Path,
+    *,
+    device_type: str | None,
+    valid_fingerprint: bool = True,
+) -> Path:
+    plan: dict[str, object] = {
+        "schema_version": 1,
+        "kind": "twen_nll_evaluation_plan",
+    }
+    if device_type is not None:
+        plan["device_type"] = device_type
+    encoded = json.dumps(
+        plan,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    plan["plan_fingerprint"] = (
+        hashlib.sha256(encoded).hexdigest() if valid_fingerprint else "0" * 64
+    )
+    path = output / "PLAN.json"
+    path.write_text(json.dumps(plan), encoding="utf-8")
+    return path
 
 
 def _write_committed_checkpoint(
@@ -158,6 +191,9 @@ def test_packaged_dashboard_html_is_available() -> None:
     assert "pointermove" in html
     assert "grid-template-rows: auto minmax(230px, 1fr)" in html
     assert 'id="evaluationSection"' in html
+    assert 'id="configurationWarning"' in html
+    assert "Dashboard 配置已变更" in html
+    assert "configuration_stale" in html
     assert 'id="launchSelect"' in html
     assert 'id="pausedTasks"' in html
     assert "profile.start_available === true" in html
@@ -585,6 +621,8 @@ def test_launch_enabled_profile_requires_matching_pinned_config_sha256(tmp_path:
     raw["profiles"][0]["config_sha256"] = hashlib.sha256(config.read_bytes()).hexdigest()
     dashboard.write_text(json.dumps(raw), encoding="utf-8")
     settings = load_dashboard_settings(dashboard)
+    assert settings.dashboard_config_path == dashboard.resolve()
+    assert settings.dashboard_config_sha256 == hashlib.sha256(dashboard.read_bytes()).hexdigest()
     assert settings.profiles[0].launch_enabled is True
     assert settings.profiles[0].config_sha256 == raw["profiles"][0]["config_sha256"]
 
@@ -988,6 +1026,113 @@ def test_allowlisted_config_must_not_change_after_server_start(tmp_path: Path) -
         controller.start("base-v2", "START base-v2")
 
 
+def test_dashboard_config_change_blocks_start_but_not_save_or_stop(tmp_path: Path) -> None:
+    settings = _settings(tmp_path, launch_enabled=True)
+    profile = settings.profiles[0]
+    controller = DashboardController(settings)
+    settings.dashboard_config_path.write_text('{"schema_version":1,"changed":true}\n')
+
+    public = controller.public_profiles()[0]
+    assert public["configuration_stale"] is True
+    assert public["restart_required"] is True
+    assert public["start_available"] is False
+    with pytest.raises(DashboardError, match="restart the dashboard"):
+        controller.start("base-v2", "START base-v2")
+
+    profile.run_dir.mkdir(parents=True)
+    (profile.run_dir / "rank0-session.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "session_id": "session-fixed",
+                "status": "running",
+                "hostname": platform.node(),
+                "pid": 31337,
+            }
+        ),
+        encoding="utf-8",
+    )
+    with (
+        patch("twen.web._process_matches_profile", return_value=True),
+        patch("twen.web.os.kill") as kill,
+    ):
+        saved = controller.signal("base-v2", "save", "SAVE base-v2")
+        stopped = controller.signal("base-v2", "stop", "STOP base-v2")
+    assert saved["signal"] == "SIGUSR1"
+    assert stopped["signal"] == "SIGTERM"
+    assert kill.call_args_list == [
+        call(31337, signal.SIGUSR1),
+        call(31337, signal.SIGTERM),
+    ]
+
+
+@pytest.mark.parametrize("race", ["replace", "append"])
+def test_dashboard_config_hash_fails_closed_if_file_changes_during_read(
+    tmp_path: Path,
+    race: str,
+) -> None:
+    settings = _settings(tmp_path)
+    path = settings.dashboard_config_path
+    original_read = os.read
+    raced = False
+
+    def racing_read(descriptor: int, size: int) -> bytes:
+        nonlocal raced
+        chunk = original_read(descriptor, size)
+        if not raced:
+            raced = True
+            if race == "replace":
+                replacement = path.with_suffix(".replacement")
+                replacement.write_bytes(path.read_bytes())
+                os.replace(replacement, path)
+            else:
+                with path.open("ab") as handle:
+                    handle.write(b" ")
+        return chunk
+
+    with patch("twen.web.os.read", side_effect=racing_read):
+        status = DashboardController(settings).configuration_status()
+    assert raced is True
+    assert status["configuration_stale"] is True
+    assert status["restart_required"] is True
+
+
+def test_dashboard_config_is_rechecked_immediately_before_process_creation(
+    tmp_path: Path,
+) -> None:
+    calls: list[tuple[object, dict[str, object]]] = []
+
+    def factory(command: object, **kwargs: object) -> SimpleNamespace:
+        calls.append((command, kwargs))
+        return SimpleNamespace(pid=4242)
+
+    settings = _settings(tmp_path, launch_enabled=True)
+    controller = DashboardController(settings, process_factory=factory)
+    original_admission = controller._fixed_initial_fork_launch
+
+    def mutate_during_admission(
+        profile: LaunchProfile,
+        run_dir: Path,
+    ) -> object:
+        launch = original_admission(profile, run_dir)
+        settings.dashboard_config_path.write_text(
+            '{"schema_version":1,"changed":true}\n',
+            encoding="utf-8",
+        )
+        return launch
+
+    with (
+        patch.object(
+            controller,
+            "_fixed_initial_fork_launch",
+            side_effect=mutate_during_admission,
+        ),
+        pytest.raises(DashboardError, match="changed during launch admission"),
+    ):
+        controller.start("base-v2", "START base-v2")
+    assert calls == []
+
+
 def test_duplicate_active_profile_is_refused(tmp_path: Path) -> None:
     settings = _settings(tmp_path, launch_enabled=True)
     profile = settings.profiles[0]
@@ -1109,8 +1254,230 @@ def test_discovery_includes_history_evaluation_and_omits_reports(tmp_path: Path)
     assert operations["data_jobs"][0]["status"] == "running"
     assert "25.00%" in operations["data_jobs"][0]["detail"]
     assert "9,100 tok/s" in operations["data_jobs"][0]["detail"]
-    assert operations["evaluations"][0]["status"] == "in_progress"
+    assert operations["evaluations"][0]["status"] == "paused"
     assert operations["reports"] == []
+
+
+def test_incomplete_evaluation_is_active_only_while_eval_lock_is_held(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    evaluation = tmp_path / "artifacts/evaluations/base-v1"
+    evaluation.mkdir(parents=True)
+    _write_evaluation_plan(evaluation, device_type="cuda")
+    controller = DashboardController(settings)
+
+    paused_operations = controller.operations_status()
+    assert paused_operations["evaluations"][0]["status"] == "paused"
+    paused_task = controller.task_catalog()[0]
+    assert paused_task["kind"] == "evaluation"
+    assert paused_task["state"] == "paused"
+    assert paused_task["active"] is False
+    paused_snapshot = controller.snapshot(paused_task["key"])
+    assert paused_snapshot["active_task_key"] is None
+    assert paused_snapshot["live_gpu_relevant"] is False
+    assert paused_snapshot["gpu_telemetry"]["associated_task_key"] is None
+
+    with FileLock(evaluation / ".eval.lock", timeout_seconds=0):
+        running_operations = controller.operations_status()
+        assert running_operations["evaluations"][0]["status"] == "in_progress"
+        running_task = controller.task_catalog()[0]
+        assert running_task["state"] == "running"
+        assert running_task["active"] is True
+        assert running_task["gpu_relevant"] is True
+        running_snapshot = controller.snapshot(running_task["key"])
+        assert running_snapshot["active_task_key"] == running_task["key"]
+        assert running_snapshot["live_gpu_relevant"] is True
+        assert running_snapshot["gpu_telemetry"]["associated_task_key"] == running_task["key"]
+
+    resumed_paused = controller.task_catalog()[0]
+    assert resumed_paused["state"] == "paused"
+    assert resumed_paused["active"] is False
+
+
+@pytest.mark.parametrize(
+    ("device_type", "valid_fingerprint"),
+    [
+        ("cpu", True),
+        (None, True),
+        ("cuda", False),
+    ],
+)
+def test_held_cpu_or_unauthenticated_evaluation_never_owns_gpu(
+    tmp_path: Path,
+    device_type: str | None,
+    valid_fingerprint: bool,
+) -> None:
+    settings = _settings(tmp_path)
+    evaluation = tmp_path / "artifacts/evaluations/base-v1"
+    evaluation.mkdir(parents=True)
+    _write_evaluation_plan(
+        evaluation,
+        device_type=device_type,
+        valid_fingerprint=valid_fingerprint,
+    )
+    controller = DashboardController(settings)
+
+    with FileLock(evaluation / ".eval.lock", timeout_seconds=0):
+        task = controller.task_catalog()[0]
+        assert task["state"] == "running"
+        assert task["active"] is True
+        assert task["gpu_relevant"] is False
+        snapshot = controller.snapshot(task["key"])
+        assert snapshot["active_task_key"] == task["key"]
+        assert snapshot["live_gpu_relevant"] is False
+        assert snapshot["gpu_telemetry"]["associated_task_key"] is None
+
+
+def test_held_lock_only_evaluation_is_discovered_without_claiming_gpu(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    evaluation = tmp_path / "artifacts/evaluations/initializing"
+    evaluation.mkdir(parents=True)
+    controller = DashboardController(settings)
+
+    with FileLock(evaluation / ".eval.lock", timeout_seconds=0):
+        tasks = controller.task_catalog()
+        assert len(tasks) == 1
+        task = tasks[0]
+        assert task["kind"] == "evaluation"
+        assert task["state"] == "running"
+        assert task["active"] is True
+        assert task["gpu_relevant"] is False
+        assert task["source"]["plan"] is None
+        snapshot = controller.snapshot(task["key"])
+        assert snapshot["active_task_key"] == task["key"]
+        assert snapshot["gpu_telemetry"]["associated_task_key"] is None
+
+
+def test_held_lock_overrides_completed_evaluation_until_release(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    evaluation = tmp_path / "artifacts/evaluations/recheck"
+    evaluation.mkdir(parents=True)
+    _write_evaluation_plan(evaluation, device_type="cuda")
+    (evaluation / "manifest.json").write_text("{}\n", encoding="utf-8")
+    (evaluation / "COMPLETE").write_text("committed\n", encoding="utf-8")
+    controller = DashboardController(settings)
+
+    assert controller.operations_status()["evaluations"][0]["status"] == "complete"
+    with FileLock(evaluation / ".eval.lock", timeout_seconds=0):
+        operation = controller.operations_status()["evaluations"][0]
+        assert operation["status"] == "in_progress"
+        assert operation["gpu_relevant"] is True
+        task = controller.task_catalog()[0]
+        assert task["state"] == "running"
+        assert task["gpu_relevant"] is True
+    assert controller.operations_status()["evaluations"][0]["status"] == "complete"
+    assert controller.task_catalog()[0]["state"] == "completed"
+
+
+def test_cpu_evaluation_cannot_steal_gpu_owner_from_training(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    profile = settings.profiles[0]
+    profile.run_dir.mkdir(parents=True)
+    (profile.run_dir / "rank0-session.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "status": "running",
+                "hostname": platform.node(),
+                "pid": 31337,
+            }
+        ),
+        encoding="utf-8",
+    )
+    evaluation = tmp_path / "artifacts/evaluations/cpu"
+    evaluation.mkdir(parents=True)
+    plan_path = _write_evaluation_plan(evaluation, device_type="cpu")
+    future = time.time() + 60
+    os.utime(plan_path, (future, future))
+    controller = DashboardController(settings)
+
+    with (
+        FileLock(evaluation / ".eval.lock", timeout_seconds=0),
+        patch("twen.web._process_matches_profile", return_value=True),
+    ):
+        tasks = controller.task_catalog()
+        evaluation_task = next(task for task in tasks if task["kind"] == "evaluation")
+        training_task = next(task for task in tasks if task["kind"] == "training")
+        snapshot = controller.snapshot(evaluation_task["key"])
+    assert snapshot["active_task_key"] == evaluation_task["key"]
+    assert snapshot["live_gpu_relevant"] is False
+    assert snapshot["gpu_telemetry"]["associated_task_key"] == training_task["key"]
+    assert snapshot["gpu_telemetry"]["associated_task_kind"] == "training"
+
+
+def test_read_only_probes_fail_closed_without_required_flags(tmp_path: Path) -> None:
+    path = tmp_path / "regular"
+    path.write_text("fixed\n", encoding="utf-8")
+    for missing_flag in ("O_NOFOLLOW", "O_NONBLOCK"):
+        with patch.object(os, missing_flag, None):
+            assert _sha256_regular_file_no_follow(path) is None
+            assert _exclusive_advisory_lock_is_held(path) is False
+
+
+def test_read_only_probes_fail_closed_for_symlinks(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    target.write_text("fixed\n", encoding="utf-8")
+    link = tmp_path / "link"
+    link.symlink_to(target)
+
+    assert _sha256_regular_file_no_follow(link) is None
+    assert _exclusive_advisory_lock_is_held(link) is False
+
+
+def test_symlinked_evaluation_lock_is_not_discovered_as_active(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    evaluation = tmp_path / "artifacts/evaluations/symlinked"
+    evaluation.mkdir(parents=True)
+    real_lock = tmp_path / "real-eval.lock"
+    (evaluation / ".eval.lock").symlink_to(real_lock)
+    controller = DashboardController(settings)
+
+    with FileLock(real_lock, timeout_seconds=0):
+        assert controller.operations_status()["evaluations"] == []
+        assert controller.task_catalog() == []
+
+
+def test_read_only_probes_do_not_block_on_fifo(tmp_path: Path) -> None:
+    fifo = tmp_path / "probe.fifo"
+    os.mkfifo(fifo)
+
+    def run_probe(probe: object, result: list[object]) -> None:
+        assert callable(probe)
+        result.append(probe(fifo))
+
+    for probe, expected in (
+        (_sha256_regular_file_no_follow, None),
+        (_exclusive_advisory_lock_is_held, False),
+    ):
+        result: list[object] = []
+        thread = threading.Thread(target=run_probe, args=(probe, result), daemon=True)
+        thread.start()
+        thread.join(timeout=0.5)
+        assert not thread.is_alive()
+        assert result == [expected]
+
+
+def test_unlock_failure_degrades_evaluation_to_paused_without_status_error(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    evaluation = tmp_path / "artifacts/evaluations/base-v1"
+    evaluation.mkdir(parents=True)
+    _write_evaluation_plan(evaluation, device_type="cuda")
+    (evaluation / ".eval.lock").touch()
+    controller = DashboardController(settings)
+
+    def fail_unlock(_descriptor: int, operation: int) -> None:
+        if operation == fcntl.LOCK_UN:
+            raise OSError("simulated unlock failure")
+
+    with patch("twen.web.fcntl.flock", side_effect=fail_unlock):
+        operation = controller.operations_status()["evaluations"][0]
+    assert operation["status"] == "paused"
+    assert operation["gpu_relevant"] is False
 
 
 def test_unified_tasks_select_running_kd_and_bind_live_gpu_to_it(tmp_path: Path) -> None:
@@ -1205,6 +1572,91 @@ def test_unified_tasks_select_running_kd_and_bind_live_gpu_to_it(tmp_path: Path)
     assert historical["gpu_telemetry"]["associated_task_key"] == kd_key
 
 
+@pytest.mark.parametrize(
+    ("status_kind", "phase"),
+    [
+        ("twen_base_v2_500m_kd_orchestration_status", "index-kd"),
+        ("kd_orchestration_status", "generate-kd"),
+    ],
+)
+def test_non_gpu_or_unauthenticated_kd_status_cannot_claim_gpu(
+    tmp_path: Path,
+    status_kind: str,
+    phase: str,
+) -> None:
+    settings = _settings(tmp_path)
+    kd_root = tmp_path / "artifacts/data/candidate-kd-orchestration"
+    kd_root.mkdir(parents=True)
+    (kd_root / "status.json").write_text(
+        json.dumps(
+            {
+                "kind": status_kind,
+                "status": "running",
+                "phase": phase,
+                "training_started": False,
+                "optimizer_created": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+    controller = DashboardController(settings)
+
+    task = next(task for task in controller.task_catalog() if task["kind"] == "kd")
+    snapshot = controller.snapshot(task["key"])
+
+    assert task["active"] is True
+    assert task["gpu_relevant"] is False
+    assert snapshot["active_task_key"] == task["key"]
+    assert snapshot["live_gpu_relevant"] is False
+    assert snapshot["gpu_telemetry"]["associated_task_key"] is None
+
+
+def test_running_cpu_data_pipeline_cannot_steal_gpu_owner_from_training(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    profile = settings.profiles[0]
+    profile.run_dir.mkdir(parents=True)
+    (profile.run_dir / "rank0-session.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "status": "running",
+                "hostname": platform.node(),
+                "pid": 31337,
+            }
+        ),
+        encoding="utf-8",
+    )
+    pipeline = tmp_path / "artifacts/data/formal-pipeline"
+    pipeline.mkdir(parents=True)
+    status_path = pipeline / "status.json"
+    status_path.write_text(
+        json.dumps(
+            {
+                "kind": "formal_data_pipeline_status",
+                "status": "running",
+                "phase": "audit",
+            }
+        ),
+        encoding="utf-8",
+    )
+    future = time.time() + 60
+    os.utime(status_path, (future, future))
+    controller = DashboardController(settings)
+
+    with patch("twen.web._process_matches_profile", return_value=True):
+        tasks = controller.task_catalog()
+        pipeline_task = next(task for task in tasks if task["kind"] == "data_pipeline")
+        training_task = next(task for task in tasks if task["kind"] == "training")
+        snapshot = controller.snapshot(pipeline_task["key"])
+    assert pipeline_task["active"] is True
+    assert pipeline_task["gpu_relevant"] is False
+    assert snapshot["active_task_key"] == pipeline_task["key"]
+    assert snapshot["live_gpu_relevant"] is False
+    assert snapshot["gpu_telemetry"]["associated_task_key"] == training_task["key"]
+
+
 def test_task_console_rejects_status_declared_path_outside_task_root(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     outside = tmp_path / "private.log"
@@ -1215,7 +1667,7 @@ def test_task_console_rejects_status_declared_path_outside_task_root(tmp_path: P
     (kd_root / "status.json").write_text(
         json.dumps(
             {
-                "kind": "kd_orchestration_status",
+                "kind": "twen_base_v2_500m_kd_orchestration_status",
                 "status": "running",
                 "log": str(outside),
                 "phase": str(outside),
@@ -1320,6 +1772,10 @@ def test_http_home_bootstrap_snapshot_and_csrf_guard(tmp_path: Path) -> None:
         assert bootstrap["tasks"][0]["kind"] == "kd"
         assert bootstrap["active_task_key"] == bootstrap["tasks"][0]["key"]
         assert bootstrap["default_task_key"] == bootstrap["active_task_key"]
+        assert bootstrap["configuration_stale"] is False
+        assert bootstrap["restart_required"] is False
+        assert bootstrap["profiles"][0]["configuration_stale"] is False
+        assert bootstrap["profiles"][0]["restart_required"] is False
         assert bootstrap["control_policy"] == {
             "automatic_launch": False,
             "server_side_allowlist": True,
@@ -1346,6 +1802,17 @@ def test_http_home_bootstrap_snapshot_and_csrf_guard(tmp_path: Path) -> None:
         assert kd_snapshot["task"]["kind"] == "kd"
         assert kd_snapshot["console"] == "KD live"
         assert kd_snapshot["live_gpu_relevant"] is True
+
+        settings.dashboard_config_path.write_text(
+            '{"schema_version":1,"changed":true}\n',
+            encoding="utf-8",
+        )
+        with urlopen(root + "/api/bootstrap", timeout=3) as response:
+            stale_bootstrap = json.load(response)
+        assert stale_bootstrap["configuration_stale"] is True
+        assert stale_bootstrap["restart_required"] is True
+        assert stale_bootstrap["profiles"][0]["configuration_stale"] is True
+        assert stale_bootstrap["profiles"][0]["restart_required"] is True
 
         request = Request(
             root + "/api/start",
