@@ -8,6 +8,7 @@ def test_dashboard_user_service_is_persistent_and_cuda_wrapped() -> None:
     unit = (root / "deploy/systemd/twen-dashboard.service").read_text(encoding="utf-8")
 
     assert "Restart=always" in unit
+    assert "LimitNOFILE=1048576" in unit
     assert "UMask=0077" in unit
     assert " --host 0.0.0.0 --port 8765 " in unit
     assert (

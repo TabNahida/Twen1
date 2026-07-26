@@ -92,8 +92,10 @@ Dashboard 使用仓库内固定的
 作为 user service，`Restart=always`。unit 通过 `scripts/with_cuda_toolchain.sh`
 启动 Dashboard，使页面创建的训练子进程继承已校验的 CUDA toolkit、固定 cache 目录和
 `FLA_TILELANG=0`；Qwen3.5 的 full-T=4096 gated-delta backward 在 SM 12.0 上不能误走
-TileLang 路径。Dashboard 收到 `SIGTERM` 后会停止并回收自己的 `nvidia-smi` 子进程，
-同时 flush 当前 10 秒遥测聚合桶；它不会把该信号转发给训练。
+TileLang 路径。unit 同时固定 `LimitNOFILE=1048576`；完整模型在 WSL2 上会创建大量
+DXG/CUDA 共享资源句柄，systemd 默认的 1024 soft limit 会在首次训练 forward 中表现为
+`CUDA driver error: unknown error`。Dashboard 收到 `SIGTERM` 后会停止并回收自己的
+`nvidia-smi` 子进程，同时 flush 当前 10 秒遥测聚合桶；它不会把该信号转发给训练。
 首次安装或 unit 文件更新后执行：
 
 ```bash
