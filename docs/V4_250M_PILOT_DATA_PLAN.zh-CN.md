@@ -16,19 +16,38 @@
 `configs/base/dense-v4-250m-pilot.blocked.yaml` 中的 prepared manifest 与
 source-map 使用显式 `PENDING_*` 值，因此即使绕过 Web 直接调用 CLI，也会在配置校验阶段
 失败。`locks/base-dense-v4-250m-pilot.readiness.json` 与容量 attestation 同时保持
-`launch_enabled=false`。
+`launch_enabled=false`。raw primary/cooldown 的完成不等于正式数据或训练准入；当前仍缺
+refill 后最终审计、prepared identity、两阶段及 train/validation union 不相交证明、
+formal v3 baseline、13M low-LR calibration 质量报告，以及负责暂停评测的外部 governed
+controller。
 
 ## 正式超参、fork 与暂停评测门
 
 13M low-LR calibration 仍保持 Adapter `5e-5`、scale `1e-5`、5M warmup；
-它只用于判断方向，不是 250M 的默认 warm start。250M formal 使用更保守的独立合同：
+它是正式启动前必须由用户安排并通过的质量门，但不是 250M 的 warm start。250M
+始终从 v3 final 重新 fork，并使用更保守的独立合同：
 
 - Adapter/Lora nominal LR `3e-5`，scale LR `3e-6`；
 - 10M warmup，随后全程 cosine 到 peak 的 `0.1`；
 - physical micro-batch 1、GA 64、global batch `262,144` token；
 - 每 50 step 保存 checkpoint，`keep_last=3`；
 - 必须从 v3 final model-only checkpoint fork，并重置 optimizer、scheduler 和 cursor；
-  禁止从 16M smoke 或 13M calibration checkpoint 继续训练。
+  禁止从 16M smoke 或 13M calibration checkpoint 继续训练；v3 final 的 `COMPLETE`
+  SHA256 固定为
+  `3a21a50e35de74ecd0ff5b8f00aa29ed6c83f746fc2cf97d4da6b0536262b6c7`。
+
+13M calibration 尚未执行。完成后必须同时认证训练报告、checkpoint 40/50/final 的
+同口径 frozen-v3 validation、checkpoint drift 报告及各 checkpoint 的
+manifest/`COMPLETE`，并满足：
+
+- 最佳和 final aggregate NLL 均不高于 `2.3766688031972105`；
+- 中文 NLL 不高于 `3.656194313354557`；
+- final branch-scale 相对 v3 L2 漂移不超过 `5%`；
+- reused sequence/token 均为 0，所有 reference `epoch=0`；
+- loss、NTP、MTP、grad norm、nominal/adjusted LR 全部 finite，clip fraction 为 0。
+
+这些要求已作为 pending `calibration_gate` 写入 readiness；在完整认证证据回填并重新
+计算 gate 前，它明确 `passed=false`、`authorizes_training=false`。
 
 正式任务在约 13M、26M、52M、105M、157M、210M、223M（cooldown 前）、
 236M（cooldown 中）和 250M token 暂停评测。任一 non-finite、数据
@@ -41,9 +60,19 @@ validation 还采用以下 fail-closed 门：
 - 相对最佳 checkpoint 连续两次回退超过 `0.001`；
 - 连续两个大评测点改善不足 `1e-4` 时停止，`1e-4` tie 内选择更早 checkpoint。
 
+这里的“暂停”是外部 governed controller 的合同，语义是提交第一个令累计 token
+达到或越过阈值的完整 optimizer batch 后暂停。**当前 controller 尚未实现**；下面列出的
+`twen.cli train` 命令只会启动训练，不会自动暂停、运行 NLL validation 或执行这些
+post-launch hard stop。因此 controller 本身也是 launch blocker，不能把 readiness 中的
+阈值误当成已经接入引擎的功能。
+
 现有 frozen validation 只覆盖中文、英文、数学、GitHub code、OpenStax 和 Stanford。
 正式启动前必须为 ArXiv、StackV2、Common Corpus、LibreTexts 与 Gutenberg 增加冻结
-validation 并重算 v3 baseline；否则新增来源没有可比质量门，250M 保持 blocked。
+validation 并重算 v3 baseline；还必须证明 primary+cooldown train union 与两份
+validation union 在 stable ID、normalized exact 和 MinHash near-duplicate `0.8` 三层
+不相交。formal validation summarizer 只生成报告，不授权训练；其 bundle 与不相交
+attestation 必须由最终 readiness 另行认证。否则新增来源没有可比质量门，250M 保持
+blocked。
 
 ## 两阶段 mix 与 raw quota
 
@@ -184,7 +213,13 @@ done
 复制后仍由下载器验证 size/SHA/manifest；不要复用同 repo 的不同 shard，也不要把旧的
 extracted JSONL 混入新输出。
 
-### 3. 真实物化（当前尚未执行）
+### 3. Raw 真实物化（已完成，命令仅供身份复现）
+
+当前 primary/cooldown raw corpus 都已有认证 `COMPLETE`，manifest SHA256 分别为
+`c09cc7c81beaf53487d623012fc005dc7a06f13d238df040d751df527294ec54` 与
+`ac4a1ffbfce4cae153662699313df6565cebc6362aab6e942566506245edd4b8`。
+两者仍为 `ready_for_training=false`；不要把 raw 完成状态解释成 final governed
+prepared corpus，也不要无理由重复执行下面的下载/物化命令。
 
 ```bash
 .venv/bin/python -m twen.cli data build-base \
@@ -212,7 +247,9 @@ extracted JSONL 混入新输出。
   --progress always
 ```
 
-后续必须依次执行 audit → rejection-ledger materialize → 用同一 frozen v3 validation
-重新 audit → prepare，并额外完成 primary/cooldown train-to-train 的 stable-ID/exact/near
-不相交审计。只有容量 attestation 的所有 `passed` 都为 true，才能把
-`PENDING_*` 替换为真实身份并生成可启动 config。
+后续必须依次完成 refill → 用同一 frozen v3 validation 做最终 audit → prepare，并额外
+完成 primary/cooldown train-to-train 与 train-union/validation-union 的
+stable-ID/exact/near 不相交审计。即使容量 attestation 的所有 `passed` 都为 true，也只能
+回填数据身份；还必须等待 calibration、formal validation 和外部 pause controller 三个
+readiness gate 通过，才能生成独立的最终 config。当前 blocked draft 的 `PENDING_*` 不应
+被手工替换。

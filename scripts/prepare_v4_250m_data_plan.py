@@ -31,6 +31,7 @@ COOLDOWN_RESOLVED = ROOT / "locks/base-data-sources-v4-cooldown.resolved.json"
 CAPACITY_ATTESTATION = ROOT / "locks/base-data-sources-v4-250m.capacity-attestation.json"
 BLOCKED_CONFIG = ROOT / "configs/base/dense-v4-250m-pilot.blocked.yaml"
 READINESS = ROOT / "locks/base-dense-v4-250m-pilot.readiness.json"
+CALIBRATION_CONFIG = ROOT / "configs/base/dense-v4-13m-low-lr-calibration.yaml"
 
 MATERIALIZATION_PROFILE = "materialization"
 PRIMARY_TRAINING_TOKENS = 225_000_000
@@ -48,6 +49,13 @@ FORMAL_ADAPTER_LR = 3.0e-5
 FORMAL_SCALE_LR = 3.0e-6
 FORMAL_WARMUP_TOKENS = 10_000_000
 FORMAL_CHECKPOINT_EVERY_STEPS = 50
+FORMAL_WORLD_SIZE = 1
+FORMAL_MICRO_BATCH_SIZE = 1
+FORMAL_GRADIENT_ACCUMULATION_STEPS = 64
+V3_FINAL_CHECKPOINT = "runs/base-dense-v3-500m/step-000000001912-milestone-complete"
+V3_FINAL_COMPLETE_SHA256 = "3a21a50e35de74ecd0ff5b8f00aa29ed6c83f746fc2cf97d4da6b0536262b6c7"
+V3_FINAL_AGGREGATE_NLL = 2.3766688031972105
+V3_FINAL_CHINESE_NLL = 3.656194313354557
 PAUSE_EVALUATION_TOKENS = (
     13_000_000,
     26_000_000,
@@ -66,6 +74,52 @@ REQUIRED_ADDITIONAL_VALIDATION_SOURCES = (
     "education_libretexts_permissive",
     "public_domain_project_gutenberg",
 )
+
+
+def _formal_training_contract() -> dict[str, Any]:
+    if (
+        SEQUENCE_LENGTH
+        * FORMAL_WORLD_SIZE
+        * FORMAL_MICRO_BATCH_SIZE
+        * FORMAL_GRADIENT_ACCUMULATION_STEPS
+        != GLOBAL_BATCH_TOKENS
+    ):
+        raise ValueError("formal batch geometry does not reproduce global_batch_tokens")
+    return {
+        "track": "base",
+        "stage": "dense-oracle",
+        "data_mode": "prepared-text",
+        "objective": "base_text_ntp_plus_native_mtp_no_9b_logits",
+        "source_mix_algorithm": "token-deficit-corrected-source-mix-bp-v2",
+        "primary_tokens": PRIMARY_TRAINING_TOKENS,
+        "cooldown_tokens": COOLDOWN_TRAINING_TOKENS,
+        "max_tokens": PRIMARY_TRAINING_TOKENS + COOLDOWN_TRAINING_TOKENS,
+        "cooldown_start_tokens": PRIMARY_TRAINING_TOKENS,
+        "sequence_length": SEQUENCE_LENGTH,
+        "world_size": FORMAL_WORLD_SIZE,
+        "micro_batch_size": FORMAL_MICRO_BATCH_SIZE,
+        "gradient_accumulation_steps": FORMAL_GRADIENT_ACCUMULATION_STEPS,
+        "global_batch_tokens": GLOBAL_BATCH_TOKENS,
+        "complete_tail_batch_required": True,
+        "allow_corpus_reuse": False,
+        "adapter_optimizer": "muon",
+        "scale_optimizer": "adamw",
+        "adapter_lr": FORMAL_ADAPTER_LR,
+        "lora_lr": FORMAL_ADAPTER_LR,
+        "scale_lr": FORMAL_SCALE_LR,
+        "warmup_tokens": FORMAL_WARMUP_TOKENS,
+        "lr_schedule": "cosine",
+        "min_lr_ratio": 0.1,
+        "ntp_weight": 1.0,
+        "mtp_weight": 0.1,
+        "native_mtp_head_frozen": True,
+        "teacher_logits_kd": False,
+        "teacher_kd_weight": 0.0,
+        "anchor_kl_weight": 0.0,
+        "hidden_alignment_weight": 0.0,
+        "dense_oracle_weight": 0.0,
+    }
+
 
 RETENTION = {
     "english_fineweb_edu_dedup": (0.9499, "base-v4-smoke-r3-r4-governance"),
@@ -341,6 +395,97 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _pending_calibration_gate() -> dict[str, Any]:
+    return {
+        "required": True,
+        "status": "pending_user_run_and_authenticated_quality_report",
+        "config": {
+            "path": str(CALIBRATION_CONFIG.relative_to(ROOT)),
+            "sha256": _sha256(CALIBRATION_CONFIG),
+        },
+        "required_fork_checkpoint": {
+            "path": V3_FINAL_CHECKPOINT,
+            "complete_sha256": V3_FINAL_COMPLETE_SHA256,
+            "model_only": True,
+            "reset_optimizer_and_scheduler": True,
+        },
+        "required_candidate_checkpoints": {
+            "global_steps": [40, 50],
+            "final_milestone_required": True,
+            "same_frozen_v3_validation_contract": True,
+        },
+        "required_authenticated_evidence": {
+            "training_report_bundle": {
+                "path": None,
+                "manifest_sha256": None,
+                "complete_sha256": None,
+            },
+            "checkpoint_validation_bundle": {
+                "path": None,
+                "manifest_sha256": None,
+                "complete_sha256": None,
+            },
+            "checkpoint_drift_audit_bundle": {
+                "path": None,
+                "manifest_sha256": None,
+                "complete_sha256": None,
+            },
+            "final_checkpoint": {
+                "path": None,
+                "manifest_sha256": None,
+                "complete_sha256": None,
+            },
+        },
+        "hard_thresholds": {
+            "best_aggregate_nll_lte": V3_FINAL_AGGREGATE_NLL,
+            "final_aggregate_nll_lte": V3_FINAL_AGGREGATE_NLL,
+            "chinese_source_nll_lte": V3_FINAL_CHINESE_NLL,
+            "final_scale_relative_l2_lte": 0.05,
+            "reused_sequences_eq": 0,
+            "reused_tokens_eq": 0,
+            "all_reference_epochs_eq": 0,
+            "all_required_metrics_finite": [
+                "loss",
+                "ntp",
+                "mtp",
+                "grad_norm",
+                "nominal_lr",
+                "adjusted_lr",
+            ],
+            "clip_fraction_eq": 0.0,
+            "authenticated_checkpoint_manifest_and_complete_required": True,
+        },
+        "observed": None,
+        "passed": False,
+        "authorizes_training": False,
+    }
+
+
+def _pending_formal_validation_gate() -> dict[str, Any]:
+    return {
+        "required": True,
+        "status": "pending_governed_train_validation_disjointness_and_v3_baseline",
+        "required_additional_sources": list(REQUIRED_ADDITIONAL_VALIDATION_SOURCES),
+        "train_validation_union_disjointness": {
+            "attestation_path": None,
+            "attestation_sha256": None,
+            "stable_id_exact_passed": False,
+            "normalized_text_exact_passed": False,
+            "near_duplicate_threshold": 0.8,
+            "near_duplicate_passed": False,
+        },
+        "v3_final_frozen_validation_baseline": {
+            "bundle_path": None,
+            "manifest_sha256": None,
+            "complete_sha256": None,
+            "checkpoint_complete_sha256": V3_FINAL_COMPLETE_SHA256,
+            "passed": False,
+        },
+        "passed": False,
+        "authorizes_training": False,
+    }
+
+
 def _resolved_identity(recipe_path: Path, lock_path: Path) -> dict[str, Any]:
     recipe = _load_json(recipe_path)
     identity: dict[str, Any] = {
@@ -454,17 +599,15 @@ def _make_capacity_attestation() -> dict[str, Any]:
     return {
         "schema_version": 1,
         "kind": "twen_v4_250m_capacity_attestation",
-        "status": "blocked_pending_materialization",
+        "status": "blocked_pending_governed_preparation_and_launch_gates",
         "launch_enabled": False,
+        "authorizes_training": False,
         "training_started": False,
-        "training_contract": {
-            "max_tokens": 250_000_000,
-            "cooldown_start_tokens": 225_000_000,
-            "global_batch_tokens": GLOBAL_BATCH_TOKENS,
-            "sequence_length": SEQUENCE_LENGTH,
-            "allow_corpus_reuse": False,
-            "complete_tail_batch_required": True,
-        },
+        "scope": (
+            "data capacity, quality, license, and phase separation only; "
+            "calibration, formal validation, and pause-controller gates remain external"
+        ),
+        "training_contract": _formal_training_contract(),
         "config": {
             "path": str(BLOCKED_CONFIG.relative_to(ROOT)),
             "sha256": _sha256(BLOCKED_CONFIG),
@@ -580,9 +723,19 @@ def main() -> int:
     ]
     blockers = [
         "prepared manifest and source-map PENDING sentinels are unresolved",
-        "per-source governed unique capacity has not been attested",
+        "per-source governed unique capacity has not been bound into final prepared corpora",
         "primary/cooldown stable-ID exact and near disjointness has not passed",
-        "ArXiv per-document versioned-license yield is not yet materialized",
+        "13M low-LR calibration COMPLETE and authenticated quality reports are pending",
+        (
+            "formal train/validation union disjointness and the authenticated "
+            "v3-final frozen-validation baseline are pending"
+        ),
+        (
+            "external governed pause/evaluation controller is not implemented; "
+            "the documented train command does not auto-pause or run validation"
+        ),
+        "final launch config and authenticated launch authorization have not been generated",
+        "ArXiv post-filter/refill versioned-license yield is not bound into final prepared data",
         "Chinese semantic conversion noise remains a manual/statistical review gate",
         ("frozen validation does not yet cover ArXiv and every newly introduced formal source"),
     ]
@@ -598,34 +751,29 @@ def main() -> int:
         "training_started": False,
         "config_path": str(BLOCKED_CONFIG.relative_to(ROOT)),
         "config_sha256": _sha256(BLOCKED_CONFIG),
-        "fork_from": "runs/base-dense-v3-500m/step-000000001912-milestone-complete",
-        "contract": {
-            "max_tokens": 250_000_000,
-            "cooldown_start_tokens": 225_000_000,
-            "global_batch_tokens": GLOBAL_BATCH_TOKENS,
-            "allow_corpus_reuse": False,
-            "adapter_optimizer": "muon",
-            "adapter_lr": FORMAL_ADAPTER_LR,
-            "lora_lr": FORMAL_ADAPTER_LR,
-            "scale_lr": FORMAL_SCALE_LR,
-            "warmup_tokens": FORMAL_WARMUP_TOKENS,
-            "lr_schedule": "cosine",
-            "min_lr_ratio": 0.1,
-            "objective": "base_text_ntp_plus_native_mtp_no_9b_logits",
-        },
+        "fork_from": V3_FINAL_CHECKPOINT,
+        "contract": _formal_training_contract(),
         "fork_policy": {
-            "required_model_only_checkpoint": (
-                "runs/base-dense-v3-500m/step-000000001912-milestone-complete"
-            ),
+            "required_model_only_checkpoint": V3_FINAL_CHECKPOINT,
+            "required_checkpoint_complete_sha256": V3_FINAL_COMPLETE_SHA256,
             "reset_optimizer_and_scheduler": True,
             "forbidden_warm_starts": [
                 "runs/base-dense-v4-16m-smoke",
                 "runs/base-dense-v4-13m-low-lr-calibration",
             ],
         },
+        "calibration_gate": _pending_calibration_gate(),
+        "formal_validation_gate": _pending_formal_validation_gate(),
         "pause_evaluation_policy": {
             "checkpoint_every_steps": FORMAL_CHECKPOINT_EVERY_STEPS,
             "pause_at_committed_tokens": list(PAUSE_EVALUATION_TOKENS),
+            "threshold_crossing_semantics": (
+                "first committed optimizer batch at or above each threshold"
+            ),
+            "enforcement": "external_governed_controller",
+            "controller_implemented": False,
+            "current_launch_command_auto_pauses": False,
+            "current_launch_command_runs_validation": False,
             "required_additional_validation_sources": list(REQUIRED_ADDITIONAL_VALIDATION_SOURCES),
             "hard_stop": {
                 "nonfinite_metric": True,
@@ -663,22 +811,15 @@ def main() -> int:
             "locks/base-data-sources-v4-250m.capacity-attestation.json"
         ),
         "blockers": blockers,
-        "launch_command_after_all_gates_pass": [
-            ".venv/bin/python",
-            "-m",
-            "twen.cli",
-            "train",
-            "--stage",
-            "dense-oracle",
-            "--config",
-            str(BLOCKED_CONFIG.relative_to(ROOT)),
-            "--resume",
-            "none",
-            "--fork-from",
-            "runs/base-dense-v3-500m/step-000000001912-milestone-complete",
-            "--progress",
-            "always",
-        ],
+        "launch_command_capabilities": {
+            "current_blocked_config_rejects_training": True,
+            "starts_training_when_explicitly_invoked": False,
+            "automatically_pauses_at_policy_thresholds": False,
+            "automatically_runs_checkpoint_validation": False,
+            "automatically_enforces_post_launch_hard_stops": False,
+        },
+        "launch_command_status": "pending_final_config_authorization_and_controller",
+        "launch_command_after_all_gates_pass": None,
     }
     _write_json(READINESS, readiness)
     return 0

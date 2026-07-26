@@ -819,8 +819,23 @@ peak reserved 升到 28.20 GiB；未 checkpoint 的 B2 与 B4 均越过 5090/WSL
 连续 4-step 与 STOP → resume → SIGUSR1 → complete 分支的 model、Muon/AdamW、
 scheduler、RNG、data cursor、metrics 与全 rank runtime 哈希逐字节一致。最终审计位于
 `artifacts/configuration/v4-optimizer-ab/summary.json`，结论为 `accepted=true`；
-Dashboard 仅将 v4 设为 `launch_enabled=true`。250M/500M formal 仍需要新
-recipe/refill 扩大 unique clean 数据，不能循环当前 16M 来冒充正式训练容量。
+16M smoke 已改为 monitor-only；Dashboard 当前唯一 `launch_enabled=true` 的 v4
+profile 是尚待用户安排的 13M low-LR calibration。250M formal 仍保持 blocked，不能
+循环当前 16M 来冒充正式训练容量。
+
+250M 合同为 225M primary + 25M cooldown、physical B1/GA64、NTP `1.0` +
+native frozen MTP `0.1`、Muon Adapter/Lora `3e-5`、AdamW scale `3e-6`、
+10M warmup 和全程 cosine。它必须从 v3 final model-only fork；checkpoint
+`COMPLETE` SHA256 固定为
+`3a21a50e35de74ecd0ff5b8f00aa29ed6c83f746fc2cf97d4da6b0536262b6c7`。
+当前正式 config 仍有 `PENDING_*`，readiness/capacity 均
+`launch_enabled=false`。13M calibration 的 authenticated quality gate、正式
+train/validation union 不相交与 v3 baseline bundle 也都仍为 pending。
+
+readiness 中的 13M/26M/.../250M 暂停点尚未接入训练引擎：它们要求未来的外部
+governed controller 在第一个达到或越过阈值的完整 optimizer batch 后暂停并运行
+validation。当前文档中的 `twen.cli train` 命令不会自动暂停、评测或执行 post-launch
+hard stop，因此 controller 未实现本身也是正式 launch blocker。
 
 ## 7. Fold 与 sparse 蒸馏
 
@@ -1038,10 +1053,10 @@ loss、NTP/MTP/KD/anchor/hidden、吞吐、显存、LR、gradient norm 与 check
 `configs/web/dashboard.json` 中固定且启动后 SHA 不变的 profile；start 还需要页面二次输入确认，
 stop 会在核验 rank-zero hostname/PID/cmdline/config 身份后发送 SIGTERM，让引擎先 checkpoint。
 
-当前 v1/v2/v3 均为 completed monitor-only。v4 16M profile 已通过 graph-smoke、真实
-B1/B2/B4、功耗/trace 和逐字节恢复门，并作为 allowlist 中唯一
-`launch_enabled=true` 的任务；固定 config SHA 仍为
-`4d13ded603d2cda979fba6d59cb67909287973b6d558dd35dc742538a0b4aa97`。
+当前 v1/v2/v3 与 v4 16M smoke 均为 completed monitor-only。allowlist 中唯一
+`launch_enabled=true` 的任务是尚未运行的 v4 13M low-LR calibration，固定 config
+SHA 为 `3301c226e7ab406311277d82f7a0a26fe58b5597d914bdb24e483b38df98fa79`；
+250M formal 没有可启动 Web profile。
 前台只读验收命令：
 
 ```bash

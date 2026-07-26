@@ -1,4 +1,5 @@
 {
+  "authorizes_training": false,
   "config": {
     "contains_pending_identity_sentinels": true,
     "path": "configs/base/dense-v4-250m-pilot.blocked.yaml",
@@ -31,6 +32,7 @@
     }
   },
   "schema_version": 1,
+  "scope": "data capacity, quality, license, and phase separation only; calibration, formal validation, and pause-controller gates remain external",
   "stages": {
     "cooldown": {
       "license_audit": {
@@ -310,14 +312,40 @@
       "stage": "primary"
     }
   },
-  "status": "blocked_pending_materialization",
+  "status": "blocked_pending_governed_preparation_and_launch_gates",
   "training_contract": {
+    "adapter_lr": 3e-05,
+    "adapter_optimizer": "muon",
     "allow_corpus_reuse": false,
+    "anchor_kl_weight": 0.0,
     "complete_tail_batch_required": true,
     "cooldown_start_tokens": 225000000,
+    "cooldown_tokens": 25000000,
+    "data_mode": "prepared-text",
+    "dense_oracle_weight": 0.0,
     "global_batch_tokens": 262144,
+    "gradient_accumulation_steps": 64,
+    "hidden_alignment_weight": 0.0,
+    "lora_lr": 3e-05,
+    "lr_schedule": "cosine",
     "max_tokens": 250000000,
-    "sequence_length": 4096
+    "micro_batch_size": 1,
+    "min_lr_ratio": 0.1,
+    "mtp_weight": 0.1,
+    "native_mtp_head_frozen": true,
+    "ntp_weight": 1.0,
+    "objective": "base_text_ntp_plus_native_mtp_no_9b_logits",
+    "primary_tokens": 225000000,
+    "scale_lr": 3e-06,
+    "scale_optimizer": "adamw",
+    "sequence_length": 4096,
+    "source_mix_algorithm": "token-deficit-corrected-source-mix-bp-v2",
+    "stage": "dense-oracle",
+    "teacher_kd_weight": 0.0,
+    "teacher_logits_kd": false,
+    "track": "base",
+    "warmup_tokens": 10000000,
+    "world_size": 1
   },
   "training_started": false
 }

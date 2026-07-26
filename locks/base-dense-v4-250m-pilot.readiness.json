@@ -1,27 +1,117 @@
 {
   "blockers": [
     "prepared manifest and source-map PENDING sentinels are unresolved",
-    "per-source governed unique capacity has not been attested",
+    "per-source governed unique capacity has not been bound into final prepared corpora",
     "primary/cooldown stable-ID exact and near disjointness has not passed",
-    "ArXiv per-document versioned-license yield is not yet materialized",
+    "13M low-LR calibration COMPLETE and authenticated quality reports are pending",
+    "formal train/validation union disjointness and the authenticated v3-final frozen-validation baseline are pending",
+    "external governed pause/evaluation controller is not implemented; the documented train command does not auto-pause or run validation",
+    "final launch config and authenticated launch authorization have not been generated",
+    "ArXiv post-filter/refill versioned-license yield is not bound into final prepared data",
     "Chinese semantic conversion noise remains a manual/statistical review gate",
     "frozen validation does not yet cover ArXiv and every newly introduced formal source"
   ],
+  "calibration_gate": {
+    "authorizes_training": false,
+    "config": {
+      "path": "configs/base/dense-v4-13m-low-lr-calibration.yaml",
+      "sha256": "3301c226e7ab406311277d82f7a0a26fe58b5597d914bdb24e483b38df98fa79"
+    },
+    "hard_thresholds": {
+      "all_reference_epochs_eq": 0,
+      "all_required_metrics_finite": [
+        "loss",
+        "ntp",
+        "mtp",
+        "grad_norm",
+        "nominal_lr",
+        "adjusted_lr"
+      ],
+      "authenticated_checkpoint_manifest_and_complete_required": true,
+      "best_aggregate_nll_lte": 2.3766688031972105,
+      "chinese_source_nll_lte": 3.656194313354557,
+      "clip_fraction_eq": 0.0,
+      "final_aggregate_nll_lte": 2.3766688031972105,
+      "final_scale_relative_l2_lte": 0.05,
+      "reused_sequences_eq": 0,
+      "reused_tokens_eq": 0
+    },
+    "observed": null,
+    "passed": false,
+    "required": true,
+    "required_authenticated_evidence": {
+      "checkpoint_drift_audit_bundle": {
+        "complete_sha256": null,
+        "manifest_sha256": null,
+        "path": null
+      },
+      "checkpoint_validation_bundle": {
+        "complete_sha256": null,
+        "manifest_sha256": null,
+        "path": null
+      },
+      "final_checkpoint": {
+        "complete_sha256": null,
+        "manifest_sha256": null,
+        "path": null
+      },
+      "training_report_bundle": {
+        "complete_sha256": null,
+        "manifest_sha256": null,
+        "path": null
+      }
+    },
+    "required_candidate_checkpoints": {
+      "final_milestone_required": true,
+      "global_steps": [
+        40,
+        50
+      ],
+      "same_frozen_v3_validation_contract": true
+    },
+    "required_fork_checkpoint": {
+      "complete_sha256": "3a21a50e35de74ecd0ff5b8f00aa29ed6c83f746fc2cf97d4da6b0536262b6c7",
+      "model_only": true,
+      "path": "runs/base-dense-v3-500m/step-000000001912-milestone-complete",
+      "reset_optimizer_and_scheduler": true
+    },
+    "status": "pending_user_run_and_authenticated_quality_report"
+  },
   "config_path": "configs/base/dense-v4-250m-pilot.blocked.yaml",
   "config_sha256": "f2d31d1ddbb770343796f5f4d57e7fa1fe6677097dc08ba1debaa4c8dc0f8af5",
   "contract": {
     "adapter_lr": 3e-05,
     "adapter_optimizer": "muon",
     "allow_corpus_reuse": false,
+    "anchor_kl_weight": 0.0,
+    "complete_tail_batch_required": true,
     "cooldown_start_tokens": 225000000,
+    "cooldown_tokens": 25000000,
+    "data_mode": "prepared-text",
+    "dense_oracle_weight": 0.0,
     "global_batch_tokens": 262144,
+    "gradient_accumulation_steps": 64,
+    "hidden_alignment_weight": 0.0,
     "lora_lr": 3e-05,
     "lr_schedule": "cosine",
     "max_tokens": 250000000,
+    "micro_batch_size": 1,
     "min_lr_ratio": 0.1,
+    "mtp_weight": 0.1,
+    "native_mtp_head_frozen": true,
+    "ntp_weight": 1.0,
     "objective": "base_text_ntp_plus_native_mtp_no_9b_logits",
+    "primary_tokens": 225000000,
     "scale_lr": 3e-06,
-    "warmup_tokens": 10000000
+    "scale_optimizer": "adamw",
+    "sequence_length": 4096,
+    "source_mix_algorithm": "token-deficit-corrected-source-mix-bp-v2",
+    "stage": "dense-oracle",
+    "teacher_kd_weight": 0.0,
+    "teacher_logits_kd": false,
+    "track": "base",
+    "warmup_tokens": 10000000,
+    "world_size": 1
   },
   "fork_from": "runs/base-dense-v3-500m/step-000000001912-milestone-complete",
   "fork_policy": {
@@ -29,29 +119,55 @@
       "runs/base-dense-v4-16m-smoke",
       "runs/base-dense-v4-13m-low-lr-calibration"
     ],
+    "required_checkpoint_complete_sha256": "3a21a50e35de74ecd0ff5b8f00aa29ed6c83f746fc2cf97d4da6b0536262b6c7",
     "required_model_only_checkpoint": "runs/base-dense-v3-500m/step-000000001912-milestone-complete",
     "reset_optimizer_and_scheduler": true
   },
+  "formal_validation_gate": {
+    "authorizes_training": false,
+    "passed": false,
+    "required": true,
+    "required_additional_sources": [
+      "science_arxiv_open_permissive",
+      "code_stackv2_edu_permissive",
+      "multilingual_common_corpus_permissive",
+      "education_libretexts_permissive",
+      "public_domain_project_gutenberg"
+    ],
+    "status": "pending_governed_train_validation_disjointness_and_v3_baseline",
+    "train_validation_union_disjointness": {
+      "attestation_path": null,
+      "attestation_sha256": null,
+      "near_duplicate_passed": false,
+      "near_duplicate_threshold": 0.8,
+      "normalized_text_exact_passed": false,
+      "stable_id_exact_passed": false
+    },
+    "v3_final_frozen_validation_baseline": {
+      "bundle_path": null,
+      "checkpoint_complete_sha256": "3a21a50e35de74ecd0ff5b8f00aa29ed6c83f746fc2cf97d4da6b0536262b6c7",
+      "complete_sha256": null,
+      "manifest_sha256": null,
+      "passed": false
+    }
+  },
   "kind": "twen_v4_250m_pilot_readiness",
-  "launch_command_after_all_gates_pass": [
-    ".venv/bin/python",
-    "-m",
-    "twen.cli",
-    "train",
-    "--stage",
-    "dense-oracle",
-    "--config",
-    "configs/base/dense-v4-250m-pilot.blocked.yaml",
-    "--resume",
-    "none",
-    "--fork-from",
-    "runs/base-dense-v3-500m/step-000000001912-milestone-complete",
-    "--progress",
-    "always"
-  ],
+  "launch_command_after_all_gates_pass": null,
+  "launch_command_capabilities": {
+    "automatically_enforces_post_launch_hard_stops": false,
+    "automatically_pauses_at_policy_thresholds": false,
+    "automatically_runs_checkpoint_validation": false,
+    "current_blocked_config_rejects_training": true,
+    "starts_training_when_explicitly_invoked": false
+  },
+  "launch_command_status": "pending_final_config_authorization_and_controller",
   "launch_enabled": false,
   "pause_evaluation_policy": {
     "checkpoint_every_steps": 50,
+    "controller_implemented": false,
+    "current_launch_command_auto_pauses": false,
+    "current_launch_command_runs_validation": false,
+    "enforcement": "external_governed_controller",
     "hard_stop": {
       "checkpoint_lineage_failure": true,
       "data_reuse_or_epoch_gt_zero": true,
@@ -78,6 +194,7 @@
       "education_libretexts_permissive",
       "public_domain_project_gutenberg"
     ],
+    "threshold_crossing_semantics": "first committed optimizer batch at or above each threshold",
     "validation_stop": {
       "aggregate_nll_above_v3_once": 0.01,
       "aggregate_nll_above_v3_twice": 0.005,
