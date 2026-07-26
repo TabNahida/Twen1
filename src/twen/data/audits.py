@@ -21,6 +21,7 @@ import urllib.parse
 import zlib
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path, PurePosixPath
 
 from ..io.download import sha256_file
@@ -65,6 +66,68 @@ _SENSITIVE_QUERY_KEYS = {
     "secret",
     "token",
 }
+_GAMBLING_OR_SEO = re.compile(
+    r"(?:博彩|赌博|賭博|赌场|賭場|现金网|娱乐城|娛樂城|彩票(?:平台|代理|开户)|"
+    r"时时彩|六合彩|百家乐|百家樂|老虎机|老虎機|体育投注|體育投注|"
+    r"bet365|博狗博彩|博彩通|皇冠(?:备用|備用|娱乐|娛樂)|"
+    r"太阳城(?:娱乐|娛樂))",
+    re.I,
+)
+_GAMBLING_CALL_TO_ACTION = re.compile(
+    r"(?:开户|開戶|代理|投注|下注|网址|網址|客服|送彩金|送彩金|返利)",
+    re.I,
+)
+_SEO_STITCHING = re.compile(
+    r"(?:备用网址|備用網址|官网入口|官網入口|点击进入|點擊進入|"
+    r"关键词优化|關鍵詞優化|SEO优化|SEO優化|"
+    r"织梦内容管理系统|織夢內容管理系統|好织梦|dedecms|media_span_url)",
+    re.I,
+)
+_MOJIBAKE = re.compile(
+    r"(?:\ufffd|锟斤拷|烫烫烫|屯屯屯|Ã[\x80-\xbf]|Â[\x80-\xbf]|â€[™œ“”])"
+)
+_BOILERPLATE_MARKERS = (
+    re.compile(r"(?:上一篇|上一頁|下一篇|下一頁)\s*[:\N{FULLWIDTH COLON}]?"),
+    re.compile(r"(?:相关阅读|相關閱讀|相关文章|相關文章|相关推荐|相關推薦)"),
+    re.compile(r"(?:猜你喜欢|猜你喜歡|热门跟帖|熱門跟帖|查看更多评论|查看更多評論)"),
+    re.compile(r"(?:扫码(?:手机)?观看|掃碼(?:手機)?觀看|微信[“\"]?扫一扫|微信[「\"]?掃一掃)"),
+    re.compile(r"(?:版权与免责声明|版權與免責聲明|免责声明|免責聲明)"),
+    re.compile(
+        r"(?:责任编辑|責任編輯|浏览数|瀏覽數|点击量|點擊量)"
+        r"\s*[:\N{FULLWIDTH COLON}]?"
+    ),
+    re.compile(r"(?:ICP(?:备|備)案号|公网安备|公網安備)"),
+)
+# These are deliberately small sets of high-frequency one-to-one variants.
+# They are not a language detector.  Rejection requires substantial evidence
+# from *both* sets and frequent switching, so normal all-simplified or
+# all-traditional documents are not penalized.
+_SIMPLIFIED_VARIANTS = frozenset(
+    "万与业东严为义乌乐书买云亚产亩亲亿仅从仓仪价众优会体余来侣侧侦"
+    "儿党兰关兴养兽冈册写军农冲决况冻净准凉减几凤凯击刘则刚创别删"
+    "动务势区医华协单卖卫厂历压厕县发变叶号后吓吗吕吴员听启园围图"
+    "国圣场坏块坚坛坝声处备复头夸夹夺奋奖妇妈孙学实审宪宫宽宾寻导"
+    "层届岁归当录彻忆忧怀态总惊户扑执扩扫扬扰护报担拟拢拣挂挡挤挥"
+    "损换据摆数斗断无时术机权条来极标样树桥梦检楼欢欧歼毁毕气汇汉"
+    "没测济爱现电画疗监盘礼离种积称稳笔简签类粮纪约级练组经绝统继"
+    "续网罗罚联聪肃胜节范荐药获营虑虚虫补见观规觉触订认让证评识诉"
+    "词试话说读谁调谈谊谋谱负财责贤质账货资转轮软达过运还进远选递"
+    "逻邮邻郑酿里鉴针钟铁长门间队阳阴陈际随隐难雾静顶项顺须领风飞"
+    "马验鱼鸟鸡麦黄齐齿龙"
+)
+_TRADITIONAL_VARIANTS = frozenset(
+    "萬與業東嚴為義烏樂書買雲亞產畝親億僅從倉儀價眾優會體餘來侶側偵"
+    "兒黨蘭關興養獸岡冊寫軍農衝決況凍淨準涼減幾鳳凱擊劉則剛創別刪"
+    "動務勢區醫華協單賣衛廠歷壓廁縣發變葉號後嚇嗎呂吳員聽啟園圍圖"
+    "國聖場壞塊堅壇壩聲處備復頭誇夾奪奮獎婦媽孫學實審憲宮寬賓尋導"
+    "層屆歲歸當錄徹憶憂懷態總驚戶撲執擴掃揚擾護報擔擬攏揀掛擋擠揮"
+    "損換據擺數鬥斷無時術機權條來極標樣樹橋夢檢樓歡歐殲毀畢氣匯漢"
+    "沒測濟愛現電畫療監盤禮離種積稱穩筆簡簽類糧紀約級練組經絕統繼"
+    "續網羅罰聯聰肅勝節範薦藥獲營慮虛蟲補見觀規覺觸訂認讓證評識訴"
+    "詞試話說讀誰調談誼謀譜負財責賢質賬貨資轉輪軟達過運還進遠選遞"
+    "邏郵鄰鄭釀裡鑒針鐘鐵長門間隊陽陰陳際隨隱難霧靜頂項順須領風飛"
+    "馬驗魚鳥雞麥黃齊齒龍"
+)
 _MASK64 = (1 << 64) - 1
 _SIGNATURE_BINS = 64
 _BAND_SIZE = 4
@@ -73,6 +136,83 @@ _SHINGLE_SIZE = 5
 
 class DataAuditError(ValueError):
     """Raised when an audit input or attestation is unauthenticated."""
+
+
+def content_quality_rejection_reasons(
+    text: str,
+    *,
+    category: str = "general",
+) -> tuple[str, ...]:
+    """Return deterministic, conservative corpus-quality rejection reasons.
+
+    The policy intentionally records reason codes instead of rewriting text.
+    Code is excluded because repeated lines, symbols, and short boundaries are
+    often meaningful there.  The caller can therefore count each failure mode
+    and project the complete rejection ledger without retaining raw findings.
+    """
+
+    if not isinstance(text, str) or category == "code" or "code" in category.casefold():
+        return ()
+    reasons: list[str] = []
+    gambling_hits = tuple(_GAMBLING_OR_SEO.finditer(text))
+    seo_stitching_hits = tuple(_SEO_STITCHING.finditer(text))
+    if len(gambling_hits) >= 2 or (
+        gambling_hits and _GAMBLING_CALL_TO_ACTION.search(text) is not None
+    ) or len(seo_stitching_hits) >= 2:
+        reasons.append("gambling_or_seo_stitching_spam")
+
+    simplified_positions = [
+        index for index, character in enumerate(text) if character in _SIMPLIFIED_VARIANTS
+    ]
+    traditional_positions = [
+        index for index, character in enumerate(text) if character in _TRADITIONAL_VARIANTS
+    ]
+    variant_total = len(simplified_positions) + len(traditional_positions)
+    if (
+        len(simplified_positions) >= 8
+        and len(traditional_positions) >= 8
+        and min(len(simplified_positions), len(traditional_positions)) / variant_total >= 0.12
+    ):
+        # Build the switch count without depending on locale or a conversion
+        # library.  Membership is disjoint for the curated variant sets.
+        ordered = sorted(
+            [(index, "s") for index in simplified_positions]
+            + [(index, "t") for index in traditional_positions]
+        )
+        switches = sum(left[1] != right[1] for left, right in pairwise(ordered))
+        if switches >= 6:
+            reasons.append("mixed_chinese_script_conversion_artifact")
+
+    paragraphs = [
+        re.sub(r"\s+", " ", paragraph).strip()
+        for paragraph in re.split(r"\n\s*\n|\n", text)
+    ]
+    substantial = [paragraph for paragraph in paragraphs if len(paragraph) >= 48]
+    if len(substantial) != len(set(substantial)):
+        reasons.append("repeated_paragraph")
+
+    control_count = sum(
+        unicodedata.category(character) in {"Cc", "Cf", "Co", "Cs"}
+        and character not in "\n\r\t"
+        for character in text
+    )
+    if _MOJIBAKE.search(text) is not None or (
+        len(text) >= 200 and control_count / len(text) >= 0.01
+    ):
+        reasons.append("mojibake_or_garbled_text")
+
+    marker_count = sum(pattern.search(text) is not None for pattern in _BOILERPLATE_MARKERS)
+    nonempty_lines = [line.strip() for line in text.splitlines() if line.strip()]
+    tiny_line_ratio = (
+        sum(len(line) <= 4 for line in nonempty_lines) / len(nonempty_lines)
+        if nonempty_lines
+        else 0.0
+    )
+    if marker_count >= 4 or (
+        len(nonempty_lines) >= 24 and tiny_line_ratio >= 0.55 and marker_count >= 2
+    ):
+        reasons.append("crawler_boilerplate_or_abnormal_boundaries")
+    return tuple(reasons)
 
 
 def _canonical_sha256(value: object) -> str:
@@ -543,6 +683,14 @@ def build_base_audit_attestation(
         "train_validation_near_matches": 0,
         "cross_source_near_matches": 0,
         "contextual_pii_documents": 0,
+        "content_quality_documents": 0,
+        "content_quality_reasons": {
+            "gambling_or_seo_stitching_spam": 0,
+            "mixed_chinese_script_conversion_artifact": 0,
+            "repeated_paragraph": 0,
+            "mojibake_or_garbled_text": 0,
+            "crawler_boilerplate_or_abnormal_boundaries": 0,
+        },
         "benchmark_overlap_documents": 0,
         "rejection_events": 0,
         "findings_recorded": 0,
@@ -598,6 +746,23 @@ def build_base_audit_attestation(
                     line_number=line_number,
                     content_sha=content_sha,
                 )
+                quality_reasons = content_quality_rejection_reasons(
+                    text,
+                    category=category,
+                )
+                if quality_reasons:
+                    metrics["content_quality_documents"] += 1
+                    reason_metrics = metrics["content_quality_reasons"]
+                    assert isinstance(reason_metrics, dict)
+                    for reason in quality_reasons:
+                        reason_metrics[reason] += 1
+                    record(
+                        {
+                            "gate": "deterministic_content_quality_scan",
+                            "document": document,
+                            "reasons": list(quality_reasons),
+                        }
+                    )
                 categories = _contextual_pii_categories(text)
                 if categories:
                     metrics["contextual_pii_documents"] += 1
@@ -809,6 +974,14 @@ def build_base_audit_attestation(
             ),
             "passed": metrics["contextual_pii_documents"] == 0,
         },
+        "deterministic_content_quality_scan": {
+            "status": (
+                "complete_policy_v1_no_findings"
+                if metrics["content_quality_documents"] == 0
+                else "failed_findings_present"
+            ),
+            "passed": metrics["content_quality_documents"] == 0,
+        },
         "project_benchmark_13gram_scan": {
             "status": (
                 "pending_benchmark_registry"
@@ -860,6 +1033,10 @@ def build_base_audit_attestation(
                 "estimated_jaccard_threshold": near_duplicate_threshold,
             },
             "contextual_pii": "deterministic-contextual-regex+luhn+url-query-v1",
+            "content_quality": (
+                "gambling-seo+mixed-script+repeated-paragraph+mojibake+"
+                "crawler-boilerplate-deterministic-v1"
+            ),
             "benchmark_overlap": "unicode-nfkc-casefold-lexical-13gram-sha256-v1",
             "findings_store_raw_text": False,
             "max_findings": max_findings,

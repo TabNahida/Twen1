@@ -14,6 +14,8 @@ CURSOR_SCHEMA_VERSION = 2
 SHUFFLE_ALGORITHM = "shard-local-affine-v1"
 QUALITY_COOLDOWN_CURSOR_SCHEMA_VERSION = 1
 QUALITY_COOLDOWN_CURSOR_KIND = "deterministic-two-phase-quality-cooldown"
+SOURCE_MIX_COOLDOWN_CURSOR_SCHEMA_VERSION = 1
+SOURCE_MIX_COOLDOWN_CURSOR_KIND = "deterministic-source-mix-quality-cooldown"
 SOURCE_MAP_ALGORITHM = "authenticated-extracted-output-map-v1"
 SOURCE_MIX_CURSOR_SCHEMA_VERSION = 2
 SOURCE_MIX_CURSOR_KIND = "deterministic-source-mix"
@@ -234,22 +236,14 @@ class AuthenticatedSourceMap:
             if len(mix) != len(self.mix_basis_points):
                 raise ValueError("authenticated source-map mix IDs must be unique")
             if set(mix) != set(self.source_ids):
-                raise ValueError(
-                    "authenticated source-map mix must cover source IDs exactly"
-                )
+                raise ValueError("authenticated source-map mix must cover source IDs exactly")
             if any(
-                isinstance(weight, bool)
-                or not isinstance(weight, int)
-                or weight <= 0
+                isinstance(weight, bool) or not isinstance(weight, int) or weight <= 0
                 for weight in mix.values()
             ):
-                raise ValueError(
-                    "authenticated source-map mix weights must be positive integers"
-                )
+                raise ValueError("authenticated source-map mix weights must be positive integers")
             if sum(mix.values()) != SOURCE_MIX_BASIS_POINTS:
-                raise ValueError(
-                    "authenticated source-map mix must total 10,000 basis points"
-                )
+                raise ValueError("authenticated source-map mix must total 10,000 basis points")
 
     @property
     def source_ids(self) -> tuple[str, ...]:
@@ -312,18 +306,14 @@ class AuthenticatedSourceMap:
             "extracted_manifest_sha256",
         ):
             if not isinstance(payload[field_name], str):
-                raise ValueError(
-                    f"authenticated source-map {field_name} must be a string"
-                )
+                raise ValueError(f"authenticated source-map {field_name} must be a string")
         sequence_length = payload["sequence_length"]
         if (
             isinstance(sequence_length, bool)
             or not isinstance(sequence_length, int)
             or sequence_length <= 0
         ):
-            raise ValueError(
-                "authenticated source-map sequence_length must be a positive integer"
-            )
+            raise ValueError("authenticated source-map sequence_length must be a positive integer")
 
         expected_shard_fields = {
             "source_id",
@@ -336,9 +326,7 @@ class AuthenticatedSourceMap:
         shards: list[AuthenticatedSourceShard] = []
         for index, item in enumerate(raw_shards):
             if not isinstance(item, Mapping):
-                raise ValueError(
-                    f"authenticated source-map shards[{index}] must be an object"
-                )
+                raise ValueError(f"authenticated source-map shards[{index}] must be an object")
             if set(item) != expected_shard_fields:
                 raise ValueError(
                     f"authenticated source-map shards[{index}] fields differ from schema"
@@ -351,15 +339,13 @@ class AuthenticatedSourceMap:
             ):
                 if not isinstance(item[field_name], str):
                     raise ValueError(
-                        "authenticated source-map "
-                        f"shards[{index}].{field_name} must be a string"
+                        f"authenticated source-map shards[{index}].{field_name} must be a string"
                     )
             for field_name in ("sequence_count", "global_sample_start"):
                 value = item[field_name]
                 if isinstance(value, bool) or not isinstance(value, int):
                     raise ValueError(
-                        "authenticated source-map "
-                        f"shards[{index}].{field_name} must be an integer"
+                        f"authenticated source-map shards[{index}].{field_name} must be an integer"
                     )
             shards.append(
                 AuthenticatedSourceShard(
@@ -375,13 +361,9 @@ class AuthenticatedSourceMap:
         mix_basis_points: list[tuple[str, int]] = []
         for source_id, weight in raw_mix.items():
             if not isinstance(source_id, str) or not source_id.strip():
-                raise ValueError(
-                    "authenticated source-map mix IDs must be non-empty strings"
-                )
+                raise ValueError("authenticated source-map mix IDs must be non-empty strings")
             if isinstance(weight, bool) or not isinstance(weight, int):
-                raise ValueError(
-                    "authenticated source-map mix weights must be integers"
-                )
+                raise ValueError("authenticated source-map mix weights must be integers")
             mix_basis_points.append((source_id, weight))
 
         result = cls(
@@ -445,7 +427,9 @@ class AuthenticatedSourceMap:
         try:
             manifest_raw = manifest_path.read_bytes()
         except OSError as error:
-            raise ValueError(f"cannot read authenticated extracted manifest: {manifest_path}") from error
+            raise ValueError(
+                f"cannot read authenticated extracted manifest: {manifest_path}"
+            ) from error
         actual_manifest_sha = hashlib.sha256(manifest_raw).hexdigest()
         if actual_manifest_sha != expected_manifest_sha:
             raise ValueError("authenticated extracted manifest SHA256 mismatch")
@@ -536,8 +520,7 @@ class AuthenticatedSourceMap:
                 raw_outputs = raw_chunk.get("outputs")
                 if not isinstance(raw_outputs, list):
                     raise ValueError(
-                        f"extracted source {source_id!r} chunk {chunk_index} outputs "
-                        "must be a list"
+                        f"extracted source {source_id!r} chunk {chunk_index} outputs must be a list"
                     )
                 for output_index, raw_output in enumerate(raw_outputs):
                     if not isinstance(raw_output, Mapping):
@@ -579,9 +562,7 @@ class AuthenticatedSourceMap:
         for output_path, (expected_size, expected_digest) in selected_files.items():
             _, actual_size, actual_digest = output_owners[output_path]
             if (actual_size, actual_digest) != (expected_size, expected_digest):
-                raise ValueError(
-                    f"authenticated output metadata mismatch for {output_path}"
-                )
+                raise ValueError(f"authenticated output metadata mismatch for {output_path}")
 
         mix_basis_points: tuple[tuple[str, int], ...] = ()
         data_contract = lineage.get("data_contract")
@@ -592,9 +573,7 @@ class AuthenticatedSourceMap:
             "license_audit",
             "materialization_audit",
         )
-        extracted_contract_presence = [
-            field in extracted for field in extracted_contract_fields
-        ]
+        extracted_contract_presence = [field in extracted for field in extracted_contract_fields]
         if any(extracted_contract_presence) and not all(extracted_contract_presence):
             raise ValueError("authenticated extracted data contract is partial")
         if all(extracted_contract_presence):
@@ -604,9 +583,7 @@ class AuthenticatedSourceMap:
                 )
             for field in extracted_contract_fields:
                 if data_contract.get(field) != extracted.get(field):
-                    raise ValueError(
-                        f"prepared/extracted data contract differs for {field}"
-                    )
+                    raise ValueError(f"prepared/extracted data contract differs for {field}")
             source_map_contract = data_contract.get("source_map")
             if (
                 not isinstance(source_map_contract, Mapping)
@@ -614,17 +591,13 @@ class AuthenticatedSourceMap:
             ):
                 raise ValueError("unsupported authenticated source_map contract")
             raw_roles = source_map_contract.get("roles")
-            raw_train_map = (
-                raw_roles.get("train") if isinstance(raw_roles, Mapping) else None
-            )
+            raw_train_map = raw_roles.get("train") if isinstance(raw_roles, Mapping) else None
             if not isinstance(raw_train_map, list):
                 raise ValueError("authenticated source_map train role is invalid")
             explicit_owners: dict[str, tuple[str, int, str]] = {}
             for index, raw_output in enumerate(raw_train_map):
                 if not isinstance(raw_output, Mapping):
-                    raise ValueError(
-                        f"authenticated source_map train[{index}] is invalid"
-                    )
+                    raise ValueError(f"authenticated source_map train[{index}] is invalid")
                 output_path = _safe_output_path(
                     raw_output.get("path"),
                     f"source_map.train[{index}].path",
@@ -644,22 +617,17 @@ class AuthenticatedSourceMap:
                     ),
                 )
                 if output_path in explicit_owners:
-                    raise ValueError(
-                        f"duplicate authenticated source_map output: {output_path}"
-                    )
+                    raise ValueError(f"duplicate authenticated source_map output: {output_path}")
                 explicit_owners[output_path] = owner
             if explicit_owners != output_owners:
-                raise ValueError(
-                    "explicit source_map differs from authenticated chunk ownership"
-                )
+                raise ValueError("explicit source_map differs from authenticated chunk ownership")
 
             source_mix_contract = data_contract.get("source_mix")
             if (
                 not isinstance(source_mix_contract, Mapping)
                 or source_mix_contract.get("algorithm") != SOURCE_MIX_ALGORITHM
                 or source_mix_contract.get("unit") != "valid_tokens"
-                or source_mix_contract.get("basis_points_total")
-                != SOURCE_MIX_BASIS_POINTS
+                or source_mix_contract.get("basis_points_total") != SOURCE_MIX_BASIS_POINTS
             ):
                 raise ValueError("unsupported authenticated source_mix contract")
             raw_mix_sources = source_mix_contract.get("sources")
@@ -668,36 +636,22 @@ class AuthenticatedSourceMap:
             mix: dict[str, int] = {}
             for index, raw_source in enumerate(raw_mix_sources):
                 if not isinstance(raw_source, Mapping):
-                    raise ValueError(
-                        f"authenticated source_mix source {index} is invalid"
-                    )
+                    raise ValueError(f"authenticated source_mix source {index} is invalid")
                 source_id = _require_nonempty_string(
                     raw_source.get("source_id"),
                     f"source_mix.sources[{index}].source_id",
                 )
                 weight = raw_source.get("mix_basis_points")
-                if (
-                    isinstance(weight, bool)
-                    or not isinstance(weight, int)
-                    or weight <= 0
-                ):
-                    raise ValueError(
-                        f"source_mix weight for {source_id!r} is invalid"
-                    )
+                if isinstance(weight, bool) or not isinstance(weight, int) or weight <= 0:
+                    raise ValueError(f"source_mix weight for {source_id!r} is invalid")
                 if source_id in mix:
-                    raise ValueError(
-                        f"duplicate authenticated source_mix source: {source_id}"
-                    )
+                    raise ValueError(f"duplicate authenticated source_mix source: {source_id}")
                 mix[source_id] = weight
             if set(mix) != source_ids or sum(mix.values()) != SOURCE_MIX_BASIS_POINTS:
-                raise ValueError(
-                    "authenticated source_mix does not cover source_map exactly"
-                )
+                raise ValueError("authenticated source_mix does not cover source_map exactly")
             mix_basis_points = tuple(sorted(mix.items()))
         elif data_contract is not None:
-            raise ValueError(
-                "prepared lineage has a data contract absent from extracted manifest"
-            )
+            raise ValueError("prepared lineage has a data contract absent from extracted manifest")
 
         manifest_root = manifest_path.parent
         resolved_outputs: dict[Path, str] = {}
@@ -744,9 +698,7 @@ class AuthenticatedSourceMap:
                 f"prepared.shards[{index}].source_sha256",
             )
             if prepared_digest != expected_digest:
-                raise ValueError(
-                    f"prepared shard source SHA256 differs for {output_path}"
-                )
+                raise ValueError(f"prepared shard source SHA256 differs for {output_path}")
             source_id = output_owners[output_path][0]
             sequence_count = getattr(entry, "sequence_count", None)
             if (
@@ -754,9 +706,7 @@ class AuthenticatedSourceMap:
                 or not isinstance(sequence_count, int)
                 or sequence_count <= 0
             ):
-                raise ValueError(
-                    f"prepared.shards[{index}].sequence_count must be positive"
-                )
+                raise ValueError(f"prepared.shards[{index}].sequence_count must be positive")
             global_sample_start = _require_nonnegative_integer(
                 getattr(entry, "global_sample_start", None),
                 f"prepared.shards[{index}].global_sample_start",
@@ -777,8 +727,7 @@ class AuthenticatedSourceMap:
         if seen_prepared_outputs != set(selected_files):
             missing = sorted(set(selected_files) - seen_prepared_outputs)
             raise ValueError(
-                "prepared corpus underfills authenticated train inventory: "
-                + ", ".join(missing)
+                "prepared corpus underfills authenticated train inventory: " + ", ".join(missing)
             )
         return cls(
             prepared_dataset_fingerprint=prepared_fingerprint,
@@ -1133,15 +1082,13 @@ class DeterministicSourceMixCursor:
             value = weights_basis_points[source_id]
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
                 raise ValueError(
-                    f"source-mix weight for {source_id!r} must be positive integer "
-                    "basis points"
+                    f"source-mix weight for {source_id!r} must be positive integer basis points"
                 )
             weights[source_id] = value
         weight_total = sum(weights.values())
         if weight_total != SOURCE_MIX_BASIS_POINTS:
             raise ValueError(
-                "source-mix basis-point weights underfill or overfill 10,000: "
-                f"{weight_total}"
+                f"source-mix basis-point weights underfill or overfill 10,000: {weight_total}"
             )
 
         def normalized_counter(
@@ -1150,13 +1097,9 @@ class DeterministicSourceMixCursor:
             field_name: str,
             expected_total: int,
         ) -> dict[str, int]:
-            raw: Mapping[str, int] = (
-                dict.fromkeys(source_ids, 0) if value is None else value
-            )
+            raw: Mapping[str, int] = dict.fromkeys(source_ids, 0) if value is None else value
             if not isinstance(raw, Mapping) or set(raw) != set(source_ids):
-                raise ValueError(
-                    f"{field_name} must cover authenticated sources exactly"
-                )
+                raise ValueError(f"{field_name} must cover authenticated sources exactly")
             result: dict[str, int] = {}
             for source_id in source_ids:
                 result[source_id] = _require_nonnegative_integer(
@@ -1164,9 +1107,7 @@ class DeterministicSourceMixCursor:
                     f"{field_name}.{source_id}",
                 )
             if sum(result.values()) != expected_total:
-                raise ValueError(
-                    f"{field_name} total differs from its global counter"
-                )
+                raise ValueError(f"{field_name} total differs from its global counter")
             return result
 
         samples_by_source = normalized_counter(
@@ -1183,13 +1124,9 @@ class DeterministicSourceMixCursor:
             samples = samples_by_source[source_id]
             source_tokens = tokens_by_source[source_id]
             if source_tokens > samples * source_map.sequence_length:
-                raise ValueError(
-                    f"committed token count exceeds prepared capacity for {source_id}"
-                )
+                raise ValueError(f"committed token count exceeds prepared capacity for {source_id}")
             if (samples == 0) != (source_tokens == 0):
-                raise ValueError(
-                    f"committed sample/token zero-state differs for {source_id}"
-                )
+                raise ValueError(f"committed sample/token zero-state differs for {source_id}")
 
         self.source_map = source_map
         self.seed = seed
@@ -1210,10 +1147,7 @@ class DeterministicSourceMixCursor:
                 }
             )
             layout = DatasetLayout.from_shards(
-                (
-                    (item.shard_id, item.sequence_count)
-                    for item in source_shards
-                ),
+                ((item.shard_id, item.sequence_count) for item in source_shards),
                 fingerprint=layout_fingerprint,
             )
             source_seed = _stable_integer(
@@ -1265,8 +1199,7 @@ class DeterministicSourceMixCursor:
         return {
             source_id: (
                 self._weights[source_id] * self.committed_tokens
-                - self.committed_tokens_by_source[source_id]
-                * SOURCE_MIX_BASIS_POINTS
+                - self.committed_tokens_by_source[source_id] * SOURCE_MIX_BASIS_POINTS
             )
             for source_id in self._source_ids
         }
@@ -1344,17 +1277,12 @@ class DeterministicSourceMixCursor:
         deficits = {
             source_id: (
                 self._weights[source_id] * target_total
-                - simulated_tokens_by_source[source_id]
-                * SOURCE_MIX_BASIS_POINTS
+                - simulated_tokens_by_source[source_id] * SOURCE_MIX_BASIS_POINTS
             )
             for source_id in self._source_ids
         }
         largest = max(deficits.values())
-        candidates = {
-            source_id
-            for source_id, deficit in deficits.items()
-            if deficit == largest
-        }
+        candidates = {source_id for source_id, deficit in deficits.items() if deficit == largest}
         initial_target = self._schedule[global_position % self.interleave_period]
         if initial_target in candidates:
             return initial_target
@@ -1410,9 +1338,7 @@ class DeterministicSourceMixCursor:
             raise ValueError("global_batch_samples must be a positive integer")
         if self._pending_plan is not None:
             if len(self._pending_plan) != global_batch_samples:
-                raise ValueError(
-                    "another source-mix batch is pending; commit or abort it first"
-                )
+                raise ValueError("another source-mix batch is pending; commit or abort it first")
             return self._pending_plan
 
         simulated_tokens = self.committed_tokens_by_source
@@ -1427,9 +1353,7 @@ class DeterministicSourceMixCursor:
                 simulated_total_tokens=simulated_total,
                 global_position=global_position,
             )
-            source_position = (
-                committed_samples[source_id] + planned_samples[source_id]
-            )
+            source_position = committed_samples[source_id] + planned_samples[source_id]
             references.append(
                 self._reference(
                     global_position=global_position,
@@ -1475,16 +1399,11 @@ class DeterministicSourceMixCursor:
         references = tuple(planned_references)
         if references != self._pending_plan:
             raise ValueError("source-mix commit references differ from pending plan")
-        if (
-            _require_sha256(plan_fingerprint, "plan_fingerprint")
-            != self._pending_plan_fingerprint
-        ):
+        if _require_sha256(plan_fingerprint, "plan_fingerprint") != self._pending_plan_fingerprint:
             raise ValueError("source-mix commit plan fingerprint mismatch")
         per_reference = tuple(valid_tokens_per_reference)
         if len(per_reference) != len(references):
-            raise ValueError(
-                "valid_tokens_per_reference length differs from planned references"
-            )
+            raise ValueError("valid_tokens_per_reference length differs from planned references")
         for index, valid_tokens in enumerate(per_reference):
             if (
                 isinstance(valid_tokens, bool)
@@ -1494,12 +1413,10 @@ class DeterministicSourceMixCursor:
                 raise ValueError(
                     f"valid_tokens_per_reference[{index}] is outside prepared capacity"
                 )
-        if not isinstance(valid_tokens_by_source, Mapping) or set(
-            valid_tokens_by_source
-        ) != set(self._source_ids):
-            raise ValueError(
-                "valid_tokens_by_source must cover authenticated sources exactly"
-            )
+        if not isinstance(valid_tokens_by_source, Mapping) or set(valid_tokens_by_source) != set(
+            self._source_ids
+        ):
+            raise ValueError("valid_tokens_by_source must cover authenticated sources exactly")
         normalized_by_source: dict[str, int] = {}
         for source_id in self._source_ids:
             normalized_by_source[source_id] = _require_nonnegative_integer(
@@ -1517,9 +1434,7 @@ class DeterministicSourceMixCursor:
             aggregated[reference.source_id] += valid_tokens
             planned_sample_counts[reference.source_id] += 1
         if aggregated != normalized_by_source:
-            raise ValueError(
-                "valid_tokens_by_source differs from planned reference aggregation"
-            )
+            raise ValueError("valid_tokens_by_source differs from planned reference aggregation")
         if (
             isinstance(token_count, bool)
             or not isinstance(token_count, int)
@@ -1527,9 +1442,7 @@ class DeterministicSourceMixCursor:
             or token_count != sum(per_reference)
             or token_count != sum(normalized_by_source.values())
         ):
-            raise ValueError(
-                "source-mix global token total differs from reference/source totals"
-            )
+            raise ValueError("source-mix global token total differs from reference/source totals")
 
         committed_tokens_by_source = self.committed_tokens_by_source
         for source_id in self._source_ids:
@@ -1539,9 +1452,7 @@ class DeterministicSourceMixCursor:
             next_global_sample=self.next_global_sample + len(references),
             committed_tokens=self.committed_tokens + token_count,
             committed_samples_by_source=tuple(sorted(committed_samples.items())),
-            committed_tokens_by_source=tuple(
-                sorted(committed_tokens_by_source.items())
-            ),
+            committed_tokens_by_source=tuple(sorted(committed_tokens_by_source.items())),
         )
 
     def validate_commit(
@@ -1590,9 +1501,7 @@ class DeterministicSourceMixCursor:
             "kind": SOURCE_MIX_CURSOR_KIND,
             "algorithm": SOURCE_MIX_ALGORITHM,
             "source_map_algorithm": SOURCE_MAP_ALGORITHM,
-            "prepared_dataset_fingerprint": (
-                self.source_map.prepared_dataset_fingerprint
-            ),
+            "prepared_dataset_fingerprint": (self.source_map.prepared_dataset_fingerprint),
             "source_map": self.source_map.to_dict(),
             "weights_basis_points": self.weights_basis_points,
             "basis_points_total": SOURCE_MIX_BASIS_POINTS,
@@ -1669,9 +1578,7 @@ class DeterministicSourceMixCursor:
             raise ValueError("unsupported source-mix cursor schema or algorithm")
         if payload.get("source_map") != source_map.to_dict():
             raise ValueError("source-mix checkpoint source map changed")
-        if payload.get("prepared_dataset_fingerprint") != (
-            source_map.prepared_dataset_fingerprint
-        ):
+        if payload.get("prepared_dataset_fingerprint") != (source_map.prepared_dataset_fingerprint):
             raise ValueError("source-mix checkpoint prepared fingerprint changed")
 
         raw_weights = payload.get("weights_basis_points")
@@ -1712,18 +1619,444 @@ class DeterministicSourceMixCursor:
             next_global_sample=next_sample,
             committed_tokens=tokens,
             committed_samples_by_source={
-                str(source_id): value
-                for source_id, value in raw_samples_by_source.items()
+                str(source_id): value for source_id, value in raw_samples_by_source.items()
             },
             committed_tokens_by_source={
-                str(source_id): value
-                for source_id, value in raw_tokens_by_source.items()
+                str(source_id): value for source_id, value in raw_tokens_by_source.items()
             },
             shuffle=shuffle,
         )
         expected_payload = result._state_payload()
         if unsigned_payload != expected_payload:
             raise ValueError("source-mix cursor state disagrees with derived state")
+        return result
+
+
+class DeterministicSourceMixCooldownCursor:
+    """Two independently authenticated source mixes with one token transition.
+
+    Each phase keeps the complete state of its own
+    :class:`DeterministicSourceMixCursor`.  The wrapper exposes one continuous
+    global sample/token coordinate while preserving phase-local source plans,
+    counters, and dataset identities.  A batch that starts below the cooldown
+    threshold remains on the primary cursor even when its commit crosses the
+    threshold; the following batch is the first cooldown batch.
+    """
+
+    def __init__(
+        self,
+        primary_source_map: AuthenticatedSourceMap,
+        primary_weights_basis_points: Mapping[str, int] | None,
+        cooldown_source_map: AuthenticatedSourceMap,
+        cooldown_weights_basis_points: Mapping[str, int] | None,
+        *,
+        seed: int,
+        cooldown_start_tokens: int,
+        shuffle: bool = True,
+        _primary_cursor: DeterministicSourceMixCursor | None = None,
+        _cooldown_cursor: DeterministicSourceMixCursor | None = None,
+    ) -> None:
+        if (
+            isinstance(cooldown_start_tokens, bool)
+            or not isinstance(cooldown_start_tokens, int)
+            or cooldown_start_tokens <= 0
+        ):
+            raise ValueError("quality cooldown start tokens must be positive")
+        self.seed = seed
+        self.shuffle = shuffle
+        self.cooldown_start_tokens = cooldown_start_tokens
+        self._primary_cursor = _primary_cursor or DeterministicSourceMixCursor(
+            primary_source_map,
+            primary_weights_basis_points,
+            seed=seed,
+            shuffle=shuffle,
+        )
+        self._cooldown_cursor = _cooldown_cursor or DeterministicSourceMixCursor(
+            cooldown_source_map,
+            cooldown_weights_basis_points,
+            seed=seed,
+            shuffle=shuffle,
+        )
+        self._pending_plan: tuple[SourceMixSampleReference, ...] | None = None
+        self._pending_plan_fingerprint: str | None = None
+        self._validate_state()
+
+    @property
+    def active_phase(self) -> str:
+        return "cooldown" if self.committed_tokens >= self.cooldown_start_tokens else "primary"
+
+    @property
+    def _active_cursor(self) -> DeterministicSourceMixCursor:
+        return self._cooldown_cursor if self.active_phase == "cooldown" else self._primary_cursor
+
+    @property
+    def source_map(self) -> AuthenticatedSourceMap:
+        """The source map governing the currently planned optimizer batch."""
+
+        return self._active_cursor.source_map
+
+    @property
+    def weights_basis_points(self) -> dict[str, int]:
+        return self._active_cursor.weights_basis_points
+
+    @property
+    def next_global_sample(self) -> int:
+        return self._primary_cursor.next_global_sample + self._cooldown_cursor.next_global_sample
+
+    @property
+    def committed_tokens(self) -> int:
+        return self._primary_cursor.committed_tokens + self._cooldown_cursor.committed_tokens
+
+    @property
+    def phase_next_global_sample(self) -> int:
+        return self._active_cursor.next_global_sample
+
+    @staticmethod
+    def _combined_counter(
+        primary: Mapping[str, int],
+        cooldown: Mapping[str, int],
+    ) -> dict[str, int]:
+        result = dict(primary)
+        for source_id, value in cooldown.items():
+            result[source_id] = result.get(source_id, 0) + value
+        return dict(sorted(result.items()))
+
+    @property
+    def committed_samples_by_source(self) -> dict[str, int]:
+        return self._combined_counter(
+            self._primary_cursor.committed_samples_by_source,
+            self._cooldown_cursor.committed_samples_by_source,
+        )
+
+    @property
+    def committed_tokens_by_source(self) -> dict[str, int]:
+        return self._combined_counter(
+            self._primary_cursor.committed_tokens_by_source,
+            self._cooldown_cursor.committed_tokens_by_source,
+        )
+
+    @property
+    def phase_committed_samples_by_source(self) -> dict[str, dict[str, int]]:
+        return {
+            "primary": self._primary_cursor.committed_samples_by_source,
+            "cooldown": self._cooldown_cursor.committed_samples_by_source,
+        }
+
+    @property
+    def phase_committed_tokens_by_source(self) -> dict[str, dict[str, int]]:
+        return {
+            "primary": self._primary_cursor.committed_tokens_by_source,
+            "cooldown": self._cooldown_cursor.committed_tokens_by_source,
+        }
+
+    @property
+    def dataset_fingerprint(self) -> str:
+        return _canonical_sha256(
+            {
+                "schema_version": SOURCE_MIX_COOLDOWN_CURSOR_SCHEMA_VERSION,
+                "kind": SOURCE_MIX_COOLDOWN_CURSOR_KIND,
+                "primary_dataset_fingerprint": (self._primary_cursor.dataset_fingerprint),
+                "cooldown_dataset_fingerprint": (self._cooldown_cursor.dataset_fingerprint),
+                "cooldown_start_tokens": self.cooldown_start_tokens,
+            }
+        )
+
+    @property
+    def critical_lineage_fingerprint(self) -> str:
+        return _canonical_sha256(
+            {
+                "dataset_fingerprint": self.dataset_fingerprint,
+                "primary": self._primary_cursor.critical_lineage_fingerprint,
+                "cooldown": self._cooldown_cursor.critical_lineage_fingerprint,
+                "next_global_sample": self.next_global_sample,
+                "committed_tokens": self.committed_tokens,
+                "active_phase": self.active_phase,
+            }
+        )
+
+    def _validate_state(self) -> None:
+        cursors = (self._primary_cursor, self._cooldown_cursor)
+        if any(cursor.seed != self.seed or cursor.shuffle != self.shuffle for cursor in cursors):
+            raise ValueError("source-mix cooldown phase cursor seed/shuffle mismatch")
+        if (
+            self._primary_cursor.source_map.prepared_dataset_fingerprint
+            == self._cooldown_cursor.source_map.prepared_dataset_fingerprint
+            or self._primary_cursor.dataset_fingerprint == self._cooldown_cursor.dataset_fingerprint
+        ):
+            raise ValueError("source-mix quality cooldown requires distinct dataset identities")
+        if self.committed_tokens < self.cooldown_start_tokens and (
+            self._cooldown_cursor.next_global_sample != 0
+            or self._cooldown_cursor.committed_tokens != 0
+        ):
+            raise ValueError("source-mix cooldown cursor advanced before its phase")
+        if self._cooldown_cursor.next_global_sample > 0 and (
+            self._primary_cursor.committed_tokens < self.cooldown_start_tokens
+        ):
+            raise ValueError("source-mix cooldown cursor advanced before primary threshold")
+
+    @property
+    def pending_global_batch(self) -> tuple[SourceMixSampleReference, ...]:
+        return self._pending_plan or ()
+
+    @property
+    def pending_plan_fingerprint(self) -> str | None:
+        return self._pending_plan_fingerprint
+
+    def abort_pending_plan(self) -> None:
+        self._active_cursor.abort_pending_plan()
+        self._pending_plan = None
+        self._pending_plan_fingerprint = None
+
+    def plan_global_batch(
+        self,
+        global_batch_samples: int,
+    ) -> tuple[SourceMixSampleReference, ...]:
+        child = self._active_cursor
+        local = child.plan_global_batch(global_batch_samples)
+        transformed = tuple(
+            replace(reference, global_position=self.next_global_sample + index)
+            for index, reference in enumerate(local)
+        )
+        fingerprint = _canonical_sha256(
+            {
+                "kind": SOURCE_MIX_COOLDOWN_CURSOR_KIND,
+                "critical_lineage_fingerprint": self.critical_lineage_fingerprint,
+                "phase": self.active_phase,
+                "child_plan_fingerprint": child.pending_plan_fingerprint,
+                "references": [asdict(reference) for reference in transformed],
+            }
+        )
+        if self._pending_plan is not None and (
+            transformed != self._pending_plan or fingerprint != self._pending_plan_fingerprint
+        ):
+            raise ValueError("source-mix cooldown pending plan changed")
+        self._pending_plan = transformed
+        self._pending_plan_fingerprint = fingerprint
+        return transformed
+
+    def plan_rank_batch(
+        self,
+        global_batch_samples: int,
+        *,
+        rank: int,
+        world_size: int,
+    ) -> tuple[SourceMixSampleReference, ...]:
+        if world_size <= 0 or not 0 <= rank < world_size:
+            raise ValueError("rank/world_size are invalid")
+        if global_batch_samples % world_size:
+            raise ValueError("global_batch_samples must be divisible by world_size")
+        batch = self.plan_global_batch(global_batch_samples)
+        return tuple(batch[index] for index in range(rank, len(batch), world_size))
+
+    def _validate_wrapper_commit(
+        self,
+        *,
+        planned_references: Sequence[SourceMixSampleReference],
+        plan_fingerprint: str,
+        valid_tokens_per_reference: Sequence[int],
+        valid_tokens_by_source: Mapping[str, int],
+        token_count: int,
+    ) -> DeterministicSourceMixCursor:
+        if self._pending_plan is None or self._pending_plan_fingerprint is None:
+            raise ValueError("source-mix cooldown commit has no pending plan")
+        references = tuple(planned_references)
+        if references != self._pending_plan:
+            raise ValueError("source-mix cooldown commit references differ from pending plan")
+        if _require_sha256(plan_fingerprint, "plan_fingerprint") != self._pending_plan_fingerprint:
+            raise ValueError("source-mix cooldown commit plan fingerprint mismatch")
+        child = self._active_cursor
+        child_pending = child.pending_global_batch
+        if (
+            len(child_pending) != len(references)
+            or tuple(
+                replace(reference, global_position=references[index].global_position)
+                for index, reference in enumerate(child_pending)
+            )
+            != references
+        ):
+            raise ValueError("source-mix cooldown child plan differs from wrapper plan")
+        child_fingerprint = child.pending_plan_fingerprint
+        if child_fingerprint is None:
+            raise ValueError("source-mix cooldown child plan fingerprint is missing")
+        child.validate_commit(
+            planned_references=child_pending,
+            plan_fingerprint=child_fingerprint,
+            valid_tokens_per_reference=valid_tokens_per_reference,
+            valid_tokens_by_source=valid_tokens_by_source,
+            token_count=token_count,
+        )
+        return child
+
+    def validate_commit(
+        self,
+        *,
+        planned_references: Sequence[SourceMixSampleReference],
+        plan_fingerprint: str,
+        valid_tokens_per_reference: Sequence[int],
+        valid_tokens_by_source: Mapping[str, int],
+        token_count: int,
+    ) -> None:
+        self._validate_wrapper_commit(
+            planned_references=planned_references,
+            plan_fingerprint=plan_fingerprint,
+            valid_tokens_per_reference=valid_tokens_per_reference,
+            valid_tokens_by_source=valid_tokens_by_source,
+            token_count=token_count,
+        )
+
+    def commit(
+        self,
+        *,
+        planned_references: Sequence[SourceMixSampleReference],
+        plan_fingerprint: str,
+        valid_tokens_per_reference: Sequence[int],
+        valid_tokens_by_source: Mapping[str, int],
+        token_count: int,
+    ) -> None:
+        child = self._validate_wrapper_commit(
+            planned_references=planned_references,
+            plan_fingerprint=plan_fingerprint,
+            valid_tokens_per_reference=valid_tokens_per_reference,
+            valid_tokens_by_source=valid_tokens_by_source,
+            token_count=token_count,
+        )
+        child_pending = child.pending_global_batch
+        child_fingerprint = child.pending_plan_fingerprint
+        assert child_fingerprint is not None
+        child.commit(
+            planned_references=child_pending,
+            plan_fingerprint=child_fingerprint,
+            valid_tokens_per_reference=valid_tokens_per_reference,
+            valid_tokens_by_source=valid_tokens_by_source,
+            token_count=token_count,
+        )
+        self._pending_plan = None
+        self._pending_plan_fingerprint = None
+        self._validate_state()
+
+    def _state_payload(self) -> dict[str, object]:
+        return {
+            "schema_version": SOURCE_MIX_COOLDOWN_CURSOR_SCHEMA_VERSION,
+            "kind": SOURCE_MIX_COOLDOWN_CURSOR_KIND,
+            "algorithm": SOURCE_MIX_ALGORITHM,
+            "dataset_fingerprint": self.dataset_fingerprint,
+            "seed": self.seed,
+            "shuffle": self.shuffle,
+            "shuffle_algorithm": SHUFFLE_ALGORITHM,
+            "cooldown_start_tokens": self.cooldown_start_tokens,
+            "active_phase": self.active_phase,
+            "next_global_sample": self.next_global_sample,
+            "committed_tokens": self.committed_tokens,
+            "committed_samples_by_source": self.committed_samples_by_source,
+            "committed_tokens_by_source": self.committed_tokens_by_source,
+            "phase_committed_samples_by_source": (
+                self.phase_committed_samples_by_source
+            ),
+            "phase_committed_tokens_by_source": (
+                self.phase_committed_tokens_by_source
+            ),
+            "primary_cursor": self._primary_cursor.state_dict(),
+            "cooldown_cursor": self._cooldown_cursor.state_dict(),
+            "critical_lineage_fingerprint": self.critical_lineage_fingerprint,
+        }
+
+    @property
+    def state_fingerprint(self) -> str:
+        return _canonical_sha256(self._state_payload())
+
+    def state_dict(self) -> dict[str, object]:
+        payload = self._state_payload()
+        payload["state_fingerprint"] = _canonical_sha256(payload)
+        return payload
+
+    @classmethod
+    def from_state_dict(
+        cls,
+        primary_source_map: AuthenticatedSourceMap,
+        primary_weights_basis_points: Mapping[str, int] | None,
+        cooldown_source_map: AuthenticatedSourceMap,
+        cooldown_weights_basis_points: Mapping[str, int] | None,
+        payload: Mapping[str, object],
+        *,
+        cooldown_start_tokens: int,
+    ) -> DeterministicSourceMixCooldownCursor:
+        expected_fields = {
+            "schema_version",
+            "kind",
+            "algorithm",
+            "dataset_fingerprint",
+            "seed",
+            "shuffle",
+            "shuffle_algorithm",
+            "cooldown_start_tokens",
+            "active_phase",
+            "next_global_sample",
+            "committed_tokens",
+            "committed_samples_by_source",
+            "committed_tokens_by_source",
+            "phase_committed_samples_by_source",
+            "phase_committed_tokens_by_source",
+            "primary_cursor",
+            "cooldown_cursor",
+            "critical_lineage_fingerprint",
+            "state_fingerprint",
+        }
+        if set(payload) != expected_fields:
+            raise ValueError("source-mix cooldown cursor state fields differ from schema v1")
+        state_fingerprint = _require_sha256(
+            payload.get("state_fingerprint"),
+            "state_fingerprint",
+        )
+        unsigned_payload = {
+            key: value for key, value in payload.items() if key != "state_fingerprint"
+        }
+        if _canonical_sha256(unsigned_payload) != state_fingerprint:
+            raise ValueError("source-mix cooldown cursor state fingerprint mismatch")
+        if (
+            payload.get("schema_version") != SOURCE_MIX_COOLDOWN_CURSOR_SCHEMA_VERSION
+            or payload.get("kind") != SOURCE_MIX_COOLDOWN_CURSOR_KIND
+            or payload.get("algorithm") != SOURCE_MIX_ALGORITHM
+            or payload.get("shuffle_algorithm") != SHUFFLE_ALGORITHM
+        ):
+            raise ValueError("unsupported source-mix cooldown cursor schema")
+        if payload.get("cooldown_start_tokens") != cooldown_start_tokens:
+            raise ValueError("quality cooldown transition token changed on resume")
+        primary_payload = payload.get("primary_cursor")
+        cooldown_payload = payload.get("cooldown_cursor")
+        if not isinstance(primary_payload, Mapping) or not isinstance(
+            cooldown_payload,
+            Mapping,
+        ):
+            raise ValueError("source-mix cooldown checkpoint is missing phase cursors")
+        primary = DeterministicSourceMixCursor.from_state_dict(
+            primary_source_map,
+            primary_weights_basis_points,
+            primary_payload,
+        )
+        cooldown = DeterministicSourceMixCursor.from_state_dict(
+            cooldown_source_map,
+            cooldown_weights_basis_points,
+            cooldown_payload,
+        )
+        shuffle = payload.get("shuffle")
+        if not isinstance(shuffle, bool):
+            raise TypeError("source-mix cooldown cursor shuffle must be a bool")
+        seed = payload.get("seed")
+        if isinstance(seed, bool) or not isinstance(seed, int):
+            raise TypeError("source-mix cooldown cursor seed must be an integer")
+        result = cls(
+            primary_source_map,
+            primary_weights_basis_points,
+            cooldown_source_map,
+            cooldown_weights_basis_points,
+            seed=seed,
+            cooldown_start_tokens=cooldown_start_tokens,
+            shuffle=shuffle,
+            _primary_cursor=primary,
+            _cooldown_cursor=cooldown,
+        )
+        if unsigned_payload != result._state_payload():
+            raise ValueError("source-mix cooldown cursor state disagrees with derived state")
         return result
 
 

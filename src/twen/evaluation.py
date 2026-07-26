@@ -28,6 +28,14 @@ class EvaluationStopped(RuntimeError):
     """Evaluation stopped at a replay-safe microbatch boundary."""
 
 
+def _normalize_evaluation_device(device: str) -> str:
+    """Give CUDA's implicit device an explicit index for runtime metadata APIs."""
+
+    if device == "cuda":
+        return "cuda:0"
+    return device
+
+
 def _validate_inference_checkpoint_lineage(
     *,
     config_path: str | Path,
@@ -181,15 +189,9 @@ def _install_or_validate_plan(root: Path, plan: Mapping[str, Any]) -> Path:
     if path.exists():
         existing = json.loads(path.read_text(encoding="utf-8"))
         if existing != plan:
-            raise ValueError(
-                f"evaluation output {root} belongs to a different immutable plan"
-            )
+            raise ValueError(f"evaluation output {root} belongs to a different immutable plan")
         return path
-    unexpected = [
-        item
-        for item in root.iterdir()
-        if item.name not in {".eval.lock", "STOP"}
-    ]
+    unexpected = [item for item in root.iterdir() if item.name not in {".eval.lock", "STOP"}]
     if unexpected:
         raise ValueError(f"evaluation output has state but no PLAN: {unexpected[0]}")
     atomic_write_json(path, dict(plan))
@@ -334,10 +336,13 @@ def _evaluate_role(
                     input_ids = tensors["input_ids"][start:end].to(device)
                     attention_mask = tensors["attention_mask"][start:end].to(device)
                     labels = tensors["labels"][start:end].to(device)
-                    with torch.inference_mode(), torch.autocast(
-                        device_type=device_type,
-                        dtype=dtype,
-                        enabled=use_bf16,
+                    with (
+                        torch.inference_mode(),
+                        torch.autocast(
+                            device_type=device_type,
+                            dtype=dtype,
+                            enabled=use_bf16,
+                        ),
                     ):
                         logits = model(
                             input_ids=input_ids,
@@ -367,8 +372,7 @@ def _evaluate_role(
                     "sequences": sequence_count,
                     "nll_sum": progress["nll_sum"],
                     "predicted_tokens": progress["predicted_tokens"],
-                    "mean_nll": progress["nll_sum"]
-                    / max(progress["predicted_tokens"], 1),
+                    "mean_nll": progress["nll_sum"] / max(progress["predicted_tokens"], 1),
                 }
                 atomic_write_json(result_path, result)
                 transaction.commit(
@@ -386,9 +390,7 @@ def _evaluate_role(
                 {
                     "source_shard_id": entry.shard_id,
                     "path": transaction.final_directory.relative_to(output_root).as_posix(),
-                    "complete_sha256": sha256_file(
-                        transaction.final_directory / "COMPLETE"
-                    ),
+                    "complete_sha256": sha256_file(transaction.final_directory / "COMPLETE"),
                     "outputs": marker["outputs"],
                 }
             )
@@ -452,9 +454,9 @@ def _load_evaluation_baseline(
         or payload.get("plan_fingerprint") != plan.get("plan_fingerprint")
     ):
         raise ValueError(f"evaluation baseline manifest/PLAN lineage is invalid: {manifest_path}")
-    if _canonical_sha256({key: value for key, value in plan.items() if key != "plan_fingerprint"}) != plan.get(
-        "plan_fingerprint"
-    ):
+    if _canonical_sha256(
+        {key: value for key, value in plan.items() if key != "plan_fingerprint"}
+    ) != plan.get("plan_fingerprint"):
         raise ValueError(f"evaluation baseline PLAN fingerprint is invalid: {manifest_path}")
     expected = (
         expected_track,
@@ -481,14 +483,13 @@ def _load_evaluation_baseline(
             "evaluation baseline differs in track/stage/expert initialization/corpus/numerics"
         )
     checkpoint_state = payload.get("checkpoint_state")
-    if not isinstance(checkpoint_state, dict) or checkpoint_state != plan.get(
-        "checkpoint_state"
-    ):
+    if not isinstance(checkpoint_state, dict) or checkpoint_state != plan.get("checkpoint_state"):
         raise ValueError("evaluation baseline has no authenticated checkpoint progress")
     for field in ("global_step", "committed_tokens"):
-        if isinstance(checkpoint_state.get(field), bool) or int(
-            checkpoint_state.get(field, -1)
-        ) < 0:
+        if (
+            isinstance(checkpoint_state.get(field), bool)
+            or int(checkpoint_state.get(field, -1)) < 0
+        ):
             raise ValueError("evaluation baseline checkpoint progress is invalid")
     if checkpoint_state.get("kind") not in {"periodic", "interrupt", "milestone"}:
         raise ValueError("evaluation baseline checkpoint kind is invalid")
@@ -499,9 +500,10 @@ def _load_evaluation_baseline(
         raise ValueError(
             "random-control baseline changed a dense training setting other than its control initialization"
         )
-    if expected_checkpoint is not None and Path(str(plan.get("checkpoint"))).resolve() != Path(
-        expected_checkpoint
-    ).resolve():
+    if (
+        expected_checkpoint is not None
+        and Path(str(plan.get("checkpoint"))).resolve() != Path(expected_checkpoint).resolve()
+    ):
         raise ValueError("Stage-B baseline did not evaluate the checkpoint used for folding")
     if (
         expected_checkpoint_complete_sha256 is not None
@@ -514,13 +516,10 @@ def _load_evaluation_baseline(
     ):
         raise ValueError("Stage-B baseline config fingerprint differs from the fold lineage")
     baseline_roles = payload.get("roles")
-    if not isinstance(baseline_roles, dict) or not {"candidate", "shared"} <= set(
-        baseline_roles
-    ):
+    if not isinstance(baseline_roles, dict) or not {"candidate", "shared"} <= set(baseline_roles):
         raise ValueError("evaluation baseline must contain candidate and shared roles")
     token_counts = {
-        int(baseline_roles[role].get("predicted_tokens", -1))
-        for role in ("candidate", "shared")
+        int(baseline_roles[role].get("predicted_tokens", -1)) for role in ("candidate", "shared")
     }
     if len(token_counts) != 1 or next(iter(token_counts)) <= 0:
         raise ValueError("evaluation baseline roles processed inconsistent token counts")
@@ -594,6 +593,7 @@ def evaluate_nll(
     """Evaluate stage/shared/teacher NLL without backward or optimizer state."""
 
     enforce_offline_environment()
+    device = _normalize_evaluation_device(device)
     if batch_size <= 0:
         raise ValueError("evaluation batch_size must be positive")
     config: TrainConfig = load_train_config(config_path)
@@ -618,8 +618,7 @@ def evaluate_nll(
                 "sparse acceptance requires --dense-baseline-manifest from the completed Stage-B evaluation"
             )
         folded_manifest_path = (
-            Path(config.sources.folded_experts_path or "").resolve().parent
-            / "manifest.json"
+            Path(config.sources.folded_experts_path or "").resolve().parent / "manifest.json"
         )
         folded_lineage = json.loads(folded_manifest_path.read_text(encoding="utf-8"))
         dense_baseline, dense_baseline_identity = _load_evaluation_baseline(
@@ -636,9 +635,7 @@ def evaluate_nll(
             expected_checkpoint_complete_sha256=str(
                 folded_lineage["source_checkpoint_complete_sha256"]
             ),
-            expected_config_fingerprint=str(
-                folded_lineage["source_config_fingerprint"]
-            ),
+            expected_config_fingerprint=str(folded_lineage["source_config_fingerprint"]),
         )
     elif dense_baseline_manifest_path:
         raise ValueError("--dense-baseline-manifest is only valid for sparse evaluation")
@@ -698,7 +695,7 @@ def evaluate_nll(
     built = build_transfer_model(config, device=device, dtype=dtype)
     loaded_checkpoint, checkpoint_metadata, checkpoint_lineage = (
         _load_inference_evaluation_checkpoint(
-        built.model,
+            built.model,
             config_path=config_path,
             config=config,
             report=report,
@@ -712,9 +709,7 @@ def evaluate_nll(
         "kind": str(checkpoint_metadata["kind"]),
         "tag": checkpoint_metadata.get("tag"),
     }
-    if random_baseline is not None and random_baseline.get(
-        "checkpoint_state"
-    ) != checkpoint_state:
+    if random_baseline is not None and random_baseline.get("checkpoint_state") != checkpoint_state:
         raise ValueError(
             "donor and random-control evaluations must use checkpoints at identical training progress"
         )
@@ -749,8 +744,7 @@ def evaluate_nll(
             ),
             "compute_capability": (
                 ".".join(
-                    str(part)
-                    for part in torch.cuda.get_device_capability(torch.device(device))
+                    str(part) for part in torch.cuda.get_device_capability(torch.device(device))
                 )
                 if device.startswith("cuda")
                 else None
@@ -836,9 +830,10 @@ def evaluate_nll(
             ("Stage-B dense", dense_baseline),
             ("random-control", random_baseline),
         ):
-            if baseline is not None and int(
-                baseline["roles"]["candidate"]["predicted_tokens"]
-            ) != evaluated_tokens:
+            if (
+                baseline is not None
+                and int(baseline["roles"]["candidate"]["predicted_tokens"]) != evaluated_tokens
+            ):
                 raise RuntimeError(f"{label} baseline processed a different token count")
             if baseline is not None:
                 current_shared = float(results["shared"]["mean_nll"])
@@ -982,9 +977,7 @@ def verify_inference_consistency(
     # avoids repetition penalties, beam search, forced tokens, stop strings,
     # and other source defaults that vLLM would not apply.
     pad_token_id = (
-        tokenizer.pad_token_id
-        if tokenizer.pad_token_id is not None
-        else tokenizer.eos_token_id
+        tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
     )
     generation_config = GenerationConfig(
         do_sample=False,
@@ -1050,10 +1043,7 @@ def verify_inference_consistency(
     )
     try:
         generated = engine.generate(rendered, sampling, use_tqdm=False)
-        vllm_tokens = [
-            [int(value) for value in item.outputs[0].token_ids]
-            for item in generated
-        ]
+        vllm_tokens = [[int(value) for value in item.outputs[0].token_ids] for item in generated]
     finally:
         del engine
         gc.collect()
@@ -1069,9 +1059,7 @@ def verify_inference_consistency(
         mismatch = next(
             (
                 index
-                for index, (left, right) in enumerate(
-                    zip(hf_tokens, fast_tokens, strict=False)
-                )
+                for index, (left, right) in enumerate(zip(hf_tokens, fast_tokens, strict=False))
                 if left != right
             ),
             None,

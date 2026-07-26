@@ -11,6 +11,7 @@ import torch
 from twen.data import (
     AuthenticatedSourceMap,
     AuthenticatedSourceShard,
+    DeterministicSourceMixCooldownCursor,
     DeterministicSourceMixCursor,
     PreparedTextBatch,
 )
@@ -27,7 +28,9 @@ from twen.training.engine import (
     _prepare_source_mix_commit,
     _source_mix_log_contract,
     _source_mix_session_log_fields,
+    _source_mix_step_metric_fields,
     _student_language_model_forward,
+    _validate_corpus_reuse_policy,
 )
 
 
@@ -36,9 +39,7 @@ def _config(mode: str) -> SimpleNamespace:
         data=SimpleNamespace(
             mode=mode,
             manifest_path="prepared/manifest.json",
-            teacher_kd_manifest_path=(
-                "kd/manifest.json" if mode == "teacher-kd" else None
-            ),
+            teacher_kd_manifest_path=("kd/manifest.json" if mode == "teacher-kd" else None),
             max_sequence_length=4096,
         ),
         losses=SimpleNamespace(kd_temperature=2.0),
@@ -69,6 +70,68 @@ def test_prepared_text_store_factory_never_constructs_kd_reader() -> None:
         "prepared/manifest.json",
         expected_sequence_length=4096,
         verify_shards=False,
+    )
+
+
+def test_prepared_text_cooldown_store_uses_independent_prepared_manifest_only() -> None:
+    config = _config("prepared-text")
+    sentinel = object()
+    with (
+        patch(
+            "twen.training.engine.KDRecordStore",
+            side_effect=AssertionError("prepared-text cooldown touched KD"),
+        ) as kd_store,
+        patch(
+            "twen.training.engine.PreparedTextRecordStore",
+            return_value=sentinel,
+        ) as prepared_store,
+    ):
+        actual = _build_training_record_store(
+            config,  # type: ignore[arg-type]
+            manifest_path="cooldown-prepared/manifest.json",
+            verify_shards=False,
+        )
+
+    assert actual is sentinel
+    kd_store.assert_not_called()
+    prepared_store.assert_called_once_with(
+        "cooldown-prepared/manifest.json",
+        expected_sequence_length=4096,
+        verify_shards=False,
+    )
+
+
+def test_no_reuse_runtime_gate_rejects_epoch_wrap_before_training_work() -> None:
+    config = _config("prepared-text")
+    config.data.allow_corpus_reuse = False
+    unique = SimpleNamespace(
+        epoch=0,
+        global_position=7,
+        shard_id="unique",
+    )
+    repeated = SimpleNamespace(
+        epoch=1,
+        global_position=8,
+        shard_id="wrapped",
+    )
+
+    _validate_corpus_reuse_policy(
+        config,  # type: ignore[arg-type]
+        (unique,),
+        data_phase="primary",
+    )
+    with pytest.raises(RuntimeError, match=r"allow_corpus_reuse=false.*epoch=1"):
+        _validate_corpus_reuse_policy(
+            config,  # type: ignore[arg-type]
+            (unique, repeated),
+            data_phase="cooldown",
+        )
+
+    config.data.allow_corpus_reuse = True
+    _validate_corpus_reuse_policy(
+        config,  # type: ignore[arg-type]
+        (repeated,),
+        data_phase="primary",
     )
 
 
@@ -271,6 +334,117 @@ def test_source_mix_log_contract_keeps_lineage_effective_and_override_explicit()
     }
 
 
+def test_source_mix_cooldown_contract_and_metric_ledger_are_phase_specific() -> None:
+    report = _source_mix_report()
+    report.quality_cooldown_source_mix_enabled = True
+    report.quality_cooldown_source_mix_algorithm = (
+        "token-deficit-corrected-source-mix-bp-v2"
+    )
+    report.quality_cooldown_source_map_sha256 = "a" * 64
+    report.quality_cooldown_source_mix_dataset_fingerprint = "b" * 64
+    report.quality_cooldown_source_mix_basis_points = (("quality", 10_000),)
+    report.quality_cooldown_source_mix_seed = 73
+    report.quality_cooldown_start_tokens = 4
+
+    contract = _source_mix_log_contract(report)
+
+    assert contract["cooldown_start_tokens"] == 4
+    phases = contract["phases"]
+    assert isinstance(phases, dict)
+    assert phases["primary"]["effective_basis_points"] == {
+        "alpha": 6_000,
+        "beta": 4_000,
+    }
+    assert phases["cooldown"] == {
+        "enabled": True,
+        "algorithm": "token-deficit-corrected-source-mix-bp-v2",
+        "source_map_sha256": "a" * 64,
+        "dataset_fingerprint": "b" * 64,
+        "basis_points": {"quality": 10_000},
+        "lineage_basis_points": {"quality": 10_000},
+        "effective_basis_points": {"quality": 10_000},
+        "weight_override": False,
+        "seed": 73,
+    }
+
+    primary = _source_mix_cursor()
+    quality_map = AuthenticatedSourceMap(
+        prepared_dataset_fingerprint="c" * 64,
+        extracted_manifest_sha256="d" * 64,
+        sequence_length=4,
+        shards=(
+            AuthenticatedSourceShard(
+                source_id="quality",
+                shard_id="quality-shard",
+                sequence_count=8,
+                global_sample_start=0,
+                output_path="quality/data.safetensors",
+                output_sha256="e" * 64,
+            ),
+        ),
+        mix_basis_points=(("quality", 10_000),),
+    )
+    cursor = DeterministicSourceMixCooldownCursor(
+        primary.source_map,
+        primary.weights_basis_points,
+        quality_map,
+        {"quality": 10_000},
+        seed=73,
+        cooldown_start_tokens=4,
+    )
+    primary_references = cursor.plan_global_batch(4)
+    primary_tokens = dict.fromkeys(cursor.source_map.source_ids, 0)
+    for reference in primary_references:
+        primary_tokens[reference.source_id] += 1
+    assert cursor.pending_plan_fingerprint is not None
+    cursor.commit(
+        planned_references=primary_references,
+        plan_fingerprint=cursor.pending_plan_fingerprint,
+        valid_tokens_per_reference=(1, 1, 1, 1),
+        valid_tokens_by_source=primary_tokens,
+        token_count=4,
+    )
+    # This commit crosses the threshold, so cursor.active_phase already names
+    # the *next* phase. The metric helper must use the batch's explicit phase.
+    assert cursor.active_phase == "cooldown"
+    primary_fields = _source_mix_step_metric_fields(
+        cursor,
+        primary_tokens,
+        data_phase="primary",
+    )
+    assert primary_fields["source_tokens_this_step/quality"] == 0
+    assert primary_fields["source_tokens/quality"] == 0
+    assert primary_fields["phase_source_tokens/quality"] == 0
+    assert (
+        primary_fields["phase_source_tokens/alpha"]
+        + primary_fields["phase_source_tokens/beta"]
+        == 4
+    )
+
+    cooldown_references = cursor.plan_global_batch(4)
+    assert cursor.pending_plan_fingerprint is not None
+    cursor.commit(
+        planned_references=cooldown_references,
+        plan_fingerprint=cursor.pending_plan_fingerprint,
+        valid_tokens_per_reference=(1, 1, 1, 1),
+        valid_tokens_by_source={"quality": 4},
+        token_count=4,
+    )
+    cooldown_fields = _source_mix_step_metric_fields(
+        cursor,
+        {"quality": 4},
+        data_phase="cooldown",
+    )
+    assert set(cooldown_fields) == set(primary_fields)
+    assert cooldown_fields["source_tokens_this_step/alpha"] == 0
+    assert cooldown_fields["source_tokens_this_step/beta"] == 0
+    assert cooldown_fields["source_tokens_this_step/quality"] == 4
+    assert cooldown_fields["source_tokens/quality"] == 4
+    assert cooldown_fields["phase_source_tokens/alpha"] == 0
+    assert cooldown_fields["phase_source_tokens/beta"] == 0
+    assert cooldown_fields["phase_source_tokens/quality"] == 4
+
+
 def test_checkpoint_persists_complete_source_mix_weight_contract(tmp_path: Path) -> None:
     class Manager:
         saved: dict[str, object] | None = None
@@ -301,10 +475,7 @@ def test_checkpoint_persists_complete_source_mix_weight_contract(tmp_path: Path)
     assert source_mix["lineage_basis_points"] == {"alpha": 7_000, "beta": 3_000}
     assert source_mix["effective_basis_points"] == {"alpha": 6_000, "beta": 4_000}
     assert source_mix["weight_override"] is True
-    assert (
-        source_mix["cursor_critical_lineage_fingerprint"]
-        == cursor.critical_lineage_fingerprint
-    )
+    assert source_mix["cursor_critical_lineage_fingerprint"] == cursor.critical_lineage_fingerprint
 
 
 class _CountingOptimizer:

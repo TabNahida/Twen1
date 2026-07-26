@@ -114,8 +114,7 @@ def test_teacher_kd_data_mode_default_preserves_legacy_canonical_and_fingerprint
     assert legacy.data.mode == "teacher-kd"
     assert "mode" not in legacy.canonical_dict()["data"]
     assert (
-        legacy.fingerprint()
-        == "02b9a50c1ef75451417e5da04461b68692689a673f9aa03042bf5a359719c8d6"
+        legacy.fingerprint() == "02b9a50c1ef75451417e5da04461b68692689a673f9aa03042bf5a359719c8d6"
     )
 
 
@@ -137,6 +136,101 @@ def test_prepared_text_data_mode_omits_kd_identity_and_is_resume_critical() -> N
     assert "teacher_kd_manifest_sha256" not in canonical
     assert "teacher_top_k" not in canonical
     assert prepared_text.fingerprint() != legacy.fingerprint()
+
+
+def test_prepared_text_quality_cooldown_uses_only_prepared_identity() -> None:
+    config = _source_mixed_prepared_text_config()
+    baseline = copy.deepcopy(config)
+    config.data.quality_cooldown_manifest_path = "cooldown-prepared.json"
+    config.data.quality_cooldown_manifest_sha256 = "4" * 64
+    config.data.quality_cooldown_start_tokens = 50_000_000
+
+    config.validate()
+
+    canonical = config.canonical_dict()["data"]
+    assert canonical["quality_cooldown_manifest_path"] == "cooldown-prepared.json"
+    assert canonical["quality_cooldown_manifest_sha256"] == "4" * 64
+    assert canonical["quality_cooldown_start_tokens"] == 50_000_000
+    assert "quality_cooldown_teacher_kd_manifest_path" not in canonical
+    assert "quality_cooldown_teacher_kd_manifest_sha256" not in canonical
+    assert config.fingerprint() != baseline.fingerprint()
+
+    unexpected_kd = copy.deepcopy(config)
+    unexpected_kd.data.quality_cooldown_teacher_kd_manifest_path = "kd.json"
+    unexpected_kd.data.quality_cooldown_teacher_kd_manifest_sha256 = "5" * 64
+    with pytest.raises(ConfigError, match="must omit KD"):
+        unexpected_kd.validate()
+
+    incomplete = _source_mixed_prepared_text_config()
+    incomplete.data.quality_cooldown_manifest_path = "cooldown-prepared.json"
+    with pytest.raises(ConfigError, match="prepared path, SHA256, and start"):
+        incomplete.validate()
+
+
+def test_allow_corpus_reuse_default_is_legacy_compatible_and_false_is_critical() -> None:
+    legacy = make_config()
+    assert legacy.data.allow_corpus_reuse is True
+    assert "allow_corpus_reuse" not in legacy.canonical_dict()["data"]
+    assert (
+        legacy.fingerprint() == "02b9a50c1ef75451417e5da04461b68692689a673f9aa03042bf5a359719c8d6"
+    )
+
+    prepared_text = _source_mixed_prepared_text_config()
+    no_reuse = copy.deepcopy(prepared_text)
+    no_reuse.data.allow_corpus_reuse = False
+    no_reuse.validate()
+    assert no_reuse.canonical_dict()["data"]["allow_corpus_reuse"] is False
+    assert no_reuse.fingerprint() != prepared_text.fingerprint()
+
+    unsupported_kd = copy.deepcopy(legacy)
+    unsupported_kd.data.allow_corpus_reuse = False
+    with pytest.raises(ConfigError, match=r"requires data.mode='prepared-text'"):
+        unsupported_kd.validate()
+
+    invalid = copy.deepcopy(legacy)
+    invalid.data.allow_corpus_reuse = 0  # type: ignore[assignment]
+    with pytest.raises(ConfigError, match="allow_corpus_reuse"):
+        invalid.validate()
+
+
+def test_no_reuse_prepared_text_cooldown_requires_resume_critical_disjointness() -> None:
+    config = _source_mixed_prepared_text_config()
+    config.data.quality_cooldown_manifest_path = "cooldown-prepared.json"
+    config.data.quality_cooldown_manifest_sha256 = "4" * 64
+    config.data.quality_cooldown_start_tokens = 50_000_000
+    config.data.allow_corpus_reuse = False
+
+    with pytest.raises(ConfigError, match="phase disjointness attestation"):
+        config.validate()
+
+    config.data.phase_disjointness_attestation_path = "phase-attestation.json"
+    config.data.phase_disjointness_attestation_sha256 = "5" * 64
+    config.validate()
+    canonical = config.canonical_dict()["data"]
+    assert canonical["phase_disjointness_attestation_path"] == "phase-attestation.json"
+    assert canonical["phase_disjointness_attestation_sha256"] == "5" * 64
+
+    changed = copy.deepcopy(config)
+    changed.data.phase_disjointness_attestation_sha256 = "6" * 64
+    changed.validate()
+    assert changed.fingerprint() != config.fingerprint()
+
+
+def test_phase_disjointness_does_not_extend_teacher_kd_cooldown_contract() -> None:
+    config = make_config()
+    config.data.quality_cooldown_manifest_path = "cooldown-prepared.json"
+    config.data.quality_cooldown_manifest_sha256 = "4" * 64
+    config.data.quality_cooldown_teacher_kd_manifest_path = "cooldown-kd.json"
+    config.data.quality_cooldown_teacher_kd_manifest_sha256 = "5" * 64
+    config.data.quality_cooldown_start_tokens = 50_000_000
+    config.validate()
+    assert "phase_disjointness_attestation_path" not in (config.canonical_dict()["data"])
+
+    configured = copy.deepcopy(config)
+    configured.data.phase_disjointness_attestation_path = "phase.json"
+    configured.data.phase_disjointness_attestation_sha256 = "6" * 64
+    with pytest.raises(ConfigError, match="only valid for prepared-text"):
+        configured.validate()
 
 
 def _source_mixed_prepared_text_config() -> TrainConfig:
@@ -593,6 +687,29 @@ def test_learning_rate_changes_fingerprint() -> None:
     assert first.fingerprint() != second.fingerprint()
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("adapter_lr", True, "adapter_lr"),
+        ("scale_lr", "0.0001", "scale_lr"),
+        ("weight_decay", False, "weight_decay"),
+        ("adam_beta1", False, "adam_beta1"),
+        ("warmup_tokens", 1.5, "token counts"),
+        ("max_tokens", True, "token counts"),
+    ],
+)
+def test_optimizer_numerics_reject_implicit_bool_and_string_coercion(
+    field: str,
+    value: object,
+    message: str,
+) -> None:
+    config = make_config()
+    setattr(config.optimizer, field, value)
+
+    with pytest.raises(ConfigError, match=message):
+        config.validate()
+
+
 def test_legacy_lr_schedule_preserves_v1_canonical_shape() -> None:
     config = make_config()
     optimizer = config.canonical_dict()["optimizer"]
@@ -621,6 +738,31 @@ def test_legacy_optimizer_preserves_canonical_shape_and_muon_is_resume_critical(
     assert muon_canonical["muon_adjust_lr_fn"] == "match_rms_adamw"
     assert muon_canonical["muon_ns_coefficients"] == (3.4445, -4.775, 2.0315)
     assert muon.fingerprint() != legacy.fingerprint()
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("muon_momentum", 0.9),
+        ("muon_nesterov", False),
+        ("muon_ns_coefficients", (3.0, -4.0, 2.0)),
+        ("muon_eps", 1e-6),
+        ("muon_ns_steps", 4),
+        ("muon_adjust_lr_fn", "original"),
+    ],
+)
+def test_each_muon_numerical_choice_is_resume_critical(
+    field: str,
+    value: object,
+) -> None:
+    baseline = make_config()
+    baseline.optimizer.adapter_optimizer = "muon"
+    baseline.validate()
+    changed = copy.deepcopy(baseline)
+    setattr(changed.optimizer, field, value)
+    changed.validate()
+
+    assert changed.fingerprint() != baseline.fingerprint()
 
 
 @pytest.mark.parametrize(

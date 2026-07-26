@@ -14,6 +14,7 @@ from twen.data.cursor import (
     SOURCE_MAP_ALGORITHM,
     SOURCE_MIX_ALGORITHM,
     AuthenticatedSourceMap,
+    DeterministicSourceMixCooldownCursor,
     DeterministicSourceMixCursor,
 )
 from twen.data.prepared import PreparedCorpusManifest, PreparedShardEntry
@@ -189,9 +190,7 @@ def _prepared_fixture(
     prepared_entries: list[PreparedShardEntry] = []
     sample_start = 0
     token_start = 0
-    selected_train_files = (
-        train_files[:-1] if omit_last_prepared_shard else train_files
-    )
+    selected_train_files = train_files[:-1] if omit_last_prepared_shard else train_files
     for index, (source_file, count) in enumerate(
         zip(
             selected_train_files,
@@ -217,9 +216,7 @@ def _prepared_fixture(
         sample_start += count
         token_start += count * 4
     prepared = PreparedCorpusManifest(
-        dataset_fingerprint=_sha(
-            f"prepared-{int(omit_last_prepared_shard)}"
-        ),
+        dataset_fingerprint=_sha(f"prepared-{int(omit_last_prepared_shard)}"),
         pipeline_fingerprint=_sha("pipeline"),
         generator_source_sha256=_sha("generator"),
         tokenizer_sha256=_sha("tokenizer"),
@@ -242,7 +239,7 @@ def _cursor(tmp_path: Path) -> tuple[AuthenticatedSourceMap, DeterministicSource
 
 
 def _commit(
-    cursor: DeterministicSourceMixCursor,
+    cursor: DeterministicSourceMixCursor | DeterministicSourceMixCooldownCursor,
     references,
     valid_tokens_per_reference: list[int] | tuple[int, ...],
 ) -> dict[str, int]:
@@ -262,6 +259,31 @@ def _commit(
         token_count=sum(valid_tokens_per_reference),
     )
     return by_source
+
+
+def _cooldown_cursor(
+    tmp_path: Path,
+    *,
+    cooldown_start_tokens: int = 20,
+) -> tuple[
+    AuthenticatedSourceMap,
+    AuthenticatedSourceMap,
+    DeterministicSourceMixCooldownCursor,
+]:
+    primary_map, _ = _cursor(tmp_path)
+    cooldown_map = replace(
+        primary_map,
+        prepared_dataset_fingerprint=_sha("cooldown-prepared"),
+    )
+    cursor = DeterministicSourceMixCooldownCursor(
+        primary_map,
+        {"alpha": 7_000, "beta": 3_000},
+        cooldown_map,
+        {"alpha": 4_000, "beta": 6_000},
+        seed=73,
+        cooldown_start_tokens=cooldown_start_tokens,
+    )
+    return primary_map, cooldown_map, cursor
 
 
 def test_source_map_uses_authenticated_output_ownership_not_filename(
@@ -382,9 +404,7 @@ def test_zero_history_uses_short_exact_token_target_period(tmp_path: Path) -> No
         "beta": 300,
     }
     for prefix_length in range(1, 101):
-        counts = Counter(
-            item.source_id for item in planned[:prefix_length]
-        )
+        counts = Counter(item.source_id for item in planned[:prefix_length])
         assert abs(counts["alpha"] - prefix_length * 0.7) <= 1
         assert abs(counts["beta"] - prefix_length * 0.3) <= 1
 
@@ -426,9 +446,7 @@ def test_each_source_retains_shard_block_and_local_affine_shuffle(
     planned = cursor.plan_global_batch(80)
     for source_id in source_map.source_ids:
         source_size = sum(
-            item.sequence_count
-            for item in source_map.shards
-            if item.source_id == source_id
+            item.sequence_count for item in source_map.shards if item.source_id == source_id
         )
         first_epoch = [
             item
@@ -448,9 +466,7 @@ def test_each_source_retains_shard_block_and_local_affine_shuffle(
             for index, item in enumerate(first_epoch)
             if index == 0 or first_epoch[index - 1].shard_id != item.shard_id
         ]
-        assert len(shard_runs) == sum(
-            item.source_id == source_id for item in source_map.shards
-        )
+        assert len(shard_runs) == sum(item.source_id == source_id for item in source_map.shards)
 
 
 def test_plan_binding_and_commit_replace_all_token_counters_atomically(
@@ -465,9 +481,7 @@ def test_plan_binding_and_commit_replace_all_token_counters_atomically(
     assert cursor.pending_plan_fingerprint is not None
 
     by_source = {
-        source_id: sum(
-            4 for reference in planned if reference.source_id == source_id
-        )
+        source_id: sum(4 for reference in planned if reference.source_id == source_id)
         for source_id in cursor.source_map.source_ids
     }
     with pytest.raises(ValueError, match="global token total"):
@@ -561,16 +575,11 @@ def test_resume_restores_exact_future_and_authenticates_all_state(
 ) -> None:
     source_map, cursor = _cursor(tmp_path)
     committed = cursor.plan_global_batch(37)
-    variable_tokens = [
-        1 + (index % source_map.sequence_length)
-        for index in range(len(committed))
-    ]
+    variable_tokens = [1 + (index % source_map.sequence_length) for index in range(len(committed))]
     committed_by_source = _commit(cursor, committed, variable_tokens)
     state = cursor.state_dict()
     assert state["algorithm"] == SOURCE_MIX_ALGORITHM
-    assert state["prepared_dataset_fingerprint"] == (
-        source_map.prepared_dataset_fingerprint
-    )
+    assert state["prepared_dataset_fingerprint"] == (source_map.prepared_dataset_fingerprint)
     assert state["source_map"] == source_map.to_dict()
     assert state["weights_basis_points"] == {"alpha": 7_000, "beta": 3_000}
     assert state["seed"] == 73
@@ -578,9 +587,7 @@ def test_resume_restores_exact_future_and_authenticates_all_state(
     assert state["committed_tokens"] == sum(variable_tokens)
     assert state["committed_tokens_by_source"] == committed_by_source
     assert state["committed_samples_by_source"] == cursor.source_positions
-    assert state["critical_lineage_fingerprint"] == (
-        cursor.critical_lineage_fingerprint
-    )
+    assert state["critical_lineage_fingerprint"] == (cursor.critical_lineage_fingerprint)
 
     restored = DeterministicSourceMixCursor.from_state_dict(
         source_map,
@@ -602,11 +609,7 @@ def test_resume_restores_exact_future_and_authenticates_all_state(
     derived_tamper = copy.deepcopy(state)
     assert isinstance(derived_tamper["committed_samples_by_source"], dict)
     derived_tamper["committed_samples_by_source"]["alpha"] += 1
-    unsigned = {
-        key: value
-        for key, value in derived_tamper.items()
-        if key != "state_fingerprint"
-    }
+    unsigned = {key: value for key, value in derived_tamper.items() if key != "state_fingerprint"}
     derived_tamper["state_fingerprint"] = _canonical_sha(unsigned)
     with pytest.raises(ValueError, match="total differs"):
         DeterministicSourceMixCursor.from_state_dict(
@@ -618,11 +621,7 @@ def test_resume_restores_exact_future_and_authenticates_all_state(
     token_tamper = copy.deepcopy(state)
     assert isinstance(token_tamper["committed_tokens_by_source"], dict)
     token_tamper["committed_tokens_by_source"]["alpha"] += 1
-    unsigned = {
-        key: value
-        for key, value in token_tamper.items()
-        if key != "state_fingerprint"
-    }
+    unsigned = {key: value for key, value in token_tamper.items() if key != "state_fingerprint"}
     token_tamper["state_fingerprint"] = _canonical_sha(unsigned)
     with pytest.raises(ValueError, match="total differs"):
         DeterministicSourceMixCursor.from_state_dict(
@@ -635,9 +634,7 @@ def test_resume_restores_exact_future_and_authenticates_all_state(
     assert isinstance(map_tamper["source_map"], dict)
     assert isinstance(map_tamper["source_map"]["shards"], list)
     map_tamper["source_map"]["shards"][0]["output_path"] = "other/output"
-    unsigned = {
-        key: value for key, value in map_tamper.items() if key != "state_fingerprint"
-    }
+    unsigned = {key: value for key, value in map_tamper.items() if key != "state_fingerprint"}
     map_tamper["state_fingerprint"] = _canonical_sha(unsigned)
     with pytest.raises(ValueError, match="source map changed"):
         DeterministicSourceMixCursor.from_state_dict(
@@ -687,6 +684,154 @@ def test_world_size_changes_only_global_batch_rank_partition(tmp_path: Path) -> 
         )
         committed_states.append(cursor.state_dict())
     assert all(state == committed_states[0] for state in committed_states[1:])
+
+
+def test_source_mix_cooldown_switches_only_after_crossing_batch_commit(
+    tmp_path: Path,
+) -> None:
+    _, _, cursor = _cooldown_cursor(
+        tmp_path,
+        cooldown_start_tokens=20,
+    )
+
+    first = cursor.plan_global_batch(4)
+    assert cursor.active_phase == "primary"
+    assert [item.global_position for item in first] == list(range(4))
+    _commit(cursor, first, [4] * 4)
+    assert cursor.active_phase == "primary"
+
+    crossing = cursor.plan_global_batch(4)
+    assert cursor.active_phase == "primary"
+    assert all(item.source_id in {"alpha", "beta"} for item in crossing)
+    _commit(cursor, crossing, [4] * 4)
+
+    assert cursor.committed_tokens == 32
+    assert cursor.active_phase == "cooldown"
+    state = cursor.state_dict()
+    assert state["committed_samples_by_source"] == (
+        cursor.committed_samples_by_source
+    )
+    assert state["committed_tokens_by_source"] == cursor.committed_tokens_by_source
+    assert state["phase_committed_samples_by_source"] == (
+        cursor.phase_committed_samples_by_source
+    )
+    assert state["phase_committed_tokens_by_source"] == (
+        cursor.phase_committed_tokens_by_source
+    )
+    cooldown = cursor.plan_global_batch(4)
+    assert [item.global_position for item in cooldown] == list(range(8, 12))
+    assert min(item.source_position for item in cooldown) == 0
+    assert Counter(item.source_id for item in cooldown) != Counter(item.source_id for item in first)
+
+
+@pytest.mark.parametrize("checkpoint_after_batches", [1, 2, 3])
+def test_source_mix_cooldown_resume_is_byte_equivalent_before_and_after_boundary(
+    tmp_path: Path,
+    checkpoint_after_batches: int,
+) -> None:
+    primary_map, cooldown_map, continuous = _cooldown_cursor(
+        tmp_path,
+        cooldown_start_tokens=20,
+    )
+    batches = (
+        (4, (4, 3, 2, 1)),
+        (4, (4, 4, 4, 4)),
+        (4, (1, 2, 3, 4)),
+        (4, (4, 4, 3, 3)),
+    )
+    states: list[dict[str, object]] = []
+    for batch_size, valid_tokens in batches:
+        planned = continuous.plan_global_batch(batch_size)
+        _commit(continuous, planned, valid_tokens)
+        states.append(continuous.state_dict())
+
+    resumed = DeterministicSourceMixCooldownCursor.from_state_dict(
+        primary_map,
+        {"alpha": 7_000, "beta": 3_000},
+        cooldown_map,
+        {"alpha": 4_000, "beta": 6_000},
+        states[checkpoint_after_batches - 1],
+        cooldown_start_tokens=20,
+    )
+    for batch_size, valid_tokens in batches[checkpoint_after_batches:]:
+        planned = resumed.plan_global_batch(batch_size)
+        _commit(resumed, planned, valid_tokens)
+
+    assert resumed.state_dict() == continuous.state_dict()
+    assert resumed.plan_global_batch(12) == continuous.plan_global_batch(12)
+
+
+def test_source_mix_cooldown_resume_rejects_threshold_map_and_state_tamper(
+    tmp_path: Path,
+) -> None:
+    primary_map, cooldown_map, cursor = _cooldown_cursor(tmp_path)
+    planned = cursor.plan_global_batch(8)
+    _commit(cursor, planned, [4] * 8)
+    state = cursor.state_dict()
+
+    with pytest.raises(ValueError, match="transition token changed"):
+        DeterministicSourceMixCooldownCursor.from_state_dict(
+            primary_map,
+            {"alpha": 7_000, "beta": 3_000},
+            cooldown_map,
+            {"alpha": 4_000, "beta": 6_000},
+            state,
+            cooldown_start_tokens=21,
+        )
+
+    changed_cooldown_map = replace(
+        cooldown_map,
+        prepared_dataset_fingerprint=_sha("changed-cooldown"),
+    )
+    with pytest.raises(ValueError, match="source map changed"):
+        DeterministicSourceMixCooldownCursor.from_state_dict(
+            primary_map,
+            {"alpha": 7_000, "beta": 3_000},
+            changed_cooldown_map,
+            {"alpha": 4_000, "beta": 6_000},
+            state,
+            cooldown_start_tokens=20,
+        )
+
+    tampered = copy.deepcopy(state)
+    tampered["committed_tokens"] = 1
+    with pytest.raises(ValueError, match="state fingerprint"):
+        DeterministicSourceMixCooldownCursor.from_state_dict(
+            primary_map,
+            {"alpha": 7_000, "beta": 3_000},
+            cooldown_map,
+            {"alpha": 4_000, "beta": 6_000},
+            tampered,
+            cooldown_start_tokens=20,
+        )
+
+
+def test_source_mix_cooldown_world_size_only_changes_rank_partition(
+    tmp_path: Path,
+) -> None:
+    states: list[dict[str, object]] = []
+    for world_size in (1, 2, 4, 8):
+        _, _, cursor = _cooldown_cursor(
+            tmp_path / f"cooldown-world-{world_size}",
+            cooldown_start_tokens=20,
+        )
+        prefix = cursor.plan_global_batch(8)
+        _commit(cursor, prefix, [4] * 8)
+        expected = cursor.plan_global_batch(16)
+        rank_items = [
+            item
+            for rank in range(world_size)
+            for item in cursor.plan_rank_batch(
+                16,
+                rank=rank,
+                world_size=world_size,
+            )
+        ]
+        ordered = sorted(rank_items, key=lambda item: item.global_position)
+        assert ordered == list(expected)
+        _commit(cursor, ordered, [1 + item.global_position % 4 for item in ordered])
+        states.append(cursor.state_dict())
+    assert all(state == states[0] for state in states[1:])
 
 
 def test_source_map_and_weight_underfill_fail_closed(tmp_path: Path) -> None:

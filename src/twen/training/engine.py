@@ -18,6 +18,7 @@ from ..data import (
     AuthenticatedSourceMap,
     DeterministicCooldownCursor,
     DeterministicGlobalCursor,
+    DeterministicSourceMixCooldownCursor,
     DeterministicSourceMixCursor,
     SourceMixSampleReference,
 )
@@ -169,7 +170,9 @@ TrainingDataCursor = (
     DeterministicGlobalCursor
     | DeterministicCooldownCursor
     | DeterministicSourceMixCursor
+    | DeterministicSourceMixCooldownCursor
 )
+SourceMixTrainingCursor = DeterministicSourceMixCursor | DeterministicSourceMixCooldownCursor
 TrainingRecordStore = KDRecordStore | PreparedTextRecordStore
 
 
@@ -194,6 +197,48 @@ def _source_mix_enabled(config: TrainConfig) -> bool:
     return getattr(data, "source_mix_algorithm", None) is not None
 
 
+def _is_source_mix_cursor(cursor: object) -> bool:
+    return isinstance(
+        cursor,
+        (DeterministicSourceMixCursor, DeterministicSourceMixCooldownCursor),
+    )
+
+
+def _cursor_data_phase(cursor: TrainingDataCursor) -> str:
+    if isinstance(
+        cursor,
+        (DeterministicCooldownCursor, DeterministicSourceMixCooldownCursor),
+    ):
+        return cursor.active_phase
+    return "primary"
+
+
+def _validate_corpus_reuse_policy(
+    config: TrainConfig,
+    references: Sequence[object],
+    *,
+    data_phase: str,
+) -> None:
+    """Reject an epoch wrap before any data load, forward, or optimizer work."""
+
+    if config.data.allow_corpus_reuse:
+        return
+    reused = []
+    for reference in references:
+        epoch = getattr(reference, "epoch", None)
+        if isinstance(epoch, bool) or not isinstance(epoch, int) or epoch != 0:
+            reused.append(reference)
+    if reused:
+        first = reused[0]
+        raise RuntimeError(
+            "data.allow_corpus_reuse=false rejected a repeated prepared sample "
+            f"before forward: phase={data_phase}, "
+            f"global_position={getattr(first, 'global_position', None)}, "
+            f"epoch={getattr(first, 'epoch', None)}, "
+            f"shard_id={getattr(first, 'shard_id', None)}"
+        )
+
+
 def _source_mix_log_contract(report: PreflightReport) -> dict[str, object]:
     """Return the explicit lineage/effective weight contract for durable logs."""
 
@@ -205,11 +250,9 @@ def _source_mix_log_contract(report: PreflightReport) -> dict[str, object]:
         )
         or ()
     )
-    lineage = tuple(
-        getattr(report, "source_mix_lineage_basis_points", ()) or ()
-    )
+    lineage = tuple(getattr(report, "source_mix_lineage_basis_points", ()) or ())
     override = bool(getattr(report, "source_mix_weight_override", False))
-    return {
+    primary = {
         "enabled": bool(getattr(report, "source_mix_enabled", False)),
         "algorithm": getattr(report, "source_mix_algorithm", None),
         "source_map_sha256": getattr(report, "source_map_sha256", None),
@@ -224,6 +267,47 @@ def _source_mix_log_contract(report: PreflightReport) -> dict[str, object]:
         "effective_basis_points": dict(effective),
         "weight_override": override,
         "seed": getattr(report, "source_mix_seed", None),
+    }
+    if not bool(getattr(report, "quality_cooldown_source_mix_enabled", False)):
+        return primary
+
+    cooldown_basis_points = dict(
+        tuple(getattr(report, "quality_cooldown_source_mix_basis_points", ()) or ())
+    )
+    cooldown = {
+        "enabled": True,
+        "algorithm": getattr(
+            report,
+            "quality_cooldown_source_mix_algorithm",
+            None,
+        ),
+        "source_map_sha256": getattr(
+            report,
+            "quality_cooldown_source_map_sha256",
+            None,
+        ),
+        "dataset_fingerprint": getattr(
+            report,
+            "quality_cooldown_source_mix_dataset_fingerprint",
+            None,
+        ),
+        "basis_points": cooldown_basis_points,
+        "lineage_basis_points": cooldown_basis_points,
+        "effective_basis_points": cooldown_basis_points,
+        "weight_override": False,
+        "seed": getattr(report, "quality_cooldown_source_mix_seed", None),
+    }
+    return {
+        **primary,
+        "cooldown_start_tokens": getattr(
+            report,
+            "quality_cooldown_start_tokens",
+            None,
+        ),
+        "phases": {
+            "primary": dict(primary),
+            "cooldown": cooldown,
+        },
     }
 
 
@@ -245,15 +329,63 @@ def _source_mix_session_log_fields(report: PreflightReport) -> dict[str, object]
     }
 
 
+def _source_mix_step_metric_fields(
+    cursor: SourceMixTrainingCursor,
+    valid_tokens_by_source: Mapping[str, int],
+    *,
+    data_phase: str = "primary",
+) -> dict[str, int]:
+    """Return phase-local and whole-run, zero-filled source-token ledgers.
+
+    A quality cooldown may intentionally use only a subset of the primary
+    sources, or a completely different source map. Metric column names must
+    nevertheless remain stable across the whole run. ``data_phase`` is the
+    phase that produced the just-committed batch; it cannot be inferred from
+    ``cursor.active_phase`` because a primary batch may cross the cooldown
+    boundary and make the *next* phase active at commit time.
+    """
+
+    if isinstance(cursor, DeterministicSourceMixCooldownCursor):
+        phase_counters = cursor.phase_committed_tokens_by_source
+        if data_phase not in phase_counters:
+            raise ValueError(f"unsupported source-mix data phase: {data_phase!r}")
+        source_ids = sorted(
+            set(phase_counters["primary"]) | set(phase_counters["cooldown"])
+        )
+        phase_committed = phase_counters[data_phase]
+    else:
+        if data_phase != "primary":
+            raise ValueError("single-phase source mix only supports data_phase='primary'")
+        source_ids = list(cursor.source_map.source_ids)
+        phase_committed = cursor.committed_tokens_by_source
+    committed = cursor.committed_tokens_by_source
+    return {
+        **{
+            f"source_tokens_this_step/{source_id}": int(
+                valid_tokens_by_source.get(source_id, 0)
+            )
+            for source_id in source_ids
+        },
+        **{
+            f"source_tokens/{source_id}": int(committed.get(source_id, 0))
+            for source_id in source_ids
+        },
+        **{
+            f"phase_source_tokens/{source_id}": int(
+                phase_committed.get(source_id, 0)
+            )
+            for source_id in source_ids
+        },
+    }
+
+
 def _source_map_from_preflight(
     config: TrainConfig,
     report: PreflightReport,
 ) -> AuthenticatedSourceMap:
     """Consume only the source map emitted by full coordinated preflight."""
 
-    if not _source_mix_enabled(config) or not bool(
-        getattr(report, "source_mix_enabled", False)
-    ):
+    if not _source_mix_enabled(config) or not bool(getattr(report, "source_mix_enabled", False)):
         raise RuntimeError("source-map reconstruction requires enabled source mixing")
     if report.source_map_payload_json is None:
         raise RuntimeError("preflight omitted the authenticated source-map payload")
@@ -263,17 +395,11 @@ def _source_map_from_preflight(
             raise ValueError("source-map payload must be an object")
         source_map = AuthenticatedSourceMap.from_dict(payload)
     except (json.JSONDecodeError, TypeError, ValueError) as error:
-        raise RuntimeError(
-            f"preflight source-map payload is invalid: {error}"
-        ) from error
+        raise RuntimeError(f"preflight source-map payload is invalid: {error}") from error
     configured_weights = config.data.source_mix_basis_points
     lineage_weights = source_map.source_mix_weights
-    configured_override = bool(
-        getattr(config.data, "source_mix_allow_weight_override", False)
-    )
-    report_lineage_weights = dict(
-        getattr(report, "source_mix_lineage_basis_points", ()) or ()
-    )
+    configured_override = bool(getattr(config.data, "source_mix_allow_weight_override", False))
+    report_lineage_weights = dict(getattr(report, "source_mix_lineage_basis_points", ()) or ())
     report_effective_weights = dict(
         getattr(
             report,
@@ -289,8 +415,7 @@ def _source_map_from_preflight(
         or dict(report.source_mix_basis_points) != configured_weights
         or report_effective_weights != configured_weights
         or report_lineage_weights != lineage_weights
-        or bool(getattr(report, "source_mix_weight_override", False))
-        != configured_override
+        or bool(getattr(report, "source_mix_weight_override", False)) != configured_override
         or configured_override != (lineage_weights != configured_weights)
         or report.source_mix_seed != config.data.shuffle_seed
     ):
@@ -305,6 +430,49 @@ def _source_map_from_preflight(
     return source_map
 
 
+def _cooldown_source_map_from_preflight(
+    config: TrainConfig,
+    report: PreflightReport,
+) -> AuthenticatedSourceMap:
+    """Reconstruct the independently authenticated prepared-text cooldown map."""
+
+    if (
+        not config.data.quality_cooldown_enabled()
+        or _training_data_mode(config) != "prepared-text"
+        or not _source_mix_enabled(config)
+        or not bool(report.quality_cooldown_source_mix_enabled)
+    ):
+        raise RuntimeError(
+            "cooldown source-map reconstruction requires prepared-text source mixing"
+        )
+    payload_json = report.quality_cooldown_source_map_payload_json
+    if payload_json is None:
+        raise RuntimeError("preflight omitted the authenticated cooldown source-map payload")
+    try:
+        payload = json.loads(payload_json)
+        if not isinstance(payload, Mapping):
+            raise ValueError("cooldown source-map payload must be an object")
+        source_map = AuthenticatedSourceMap.from_dict(payload)
+    except (json.JSONDecodeError, TypeError, ValueError) as error:
+        raise RuntimeError(f"preflight cooldown source-map payload is invalid: {error}") from error
+    weights = dict(report.quality_cooldown_source_mix_basis_points)
+    if (
+        source_map.fingerprint != report.quality_cooldown_source_map_sha256
+        or source_map.source_mix_weights != weights
+        or report.quality_cooldown_source_mix_algorithm != config.data.source_mix_algorithm
+        or report.quality_cooldown_source_mix_seed != config.data.shuffle_seed
+    ):
+        raise RuntimeError("preflight/runtime cooldown source-mix identity mismatch")
+    cursor = DeterministicSourceMixCursor(
+        source_map,
+        weights,
+        seed=config.data.shuffle_seed,
+    )
+    if cursor.dataset_fingerprint != report.quality_cooldown_source_mix_dataset_fingerprint:
+        raise RuntimeError("preflight/runtime cooldown source-mix dataset fingerprint mismatch")
+    return source_map
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class _SourceMixCommitPayload:
     planned_references: tuple[SourceMixSampleReference, ...]
@@ -313,7 +481,7 @@ class _SourceMixCommitPayload:
     valid_tokens_by_source: dict[str, int]
     token_count: int
 
-    def validate(self, cursor: DeterministicSourceMixCursor) -> None:
+    def validate(self, cursor: SourceMixTrainingCursor) -> None:
         cursor.validate_commit(
             planned_references=self.planned_references,
             plan_fingerprint=self.plan_fingerprint,
@@ -322,7 +490,7 @@ class _SourceMixCommitPayload:
             token_count=self.token_count,
         )
 
-    def commit(self, cursor: DeterministicSourceMixCursor) -> None:
+    def commit(self, cursor: SourceMixTrainingCursor) -> None:
         cursor.commit(
             planned_references=self.planned_references,
             plan_fingerprint=self.plan_fingerprint,
@@ -333,7 +501,7 @@ class _SourceMixCommitPayload:
 
 
 def _prepare_source_mix_commit(
-    cursor: DeterministicSourceMixCursor,
+    cursor: SourceMixTrainingCursor,
     rank_references: Sequence[SourceMixSampleReference],
     local_valid_tokens: Sequence[int],
     context: DistributedContext,
@@ -354,9 +522,7 @@ def _prepare_source_mix_commit(
         raise RuntimeError("rank source-mix references differ from the pending global plan")
     counts = tuple(local_valid_tokens)
     if len(counts) != len(references):
-        raise RuntimeError(
-            "rank source-mix valid-token count differs from its planned references"
-        )
+        raise RuntimeError("rank source-mix valid-token count differs from its planned references")
     for index, count in enumerate(counts):
         if (
             isinstance(count, bool)
@@ -378,9 +544,7 @@ def _prepare_source_mix_commit(
         dtype=torch.int64,
         device=context.device,
     )
-    for local_index, (reference, count) in enumerate(
-        zip(references, counts, strict=True)
-    ):
+    for local_index, (reference, count) in enumerate(zip(references, counts, strict=True)):
         global_index = context.rank + local_index * context.world_size
         reduced[global_index] = count
         reduced[source_offset + source_indices[reference.source_id]] += count
@@ -392,9 +556,7 @@ def _prepare_source_mix_commit(
     )
     all_reduce_sum(reduced, context)
     values = tuple(int(value) for value in reduced.cpu().tolist())
-    expected_fingerprint = tuple(
-        byte * context.world_size for byte in bytes.fromhex(fingerprint)
-    )
+    expected_fingerprint = tuple(byte * context.world_size for byte in bytes.fromhex(fingerprint))
     if values[fingerprint_offset:] != expected_fingerprint:
         raise RuntimeError("source-mix pending plan fingerprint differs across ranks")
 
@@ -403,8 +565,7 @@ def _prepare_source_mix_commit(
         plan_fingerprint=fingerprint,
         valid_tokens_per_reference=values[:reference_count],
         valid_tokens_by_source={
-            source_id: values[source_offset + index]
-            for index, source_id in enumerate(source_ids)
+            source_id: values[source_offset + index] for index, source_id in enumerate(source_ids)
         },
         token_count=values[total_offset],
     )
@@ -425,16 +586,16 @@ def _optimizer_step_and_commit(
     """Mutate optimizer first only after all cursor accounting can commit."""
 
     if source_mix_commit is not None:
-        if not isinstance(cursor, DeterministicSourceMixCursor):
+        if not _is_source_mix_cursor(cursor):
             raise RuntimeError("source-mix commit payload was built for a legacy cursor")
         if committed_tokens != source_mix_commit.token_count:
             raise RuntimeError(
                 "loaded optimizer-batch valid tokens differ from the "
                 "authenticated source-mix reference counts"
             )
-        source_mix_commit.validate(cursor)
+        source_mix_commit.validate(cursor)  # type: ignore[arg-type]
         optimizer.step()
-        source_mix_commit.commit(cursor)
+        source_mix_commit.commit(cursor)  # type: ignore[arg-type]
         return
     optimizer.step()
     cursor.commit(
@@ -453,9 +614,7 @@ def _build_training_record_store(
 
     if _teacher_kd_data_enabled(config):
         selected_manifest = (
-            config.data.teacher_kd_manifest_path
-            if manifest_path is None
-            else manifest_path
+            config.data.teacher_kd_manifest_path if manifest_path is None else manifest_path
         )
         if selected_manifest is None:
             raise RuntimeError("teacher-kd mode requires a KD manifest")
@@ -467,10 +626,9 @@ def _build_training_record_store(
         )
     if _training_data_mode(config) != "prepared-text":
         raise RuntimeError(f"unsupported training data mode: {_training_data_mode(config)!r}")
-    if manifest_path is not None and Path(manifest_path) != Path(config.data.manifest_path):
-        raise RuntimeError("prepared-text mode does not support a separate cooldown store")
+    selected_manifest = config.data.manifest_path if manifest_path is None else manifest_path
     return PreparedTextRecordStore(
-        config.data.manifest_path,
+        selected_manifest,
         expected_sequence_length=config.data.max_sequence_length,
         verify_shards=verify_shards,
     )
@@ -740,9 +898,7 @@ def _clip_optimizer_gradients(
     import torch
 
     parameters = tuple(
-        parameter
-        for group in optimizer.param_groups
-        for parameter in group["params"]
+        parameter for group in optimizer.param_groups for parameter in group["params"]
     )
     if len({id(parameter) for parameter in parameters}) != len(parameters):
         raise RuntimeError("optimizer parameter groups overlap during gradient clipping")
@@ -1422,21 +1578,42 @@ def _checkpoint(
                         **_source_mix_log_contract(report),
                         "cursor_critical_lineage_fingerprint": (
                             cursor.critical_lineage_fingerprint
-                            if isinstance(cursor, DeterministicSourceMixCursor)
+                            if _is_source_mix_cursor(cursor)
                             else None
                         ),
                         "committed_samples_by_source": (
                             cursor.committed_samples_by_source
-                            if isinstance(cursor, DeterministicSourceMixCursor)
+                            if _is_source_mix_cursor(cursor)
                             else {}
                         ),
                         "committed_tokens_by_source": (
                             cursor.committed_tokens_by_source
-                            if isinstance(cursor, DeterministicSourceMixCursor)
+                            if _is_source_mix_cursor(cursor)
+                            else {}
+                        ),
+                        "phase_committed_samples_by_source": (
+                            cursor.phase_committed_samples_by_source
+                            if isinstance(
+                                cursor,
+                                DeterministicSourceMixCooldownCursor,
+                            )
+                            else {}
+                        ),
+                        "phase_committed_tokens_by_source": (
+                            cursor.phase_committed_tokens_by_source
+                            if isinstance(
+                                cursor,
+                                DeterministicSourceMixCooldownCursor,
+                            )
                             else {}
                         ),
                     },
                     "optimizer": _optimizer_checkpoint_contract(config),
+                    "allow_corpus_reuse": getattr(
+                        config.data,
+                        "allow_corpus_reuse",
+                        True,
+                    ),
                     "data_manifest_sha256": config.data.manifest_sha256,
                     "teacher_kd_manifest_sha256": getattr(
                         config.data,
@@ -1595,12 +1772,26 @@ def _load_or_initialize(
     if fork_from and resume != "none":
         raise RuntimeError("--fork-from requires --resume none")
     cooldown_start = getattr(config.data, "quality_cooldown_start_tokens", None)
-    source_map = (
-        _source_map_from_preflight(config, report)
-        if _source_mix_enabled(config)
+    source_map = _source_map_from_preflight(config, report) if _source_mix_enabled(config) else None
+    cooldown_source_map = (
+        _cooldown_source_map_from_preflight(config, report)
+        if source_map is not None and cooldown_start is not None
         else None
     )
-    if source_map is not None:
+    if source_map is not None and cooldown_start is not None:
+        if cooldown_store is None or cooldown_source_map is None:
+            raise RuntimeError(
+                "prepared-text source-mix cooldown requires a cooldown store and source map"
+            )
+        cursor: TrainingDataCursor = DeterministicSourceMixCooldownCursor(
+            source_map,
+            config.data.source_mix_basis_points,
+            cooldown_source_map,
+            dict(report.quality_cooldown_source_mix_basis_points),
+            seed=config.data.shuffle_seed,
+            cooldown_start_tokens=int(cooldown_start),
+        )
+    elif source_map is not None:
         cursor: TrainingDataCursor = DeterministicSourceMixCursor(
             source_map,
             config.data.source_mix_basis_points,
@@ -1612,7 +1803,7 @@ def _load_or_initialize(
         )
     else:
         if cooldown_store is None:
-            raise RuntimeError("quality cooldown config requires a cooldown KD store")
+            raise RuntimeError("quality cooldown config requires a cooldown store")
         cursor = DeterministicCooldownCursor(
             store.layout,
             cooldown_store.layout,
@@ -1654,7 +1845,17 @@ def _load_or_initialize(
     state.gradient_accumulation_steps = report.batch.gradient_accumulation_steps
     state.micro_step_in_accumulation = 0
     cursor_payload = loaded.data_cursor.to_global_cursor_state()
-    if source_map is not None:
+    if source_map is not None and cooldown_start is not None:
+        assert cooldown_source_map is not None
+        cursor = DeterministicSourceMixCooldownCursor.from_state_dict(
+            source_map,
+            config.data.source_mix_basis_points,
+            cooldown_source_map,
+            dict(report.quality_cooldown_source_mix_basis_points),
+            cursor_payload,
+            cooldown_start_tokens=int(cooldown_start),
+        )
+    elif source_map is not None:
         cursor = DeterministicSourceMixCursor.from_state_dict(
             source_map,
             config.data.source_mix_basis_points,
@@ -2186,6 +2387,7 @@ def run_training(
                     "world_size": context.world_size,
                     "hostname": platform.node(),
                     "source_mix": source_mix_contract,
+                    "allow_corpus_reuse": config.data.allow_corpus_reuse,
                 },
             )
             properties = torch.cuda.get_device_properties(context.device)
@@ -2196,6 +2398,7 @@ def run_training(
                     "stage": config.stage,
                     "track": config.track,
                     "data_mode": _training_data_mode(config),
+                    "allow_corpus_reuse": config.data.allow_corpus_reuse,
                     "teacher_kd_enabled": _teacher_kd_data_enabled(config),
                     "adapter_optimizer": config.optimizer.adapter_optimizer,
                     "rank": context.rank,
@@ -2473,11 +2676,15 @@ def run_training(
             verify_shards=False,  # Full hash validation already ran in preflight.
         )
         if config.data.quality_cooldown_enabled():
-            cooldown_kd_path = config.data.quality_cooldown_teacher_kd_manifest_path
-            assert cooldown_kd_path is not None
+            cooldown_manifest_path = (
+                config.data.quality_cooldown_teacher_kd_manifest_path
+                if _teacher_kd_data_enabled(config)
+                else config.data.quality_cooldown_manifest_path
+            )
+            assert cooldown_manifest_path is not None
             cooldown_store = _build_training_record_store(
                 config,
-                manifest_path=cooldown_kd_path,
+                manifest_path=cooldown_manifest_path,
                 verify_shards=False,  # Full hash validation already ran in preflight.
             )
         layer_mapping = load_layer_mapping(
@@ -2540,11 +2747,7 @@ def run_training(
                             else None
                         ),
                         "current_world_size": context.world_size,
-                        "data_phase": (
-                            cursor.active_phase
-                            if isinstance(cursor, DeterministicCooldownCursor)
-                            else "primary"
-                        ),
+                        "data_phase": _cursor_data_phase(cursor),
                         "quality_cooldown_start_tokens": (
                             config.data.quality_cooldown_start_tokens
                         ),
@@ -2555,17 +2758,13 @@ def run_training(
                         "source_mix": (
                             {
                                 **_source_mix_log_contract(report),
-                                "committed_samples_by_source": (
-                                    cursor.committed_samples_by_source
-                                ),
-                                "committed_tokens_by_source": (
-                                    cursor.committed_tokens_by_source
-                                ),
+                                "committed_samples_by_source": (cursor.committed_samples_by_source),
+                                "committed_tokens_by_source": (cursor.committed_tokens_by_source),
                                 "critical_lineage_fingerprint": (
                                     cursor.critical_lineage_fingerprint
                                 ),
                             }
-                            if isinstance(cursor, DeterministicSourceMixCursor)
+                            if _is_source_mix_cursor(cursor)
                             else None
                         ),
                     },
@@ -2602,11 +2801,7 @@ def run_training(
                 "step": state.global_step,
                 "tokens": state.committed_tokens,
                 "world_size": context.world_size,
-                "data_phase": (
-                    cursor.active_phase
-                    if isinstance(cursor, DeterministicCooldownCursor)
-                    else "primary"
-                ),
+                "data_phase": _cursor_data_phase(cursor),
                 "quality_cooldown_start_tokens": (config.data.quality_cooldown_start_tokens),
             }
             if event_logger is not None:
@@ -2666,11 +2861,7 @@ def run_training(
                 step_started = time.perf_counter()
                 torch.cuda.reset_peak_memory_stats(context.device)
                 state.micro_step_in_accumulation = 0
-                step_data_phase = (
-                    cursor.active_phase
-                    if isinstance(cursor, DeterministicCooldownCursor)
-                    else "primary"
-                )
+                step_data_phase = _cursor_data_phase(cursor)
                 active_store = cooldown_store if step_data_phase == "cooldown" else store
                 if active_store is None:
                     raise RuntimeError(
@@ -2681,6 +2872,11 @@ def run_training(
                     global_batch_samples,
                     rank=context.rank,
                     world_size=context.world_size,
+                )
+                _validate_corpus_reuse_policy(
+                    config,
+                    cursor.plan_global_batch(global_batch_samples),
+                    data_phase=step_data_phase,
                 )
                 optimizer.zero_grad(set_to_none=True)
                 local_valid_tokens = torch.zeros((), device=context.device, dtype=torch.int64)
@@ -2788,13 +2984,11 @@ def run_training(
                         if config.losses.mtp > 0
                         else 0
                     )
-                    if isinstance(cursor, DeterministicSourceMixCursor):
+                    if _is_source_mix_cursor(cursor):
                         source_mix_commit = _prepare_source_mix_commit(
-                            cursor,
+                            cursor,  # type: ignore[arg-type]
                             rank_references,
-                            active_store.optimizer_batch_valid_token_counts(
-                                rank_references
-                            ),
+                            active_store.optimizer_batch_valid_token_counts(rank_references),
                             context,
                         )
                 data_token_count_seconds = time.perf_counter() - data_token_count_started
@@ -2880,9 +3074,7 @@ def run_training(
                                         raise RuntimeError(
                                             "teacher-kd mode omitted the streaming KD loss"
                                         )
-                                    target_mean = (
-                                        target_mean + config.losses.teacher_kd * kd
-                                    )
+                                    target_mean = target_mean + config.losses.teacher_kd * kd
                                 elif kd is not None:
                                     raise RuntimeError(
                                         "prepared-text mode unexpectedly produced a teacher KD loss"
@@ -2978,9 +3170,7 @@ def run_training(
                         assert kd is not None
                         values["teacher_kd"] = kd.detach() * target_weight
                         values["anchor_kl"] = anchor.detach() * target_weight
-                        values["hidden_alignment"] = (
-                            hidden_alignment.detach() * hidden_weight
-                        )
+                        values["hidden_alignment"] = hidden_alignment.detach() * hidden_weight
                     if mtp is not None:
                         mtp_weight = batch_mtp_count.to(dtype=mtp.dtype)
                         values["__mtp_count"] = batch_mtp_count.detach()
@@ -3096,7 +3286,7 @@ def run_training(
                 all_reduce_sum(token_tensor, context)
                 committed_tokens = int(token_tensor.item())
                 if source_mix_commit is not None:
-                    if not isinstance(cursor, DeterministicSourceMixCursor):
+                    if not _is_source_mix_cursor(cursor):
                         raise RuntimeError(
                             "source-mix commit payload was built for a legacy cursor"
                         )
@@ -3109,7 +3299,7 @@ def run_training(
                     # cross-rank validation happened before any forward work;
                     # this also proves the pending cursor plan was not changed
                     # while the optimizer batch was executing.
-                    source_mix_commit.validate(cursor)
+                    source_mix_commit.validate(cursor)  # type: ignore[arg-type]
                 with torch.profiler.record_function("twen/grad_clip"):
                     grad_norm = _clip_optimizer_gradients(
                         optimizer,
@@ -3119,9 +3309,7 @@ def run_training(
                 # The token scheduler is advanced after the commit so the live
                 # param-group values then belong to the *next* optimizer step.
                 applied_learning_rates = _named_learning_rates(optimizer)
-                applied_adjusted_learning_rates = _named_adjusted_learning_rates(
-                    optimizer
-                )
+                applied_adjusted_learning_rates = _named_adjusted_learning_rates(optimizer)
                 with torch.profiler.record_function("twen/optimizer_step"):
                     _optimizer_step_and_commit(
                         optimizer,
@@ -3134,11 +3322,7 @@ def run_training(
                 state.global_step += 1
                 state.committed_tokens = cursor.committed_tokens
                 state.micro_step_in_accumulation = 0
-                next_data_phase = (
-                    cursor.active_phase
-                    if isinstance(cursor, DeterministicCooldownCursor)
-                    else "primary"
-                )
+                next_data_phase = _cursor_data_phase(cursor)
                 state.extra["data_phase"] = next_data_phase
                 if next_data_phase != step_data_phase and event_logger is not None:
                     event_logger.log(
@@ -3157,9 +3341,7 @@ def run_training(
                 )
                 scheduler.step_tokens(state.committed_tokens)
                 next_learning_rates = _named_learning_rates(optimizer)
-                next_adjusted_learning_rates = _named_adjusted_learning_rates(
-                    optimizer
-                )
+                next_adjusted_learning_rates = _named_adjusted_learning_rates(optimizer)
                 metric_keys = sorted(step_metrics)
                 if metric_keys:
                     metric_tensor = torch.stack(
@@ -3210,8 +3392,7 @@ def run_training(
                     config.losses.ntp * averaged["ntp"]
                     + config.losses.teacher_kd * averaged.get("teacher_kd", 0.0)
                     + config.losses.anchor_kl * averaged.get("anchor_kl", 0.0)
-                    + config.losses.hidden_alignment
-                    * averaged.get("hidden_alignment", 0.0)
+                    + config.losses.hidden_alignment * averaged.get("hidden_alignment", 0.0)
                     + config.losses.mtp * averaged.get("mtp", 0.0)
                 )
                 if config.stage == "sparse":
@@ -3269,15 +3450,14 @@ def run_training(
                     )
                 )
                 if source_mix_commit is not None:
-                    assert isinstance(cursor, DeterministicSourceMixCursor)
-                    for source_id, tokens in (
-                        source_mix_commit.valid_tokens_by_source.items()
-                    ):
-                        averaged[f"source_tokens_this_step/{source_id}"] = tokens
-                    for source_id, tokens in (
-                        cursor.committed_tokens_by_source.items()
-                    ):
-                        averaged[f"source_tokens/{source_id}"] = tokens
+                    assert _is_source_mix_cursor(cursor)
+                    averaged.update(
+                        _source_mix_step_metric_fields(
+                            cursor,  # type: ignore[arg-type]
+                            source_mix_commit.valid_tokens_by_source,
+                            data_phase=step_data_phase,
+                        )
+                    )
                 state.router_stats = {
                     key: float(value)
                     for key, value in averaged.items()

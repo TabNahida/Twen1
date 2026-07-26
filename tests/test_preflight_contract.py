@@ -115,6 +115,15 @@ class CalibrationPreflightContractTest(unittest.TestCase):
                     ["math", 20_000_000],
                     ["science", 30_000_000],
                 ],
+                "source_mix": {
+                    "enabled": False,
+                    "algorithm": None,
+                    "source_map_sha256": None,
+                    "dataset_fingerprint": None,
+                    "basis_points": [],
+                    "seed": None,
+                    "source_map": None,
+                },
             },
         )
         self.assertTrue(payload["data_governance"]["research_only"])

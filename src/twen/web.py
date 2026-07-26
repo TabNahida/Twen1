@@ -1528,6 +1528,12 @@ class DashboardController:
             "save_confirmation": profile.save_confirmation,
             "session": session,
             "source_mix": _session_source_mix(session),
+            "allow_corpus_reuse": (
+                session.get("allow_corpus_reuse")
+                if isinstance(session, Mapping)
+                and isinstance(session.get("allow_corpus_reuse"), bool)
+                else None
+            ),
             "controller": controller_for_profile,
             "latest_metric": metrics[-1] if metrics else None,
             "latest_telemetry": telemetry[-1] if telemetry else None,
@@ -1621,6 +1627,12 @@ class DashboardController:
             "preflight_enforced": True,
             "session": session,
             "source_mix": _session_source_mix(session),
+            "allow_corpus_reuse": (
+                session.get("allow_corpus_reuse")
+                if isinstance(session, Mapping)
+                and isinstance(session.get("allow_corpus_reuse"), bool)
+                else None
+            ),
             "controller": None,
             "latest_metric": metrics[-1] if metrics else None,
             "latest_telemetry": telemetry[-1] if telemetry else None,

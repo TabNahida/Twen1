@@ -151,10 +151,11 @@ class DataConfig:
     shuffle_seed: int = 3407
     num_workers: int = 4
     teacher_top_k: int = 64
-    # Optional, independently authenticated whole-shard subset used only after
-    # ``quality_cooldown_start_tokens``.  All five fields are an atomic
-    # contract; the all-None default preserves every legacy v1 data path and
-    # critical fingerprint.
+    # Optional, independently authenticated corpus used only after
+    # ``quality_cooldown_start_tokens``. Teacher-KD mode retains the historical
+    # five-field prepared/KD contract. Prepared-text mode uses only the
+    # prepared path/SHA/start triplet and must omit both KD identities. The
+    # all-None default preserves every legacy v1 data path and fingerprint.
     quality_cooldown_manifest_path: str | None = None
     quality_cooldown_manifest_sha256: str | None = None
     quality_cooldown_teacher_kd_manifest_path: str | None = None
@@ -176,6 +177,15 @@ class DataConfig:
     # prepared lineage.  Capacity-driven reweighting is permitted only when
     # the run explicitly records this resume-critical exception.
     source_mix_allow_weight_override: bool = False
+    # Pilot/formal prepared-text runs can forbid every corpus epoch wrap.
+    # Legacy runs retain reuse and omit this default from canonical identity.
+    allow_corpus_reuse: bool = True
+    # Optional authenticated proof that independently prepared primary and
+    # cooldown phases share no source-scoped stable IDs, normalized exact
+    # text, or MinHash near duplicates.  No-reuse prepared-text cooldown runs
+    # require this pair; the all-None default preserves legacy/KD identity.
+    phase_disjointness_attestation_path: str | None = None
+    phase_disjointness_attestation_sha256: str | None = None
 
     def quality_cooldown_enabled(self) -> bool:
         return self.quality_cooldown_start_tokens is not None
@@ -205,8 +215,7 @@ class DataConfig:
                 )
             self.teacher_kd_manifest_sha256 = self.teacher_kd_manifest_sha256.lower()
         elif (
-            self.teacher_kd_manifest_path is not None
-            or self.teacher_kd_manifest_sha256 is not None
+            self.teacher_kd_manifest_path is not None or self.teacher_kd_manifest_sha256 is not None
         ):
             raise ConfigError(
                 "data.mode='prepared-text' must omit teacher KD manifest path and SHA256"
@@ -221,18 +230,18 @@ class DataConfig:
             )
         if self.mode == "teacher-kd" and self.teacher_top_k != 64:
             raise ConfigError("the current top-64 KD contract requires teacher_top_k=64")
-        if self.mode == "prepared-text" and self.quality_cooldown_enabled():
-            raise ConfigError(
-                "data.mode='prepared-text' does not yet support the legacy KD quality cooldown"
-            )
         source_mix_values = (
             self.source_mix_algorithm,
             self.source_map_sha256,
             self.source_mix_basis_points,
         )
         if not isinstance(self.source_mix_allow_weight_override, bool):
+            raise ConfigError("data.source_mix_allow_weight_override must be a boolean")
+        if not isinstance(self.allow_corpus_reuse, bool):
+            raise ConfigError("data.allow_corpus_reuse must be a boolean")
+        if not self.allow_corpus_reuse and self.mode != "prepared-text":
             raise ConfigError(
-                "data.source_mix_allow_weight_override must be a boolean"
+                "data.allow_corpus_reuse=false currently requires data.mode='prepared-text'"
             )
         if any(value is not None for value in source_mix_values) and not all(
             value is not None for value in source_mix_values
@@ -243,22 +252,16 @@ class DataConfig:
         if self.source_mix_enabled():
             if self.mode != "prepared-text":
                 raise ConfigError("source mixing currently requires data.mode='prepared-text'")
-            if (
-                self.source_mix_algorithm
-                != "token-deficit-corrected-source-mix-bp-v2"
-            ):
+            if self.source_mix_algorithm != "token-deficit-corrected-source-mix-bp-v2":
                 raise ConfigError("data.source_mix_algorithm is unsupported")
-            if (
-                not isinstance(self.source_map_sha256, str)
-                or not re.fullmatch(r"[0-9a-fA-F]{64}", self.source_map_sha256)
+            if not isinstance(self.source_map_sha256, str) or not re.fullmatch(
+                r"[0-9a-fA-F]{64}", self.source_map_sha256
             ):
                 raise ConfigError("data.source_map_sha256 must be a SHA256 hex digest")
             self.source_map_sha256 = self.source_map_sha256.lower()
             raw_weights = self.source_mix_basis_points
             if not isinstance(raw_weights, dict) or not raw_weights:
-                raise ConfigError(
-                    "data.source_mix_basis_points must be a non-empty mapping"
-                )
+                raise ConfigError("data.source_mix_basis_points must be a non-empty mapping")
             normalized_weights: dict[str, int] = {}
             for source_id, weight in raw_weights.items():
                 if not isinstance(source_id, str) or not source_id.strip():
@@ -267,52 +270,58 @@ class DataConfig:
                     )
                 normalized_source_id = source_id.strip()
                 if normalized_source_id in normalized_weights:
-                    raise ConfigError(
-                        "data.source_mix_basis_points contains duplicate source IDs"
-                    )
-                if (
-                    isinstance(weight, bool)
-                    or not isinstance(weight, int)
-                    or weight <= 0
-                ):
+                    raise ConfigError("data.source_mix_basis_points contains duplicate source IDs")
+                if isinstance(weight, bool) or not isinstance(weight, int) or weight <= 0:
                     raise ConfigError(
                         "data.source_mix_basis_points values must be positive integers"
                     )
                 normalized_weights[normalized_source_id] = weight
             if sum(normalized_weights.values()) != 10_000:
-                raise ConfigError(
-                    "data.source_mix_basis_points must total exactly 10,000"
-                )
+                raise ConfigError("data.source_mix_basis_points must total exactly 10,000")
             self.source_mix_basis_points = dict(sorted(normalized_weights.items()))
         elif self.source_mix_allow_weight_override:
             raise ConfigError(
                 "data.source_mix_allow_weight_override requires enabled source mixing"
             )
-        cooldown_values = (
+        cooldown_prepared_values = (
             self.quality_cooldown_manifest_path,
             self.quality_cooldown_manifest_sha256,
-            self.quality_cooldown_teacher_kd_manifest_path,
-            self.quality_cooldown_teacher_kd_manifest_sha256,
             self.quality_cooldown_start_tokens,
         )
-        if any(value is not None for value in cooldown_values) and not all(
-            value is not None for value in cooldown_values
-        ):
-            raise ConfigError(
-                "quality cooldown requires prepared/KD paths, SHA256 values, and start tokens"
-            )
-        if self.quality_cooldown_enabled():
-            for name in (
-                "quality_cooldown_manifest_path",
-                "quality_cooldown_teacher_kd_manifest_path",
+        cooldown_kd_values = (
+            self.quality_cooldown_teacher_kd_manifest_path,
+            self.quality_cooldown_teacher_kd_manifest_sha256,
+        )
+        if self.mode == "teacher-kd":
+            cooldown_values = cooldown_prepared_values + cooldown_kd_values
+            if any(value is not None for value in cooldown_values) and not all(
+                value is not None for value in cooldown_values
             ):
+                raise ConfigError(
+                    "quality cooldown requires prepared/KD paths, SHA256 values, and start tokens"
+                )
+        else:
+            if any(value is not None for value in cooldown_kd_values):
+                raise ConfigError(
+                    "data.mode='prepared-text' quality cooldown must omit KD paths and SHA256 values"
+                )
+            if any(value is not None for value in cooldown_prepared_values) and not all(
+                value is not None for value in cooldown_prepared_values
+            ):
+                raise ConfigError(
+                    "prepared-text quality cooldown requires a prepared path, SHA256, and start tokens"
+                )
+        if self.quality_cooldown_enabled():
+            path_names = ["quality_cooldown_manifest_path"]
+            digest_names = ["quality_cooldown_manifest_sha256"]
+            if self.mode == "teacher-kd":
+                path_names.append("quality_cooldown_teacher_kd_manifest_path")
+                digest_names.append("quality_cooldown_teacher_kd_manifest_sha256")
+            for name in path_names:
                 value = getattr(self, name)
                 if not isinstance(value, str) or not value:
                     raise ConfigError(f"data.{name} must be a non-empty path")
-            for name in (
-                "quality_cooldown_manifest_sha256",
-                "quality_cooldown_teacher_kd_manifest_sha256",
-            ):
+            for name in digest_names:
                 digest = getattr(self, name)
                 if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", digest):
                     raise ConfigError(f"data.{name} must be a SHA256 hex digest")
@@ -320,16 +329,61 @@ class DataConfig:
             start = self.quality_cooldown_start_tokens
             if isinstance(start, bool) or not isinstance(start, int) or start <= 0:
                 raise ConfigError("data.quality_cooldown_start_tokens must be a positive integer")
-            if (
+            prepared_identity_reused = (
                 self.quality_cooldown_manifest_path == self.manifest_path
                 or self.quality_cooldown_manifest_sha256 == self.manifest_sha256
-                or self.quality_cooldown_teacher_kd_manifest_path == self.teacher_kd_manifest_path
+            )
+            kd_identity_reused = self.mode == "teacher-kd" and (
+                self.quality_cooldown_teacher_kd_manifest_path == self.teacher_kd_manifest_path
                 or self.quality_cooldown_teacher_kd_manifest_sha256
                 == self.teacher_kd_manifest_sha256
-            ):
+            )
+            if prepared_identity_reused or kd_identity_reused:
                 raise ConfigError(
                     "quality cooldown requires independent prepared and KD manifest identities"
+                    if self.mode == "teacher-kd"
+                    else "quality cooldown requires an independent prepared manifest identity"
                 )
+        disjointness_values = (
+            self.phase_disjointness_attestation_path,
+            self.phase_disjointness_attestation_sha256,
+        )
+        if any(value is not None for value in disjointness_values) and not all(
+            value is not None for value in disjointness_values
+        ):
+            raise ConfigError("phase disjointness requires an attestation path and SHA256")
+        if all(value is not None for value in disjointness_values):
+            if self.mode != "prepared-text" or not self.quality_cooldown_enabled():
+                raise ConfigError(
+                    "phase disjointness is only valid for prepared-text quality cooldown"
+                )
+            if not self.source_mix_enabled():
+                raise ConfigError("phase disjointness requires authenticated source mixing")
+            if (
+                not isinstance(self.phase_disjointness_attestation_path, str)
+                or not self.phase_disjointness_attestation_path
+            ):
+                raise ConfigError(
+                    "data.phase_disjointness_attestation_path must be a non-empty path"
+                )
+            digest = self.phase_disjointness_attestation_sha256
+            if not isinstance(digest, str) or not re.fullmatch(
+                r"[0-9a-fA-F]{64}",
+                digest,
+            ):
+                raise ConfigError(
+                    "data.phase_disjointness_attestation_sha256 must be a SHA256 hex digest"
+                )
+            self.phase_disjointness_attestation_sha256 = digest.lower()
+        elif (
+            self.mode == "prepared-text"
+            and self.quality_cooldown_enabled()
+            and not self.allow_corpus_reuse
+        ):
+            raise ConfigError(
+                "no-reuse prepared-text quality cooldown requires a phase "
+                "disjointness attestation path and SHA256"
+            )
 
 
 @dataclass(slots=True)
@@ -408,20 +462,42 @@ class OptimizerConfig:
 
     def validate(self) -> None:
         for name in ("adapter_lr", "router_lr", "lora_lr", "scale_lr"):
-            value = float(getattr(self, name))
-            if not math.isfinite(value) or value <= 0:
+            raw_value = getattr(self, name)
+            if (
+                isinstance(raw_value, bool)
+                or not isinstance(raw_value, (int, float))
+                or not math.isfinite(float(raw_value))
+                or float(raw_value) <= 0
+            ):
                 raise ConfigError(f"optimizer.{name} must be finite and positive")
         for name in ("weight_decay", "adam_eps", "grad_clip_norm"):
-            value = float(getattr(self, name))
-            if not math.isfinite(value) or value < 0:
+            raw_value = getattr(self, name)
+            if (
+                isinstance(raw_value, bool)
+                or not isinstance(raw_value, (int, float))
+                or not math.isfinite(float(raw_value))
+                or float(raw_value) < 0
+            ):
                 raise ConfigError(f"optimizer.{name} must be finite and non-negative")
         for name in ("adam_beta1", "adam_beta2"):
-            value = float(getattr(self, name))
-            if not math.isfinite(value) or not 0.0 <= value < 1.0:
+            raw_value = getattr(self, name)
+            if (
+                isinstance(raw_value, bool)
+                or not isinstance(raw_value, (int, float))
+                or not math.isfinite(float(raw_value))
+                or not 0.0 <= float(raw_value) < 1.0
+            ):
                 raise ConfigError(f"optimizer.{name} must be in [0, 1)")
         if self.adam_eps <= 0 or self.grad_clip_norm <= 0:
             raise ConfigError("optimizer.adam_eps and grad_clip_norm must be positive")
-        if self.warmup_tokens < 0 or self.max_tokens <= 0:
+        if (
+            isinstance(self.warmup_tokens, bool)
+            or not isinstance(self.warmup_tokens, int)
+            or isinstance(self.max_tokens, bool)
+            or not isinstance(self.max_tokens, int)
+            or self.warmup_tokens < 0
+            or self.max_tokens <= 0
+        ):
             raise ConfigError("optimizer token counts are invalid")
         if self.warmup_tokens >= self.max_tokens:
             raise ConfigError("optimizer.warmup_tokens must be smaller than max_tokens")
@@ -806,6 +882,10 @@ class TrainConfig:
                 data.pop("teacher_kd_manifest_path", None)
             if data.get("teacher_kd_manifest_sha256") is None:
                 data.pop("teacher_kd_manifest_sha256", None)
+            if data.get("quality_cooldown_teacher_kd_manifest_path") is None:
+                data.pop("quality_cooldown_teacher_kd_manifest_path", None)
+            if data.get("quality_cooldown_teacher_kd_manifest_sha256") is None:
+                data.pop("quality_cooldown_teacher_kd_manifest_sha256", None)
             data.pop("teacher_top_k", None)
         if data.get("quality_cooldown_start_tokens") is None:
             for name in (
@@ -824,6 +904,11 @@ class TrainConfig:
                 "source_mix_allow_weight_override",
             ):
                 data.pop(name, None)
+        if data.get("allow_corpus_reuse") is True:
+            data.pop("allow_corpus_reuse", None)
+        if data.get("phase_disjointness_attestation_path") is None:
+            data.pop("phase_disjointness_attestation_path", None)
+            data.pop("phase_disjointness_attestation_sha256", None)
         # New phase-specific counts are opt-in. Omitting every None preserves
         # historical v1 resolved configs and their critical fingerprints.
         for name in (

@@ -1,3 +1,5 @@
+# ruff: noqa: RUF001
+
 from __future__ import annotations
 
 import hashlib
@@ -13,6 +15,7 @@ from twen.data.audits import (
     DataAuditError,
     audit_lineage_for_role,
     build_base_audit_attestation,
+    content_quality_rejection_reasons,
     inspect_benchmark_registry,
     materialize_filtered_base_corpus,
     validate_base_audit_attestation,
@@ -36,6 +39,54 @@ class _Tokenizer:
     def encode(self, text: str, *, add_special_tokens: bool) -> list[int]:
         assert not add_special_tokens
         return [1 + ord(character) % 31 for character in text]
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (
+            "博彩通开户注册，体育投注送彩金；博狗博彩客服提供投注平台。",
+            "gambling_or_seo_stitching_spam",
+        ),
+        (
+            "后後发發台臺万萬云雲书書乐樂国國学學后後发發台臺万萬云雲书書乐樂国國学學",
+            "mixed_chinese_script_conversion_artifact",
+        ),
+        (
+            ("这是一个足够长、应被精确识别的重复段落。" * 4)
+            + "\n"
+            + ("这是一个足够长、应被精确识别的重复段落。" * 4),
+            "repeated_paragraph",
+        ),
+        ("正常开头后出现损坏字节\ufffd和锟斤拷。", "mojibake_or_garbled_text"),
+        (
+            "正文。\n上一篇：甲\n下一篇：乙\n相关阅读\n猜你喜欢\n"
+            "扫码手机观看\n版权与免责声明\n责任编辑：某人",
+            "crawler_boilerplate_or_abnormal_boundaries",
+        ),
+    ],
+)
+def test_content_quality_rejection_reasons_are_explicit(
+    text: str,
+    expected: str,
+) -> None:
+    assert expected in content_quality_rejection_reasons(text)
+
+
+def test_content_quality_policy_is_conservative_for_code_and_clean_text() -> None:
+    repeated_code = "def f():\\n    return 1\\n" * 10
+    assert content_quality_rejection_reasons(repeated_code, category="code") == ()
+    assert content_quality_rejection_reasons(
+        "这是一段结构正常的中文教材正文，介绍牛顿定律及其适用条件。"
+    ) == ()
+    assert content_quality_rejection_reasons(
+        "财政部门公布彩票公益金审计报告，并要求销售机构落实未成年人保护。"
+        "报告讨论彩票监管、预算收入和公益项目绩效，不包含投注入口。"
+    ) == ()
+    assert content_quality_rejection_reasons(
+        "本文对照繁體字與简体字的规范写法，例如「後」对应“后”、"
+        "「發」对应“发”，供语言学课程查阅。"
+    ) == ()
 
 
 def _entry(root: Path, relative: str) -> dict[str, object]:

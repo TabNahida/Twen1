@@ -369,6 +369,7 @@
         <div class="panel chart-panel"><div class="panel-header"><div><h2>训练吞吐</h2><p>compute / wall token/s</p></div></div><div class="chart-wrap"><canvas id="trainingSpeedChart"></canvas></div></div>
         <div class="panel chart-panel"><div class="panel-header"><div><h2>训练显存</h2><p>allocated / reserved / peak</p></div></div><div class="chart-wrap"><canvas id="trainingMemoryChart"></canvas></div></div>
         <div class="panel chart-panel"><div class="panel-header"><div><h2>学习率与梯度</h2><p>adapter nominal LR、Muon adjusted coefficient 与 grad norm</p></div></div><div class="chart-wrap"><canvas id="trainingLrChart"></canvas></div></div>
+        <div class="panel chart-panel"><div class="panel-header"><div><h2>来源 token 配比</h2><p>当前数据阶段内各来源的累计有效 token 占比</p></div></div><div class="chart-wrap"><canvas id="sourceMixChart"></canvas></div></div>
       </section>
 
       <section id="evaluationSection" class="panel" hidden>
@@ -554,6 +555,24 @@
         factor: finite(factor) ? factor : null
       };
     }
+    function sourceMixPhaseContract(status, phase) {
+      const sourceMix = status?.source_mix;
+      if (!sourceMix || typeof sourceMix !== "object") return null;
+      const phases = sourceMix.phases;
+      if (phases && typeof phases === "object" && phases[phase] && typeof phases[phase] === "object") return phases[phase];
+      return sourceMix;
+    }
+    function sourceMixSummary(contract) {
+      const weights = contract?.effective_basis_points || contract?.basis_points;
+      if (!weights || typeof weights !== "object") return { count: null, detail: "" };
+      const rows = Object.entries(weights)
+        .filter(([name, value]) => name && finite(value))
+        .sort((left, right) => right[1] - left[1]);
+      return {
+        count: rows.length,
+        detail: rows.slice(0, 3).map(([name, value]) => `${name} ${num(value / 100, 2)}%`).join(" · ")
+      };
+    }
     function renderOverview() {
       const task = snapshot?.task;
       if (!task) return;
@@ -586,10 +605,32 @@
       } else if (task.kind === "training") {
         const { metric, tel } = latestTraining();
         const adapterLr = adapterLearningRates(metric);
+        const status = snapshot.status || {};
+        const dataPhase = metric.data_phase || metric.next_data_phase || "primary";
+        const sourceMix = sourceMixPhaseContract(status, dataPhase);
+        const sourceSummary = sourceMixSummary(sourceMix);
         addSummary("Step", num(metric.step ?? tel.step, 0), `${compact(metric.tokens ?? tel.tokens)} tokens`);
         addSummary("Loss", num(metric.loss, 4), finite(metric.ntp_loss ?? metric.ntp) ? `NTP ${num(metric.ntp_loss ?? metric.ntp, 4)}` : "");
         addSummary("KD Loss", num(metric.teacher_kd_loss ?? metric.teacher_kd, 4), "teacher distillation");
         addSummary("MTP Loss", num(metric.mtp_loss ?? metric.mtp, 4), "Qwen3.5 native MTP");
+        if (status.source_mix?.enabled === true || metric.data_phase || metric.next_data_phase) {
+          const switchTokens = status.source_mix?.cooldown_start_tokens;
+          addSummary(
+            "数据阶段",
+            dataPhase,
+            finite(switchTokens) ? `cooldown 从 ${compact(switchTokens)} tokens 开始` : "单阶段数据"
+          );
+        }
+        if (sourceSummary.count !== null) {
+          addSummary("来源配比", `${sourceSummary.count} 个来源`, sourceSummary.detail);
+        }
+        if (typeof status.allow_corpus_reuse === "boolean") {
+          addSummary(
+            "语料回绕",
+            status.allow_corpus_reuse ? "允许" : "禁止",
+            status.allow_corpus_reuse ? "达到末尾后可进入下一 epoch" : "任一 phase 重复样本将 fail-closed"
+          );
+        }
         if (finite(adapterLr.adjusted) || finite(adapterLr.factor)) {
           addSummary(
             "Muon 更新系数",
@@ -785,6 +826,26 @@
         { key: "adapter_lr_adjusted", label: "Muon adjusted", color: "#9b7ede", digits: 10 },
         { key: "grad_norm", label: "grad", color: "#d5a53c", digits: 5, axis: "right" }
       ], { zero: true });
+      const phaseSourcePrefix = rows.some(row => Object.keys(row).some(key => key.startsWith("phase_source_tokens/")))
+        ? "phase_source_tokens/"
+        : "source_tokens/";
+      const sourceKeys = [...new Set(rows.flatMap(row => Object.keys(row).filter(key => key.startsWith(phaseSourcePrefix))))];
+      const lastSourceRow = [...rows].reverse().find(row => sourceKeys.some(key => finite(row[key]))) || {};
+      sourceKeys.sort((left, right) => (lastSourceRow[right] || 0) - (lastSourceRow[left] || 0));
+      const sourceRows = rows.map(row => {
+        const total = sourceKeys.reduce((sum, key) => sum + (finite(row[key]) ? row[key] : 0), 0);
+        const normalizedRow = { ...row };
+        for (const key of sourceKeys) normalizedRow[`source_share/${key.slice(phaseSourcePrefix.length)}`] = total > 0 && finite(row[key]) ? row[key] * 100 / total : null;
+        return normalizedRow;
+      });
+      const sourceColors = ["#4c8df6", "#4caf74", "#d5a53c", "#9b7ede", "#d96868", "#70a6a6", "#d9824b", "#7ca7d8", "#9eb85a", "#bc7bb0", "#8f9aa8", "#c0a36e"];
+      drawChart($("sourceMixChart"), sourceRows, sourceKeys.map((key, index) => ({
+        key: `source_share/${key.slice(phaseSourcePrefix.length)}`,
+        label: key.slice(phaseSourcePrefix.length),
+        color: sourceColors[index % sourceColors.length],
+        unit: "%",
+        digits: 2
+      })), { zero: true, maxValue: 100 });
     }
     function renderEvaluation() {
       const visible = snapshot?.task?.kind === "evaluation";

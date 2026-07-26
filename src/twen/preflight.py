@@ -57,6 +57,8 @@ _MISSING_DATA_GOVERNANCE = DataGovernanceStatus(
     ),
 )
 
+_PHASE_DISJOINTNESS_NEAR_DUPLICATE_THRESHOLD = 0.8
+
 
 @dataclass(frozen=True, slots=True)
 class PreflightReport:
@@ -85,6 +87,13 @@ class PreflightReport:
     quality_cooldown_token_count: int = 0
     quality_cooldown_selected_shard_ids: tuple[str, ...] = ()
     quality_cooldown_source_mix_token_counts: tuple[tuple[str, int], ...] = ()
+    quality_cooldown_source_mix_enabled: bool = False
+    quality_cooldown_source_mix_algorithm: str | None = None
+    quality_cooldown_source_map_sha256: str | None = None
+    quality_cooldown_source_mix_dataset_fingerprint: str | None = None
+    quality_cooldown_source_mix_basis_points: tuple[tuple[str, int], ...] = ()
+    quality_cooldown_source_mix_seed: int | None = None
+    quality_cooldown_source_map_payload_json: str | None = None
     source_mix_enabled: bool = False
     source_mix_algorithm: str | None = None
     source_map_sha256: str | None = None
@@ -95,6 +104,15 @@ class PreflightReport:
     source_mix_weight_override: bool = False
     source_mix_seed: int | None = None
     source_map_payload_json: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedTextCooldownSummary:
+    cooldown_dataset_fingerprint: str
+    selected_shard_ids: tuple[str, ...]
+    source_mix_token_counts: tuple[tuple[str, int], ...]
+    sequence_count: int
+    token_count: int
 
 
 def _prepared_data_governance(prepared_corpus: object) -> DataGovernanceStatus:
@@ -139,6 +157,165 @@ def _prepared_data_governance(prepared_corpus: object) -> DataGovernanceStatus:
         pending_audits=pending,
         warning=warning,
     )
+
+
+def _validate_no_reuse_capacity(
+    prepared_corpus: object,
+    *,
+    label: str,
+    phase_budget_tokens: int,
+    global_batch_tokens: int,
+    sequence_length: int,
+    source_map: object | None = None,
+    source_mix_basis_points: Mapping[str, int] | None = None,
+    seed: int,
+) -> None:
+    """Prove the real valid-token cursor reaches the phase boundary without reuse."""
+
+    import math
+
+    guarded_tokens = phase_budget_tokens + global_batch_tokens
+    guarded_samples = math.ceil(guarded_tokens / sequence_length)
+    token_count = getattr(prepared_corpus, "token_count", None)
+    sequence_count = getattr(prepared_corpus, "sequence_count", None)
+    if (
+        isinstance(token_count, bool)
+        or not isinstance(token_count, int)
+        or isinstance(sequence_count, bool)
+        or not isinstance(sequence_count, int)
+    ):
+        raise TrainingPreflightError(f"{label} prepared corpus capacity metadata is invalid")
+    if token_count < guarded_tokens or sequence_count < guarded_samples:
+        raise TrainingPreflightError(
+            f"{label} prepared corpus would wrap in the complete tail optimizer "
+            "batch while data.allow_corpus_reuse=false: "
+            f"requires_tokens={guarded_tokens}, available_tokens={token_count}, "
+            f"requires_samples={guarded_samples}, available_samples={sequence_count}"
+        )
+    if source_map is None:
+        return
+
+    from .data.cursor import (
+        AuthenticatedSourceMap,
+        DeterministicSourceMixCursor,
+    )
+
+    if not isinstance(source_map, AuthenticatedSourceMap):
+        raise TrainingPreflightError(f"{label} source-map capacity identity is invalid")
+    if not isinstance(source_mix_basis_points, Mapping):
+        raise TrainingPreflightError(f"{label} source-mix capacity weights are missing")
+    entries_by_id = {entry.shard_id: entry for entry in getattr(prepared_corpus, "shards", ())}
+    available_samples: dict[str, int] = {}
+    available_tokens: dict[str, int] = {}
+    for source_id in source_map.source_ids:
+        shards = source_map.shards_for_source(source_id)
+        try:
+            available_samples[source_id] = sum(
+                entries_by_id[shard.shard_id].sequence_count for shard in shards
+            )
+            available_tokens[source_id] = sum(
+                entries_by_id[shard.shard_id].token_count for shard in shards
+            )
+        except KeyError as error:
+            raise TrainingPreflightError(
+                f"{label} source-map shard is absent from prepared capacity inventory"
+            ) from error
+        required_source_tokens = math.ceil(
+            guarded_tokens * int(source_mix_basis_points[source_id]) / 10_000
+        )
+        if available_tokens[source_id] < required_source_tokens:
+            raise TrainingPreflightError(
+                f"{label} source {source_id!r} would wrap while "
+                "data.allow_corpus_reuse=false: "
+                f"requires_tokens={required_source_tokens}, "
+                f"available_tokens={available_tokens[source_id]}, "
+                f"available_samples={available_samples[source_id]}"
+            )
+
+    if global_batch_tokens % sequence_length:
+        raise TrainingPreflightError(
+            f"{label} global batch tokens must be divisible by sequence length "
+            "for exact no-reuse capacity replay"
+        )
+    global_batch_samples = global_batch_tokens // sequence_length
+    if global_batch_samples <= 0:
+        raise TrainingPreflightError(f"{label} global batch contains no prepared samples")
+
+    # ``prepare_jsonl_corpus`` packs every shard densely: all sequences except
+    # possibly the final one contain ``sequence_length`` valid tokens.  The
+    # authenticated per-shard sequence/token counts therefore recover the
+    # exact valid-token ledger without loading tensor payloads.
+    final_valid_tokens: dict[str, int] = {}
+    for shard in source_map.shards:
+        entry = entries_by_id.get(shard.shard_id)
+        if entry is None:
+            raise TrainingPreflightError(
+                f"{label} source-map shard is absent from prepared capacity inventory"
+            )
+        entry_sequence_count = getattr(entry, "sequence_count", None)
+        entry_token_count = getattr(entry, "token_count", None)
+        if (
+            isinstance(entry_sequence_count, bool)
+            or not isinstance(entry_sequence_count, int)
+            or entry_sequence_count != shard.sequence_count
+            or isinstance(entry_token_count, bool)
+            or not isinstance(entry_token_count, int)
+        ):
+            raise TrainingPreflightError(
+                f"{label} prepared shard {shard.shard_id!r} capacity identity is invalid"
+            )
+        final_tokens = entry_token_count - (entry_sequence_count - 1) * sequence_length
+        if not 1 <= final_tokens <= sequence_length:
+            raise TrainingPreflightError(
+                f"{label} prepared shard {shard.shard_id!r} violates dense packing"
+            )
+        final_valid_tokens[shard.shard_id] = final_tokens
+
+    try:
+        cursor = DeterministicSourceMixCursor(
+            source_map,
+            source_mix_basis_points,
+            seed=seed,
+        )
+        while cursor.committed_tokens < phase_budget_tokens:
+            references = cursor.plan_global_batch(global_batch_samples)
+            per_reference: list[int] = []
+            valid_tokens_by_source: dict[str, int] = dict.fromkeys(
+                source_map.source_ids,
+                0,
+            )
+            for reference in references:
+                if reference.epoch != 0:
+                    raise TrainingPreflightError(
+                        f"{label} source {reference.source_id!r} would wrap during "
+                        "exact valid-token capacity replay"
+                    )
+                shard = entries_by_id[reference.shard_id]
+                valid_tokens = (
+                    final_valid_tokens[reference.shard_id]
+                    if reference.shard_offset == shard.sequence_count - 1
+                    else sequence_length
+                )
+                per_reference.append(valid_tokens)
+                valid_tokens_by_source[reference.source_id] += valid_tokens
+            plan_fingerprint = cursor.pending_plan_fingerprint
+            if plan_fingerprint is None:
+                raise TrainingPreflightError(
+                    f"{label} exact capacity replay omitted its plan fingerprint"
+                )
+            cursor.commit(
+                planned_references=references,
+                plan_fingerprint=plan_fingerprint,
+                valid_tokens_per_reference=per_reference,
+                valid_tokens_by_source=valid_tokens_by_source,
+                token_count=sum(per_reference),
+            )
+    except TrainingPreflightError:
+        raise
+    except (KeyError, TypeError, ValueError) as error:
+        raise TrainingPreflightError(
+            f"{label} exact valid-token capacity replay failed: {error}"
+        ) from error
 
 
 def _require_file(path: str | Path, expected_sha256: str | None, label: str) -> Path:
@@ -275,6 +452,180 @@ def _load_json_file(path: Path, label: str) -> dict[str, object]:
     if not isinstance(value, dict):
         raise TrainingPreflightError(f"{label} must be a JSON object: {path}")
     return value
+
+
+def _canonical_json_sha256(value: object) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _validate_phase_disjointness_attestation(
+    path: Path,
+    *,
+    primary_manifest: Path,
+    primary_prepared: object,
+    primary_source_map: object,
+    cooldown_manifest: Path,
+    cooldown_prepared: object,
+    cooldown_source_map: object,
+) -> None:
+    """Authenticate the no-reuse prepared-text phase separation proof."""
+
+    value = _load_json_file(path, "phase disjointness attestation")
+    if (
+        value.get("schema_version") != 1
+        or value.get("kind") != "twen_v4_phase_disjointness_attestation"
+    ):
+        raise TrainingPreflightError(
+            "phase disjointness attestation has an unsupported schema/kind"
+        )
+    fingerprint = value.get("attestation_fingerprint")
+    fingerprint_payload = dict(value)
+    fingerprint_payload.pop("attestation_fingerprint", None)
+    if (
+        not isinstance(fingerprint, str)
+        or len(fingerprint) != 64
+        or _canonical_json_sha256(fingerprint_payload) != fingerprint.lower()
+    ):
+        raise TrainingPreflightError("phase disjointness attestation fingerprint mismatch")
+    scanner_sha = value.get("scanner_source_sha256")
+    if (
+        not isinstance(scanner_sha, str)
+        or len(scanner_sha) != 64
+        or any(character not in "0123456789abcdef" for character in scanner_sha.lower())
+    ):
+        raise TrainingPreflightError("phase disjointness attestation has no scanner source SHA256")
+    scanner_path = (
+        Path(__file__).resolve().parents[2] / "scripts" / "attest_v4_phase_disjointness.py"
+    )
+    if not scanner_path.is_file() or sha256_file(scanner_path) != scanner_sha.lower():
+        raise TrainingPreflightError(
+            "phase disjointness scanner source changed; rerun the phase audit"
+        )
+    scanner_source_tree_sha = value.get("scanner_source_tree_sha256")
+    if (
+        not isinstance(scanner_source_tree_sha, str)
+        or len(scanner_source_tree_sha) != 64
+        or any(character not in "0123456789abcdef" for character in scanner_source_tree_sha.lower())
+        or scanner_source_tree_sha.lower() != twen_source_tree_sha256()
+    ):
+        raise TrainingPreflightError(
+            "phase disjointness scanner source tree changed; rerun the phase audit"
+        )
+    gates = value.get("gates")
+    required_gates = {
+        "stable_id_exact": ("source-scoped-authenticated-stable-id-intersection-v1"),
+        "normalized_text_exact": ("unicode-nfkc-whitespace-sha256-intersection-v1"),
+        "near_duplicate": ("lexical-5gram-one-permutation-minhash-lsh-v1"),
+    }
+    if not isinstance(gates, Mapping) or set(gates) != set(required_gates):
+        raise TrainingPreflightError(
+            "phase disjointness attestation does not contain the exact required gates"
+        )
+    metrics = value.get("metrics")
+    metric_names = {
+        "stable_id_exact": "stable_id_exact_matches",
+        "normalized_text_exact": "normalized_text_exact_matches",
+        "near_duplicate": "near_duplicate_matches",
+    }
+    if (
+        not isinstance(metrics, Mapping)
+        or value.get("scope") != "authenticated_train_inventories_only"
+        or value.get("stores_raw_text") is not False
+    ):
+        raise TrainingPreflightError(
+            "phase disjointness attestation scope/metrics contract is invalid"
+        )
+    for gate_name, algorithm in sorted(required_gates.items()):
+        gate = gates[gate_name]
+        metric_count = metrics.get(metric_names[gate_name])
+        if (
+            not isinstance(gate, Mapping)
+            or gate.get("passed") is not True
+            or gate.get("matches") != 0
+            or gate.get("algorithm") != algorithm
+            or isinstance(metric_count, bool)
+            or not isinstance(metric_count, int)
+            or metric_count != gate.get("matches")
+            or (
+                gate_name == "near_duplicate"
+                and gate.get("estimated_jaccard_threshold")
+                != _PHASE_DISJOINTNESS_NEAR_DUPLICATE_THRESHOLD
+            )
+        ):
+            raise TrainingPreflightError(
+                f"phase disjointness gate {gate_name!r} did not pass with zero matches"
+            )
+    if value.get("passed") is not True:
+        raise TrainingPreflightError("phase disjointness attestation did not pass")
+
+    for phase, manifest, prepared, source_map in (
+        (
+            "primary",
+            primary_manifest,
+            primary_prepared,
+            primary_source_map,
+        ),
+        (
+            "cooldown",
+            cooldown_manifest,
+            cooldown_prepared,
+            cooldown_source_map,
+        ),
+    ):
+        identity = value.get(phase)
+        prepared_identity = identity.get("prepared") if isinstance(identity, Mapping) else None
+        if not isinstance(prepared_identity, Mapping):
+            raise TrainingPreflightError(
+                f"phase disjointness attestation has no {phase} prepared identity"
+            )
+        expected = {
+            "manifest_path": str(manifest.resolve()),
+            "manifest_sha256": sha256_file(manifest),
+            "dataset_fingerprint": getattr(
+                prepared,
+                "dataset_fingerprint",
+                None,
+            ),
+            "source_map_sha256": getattr(source_map, "fingerprint", None),
+        }
+        for field, expected_value in expected.items():
+            actual = prepared_identity.get(field)
+            if field == "manifest_path":
+                try:
+                    actual = str(Path(str(actual)).resolve())
+                except (OSError, ValueError) as error:
+                    raise TrainingPreflightError(
+                        f"phase disjointness {phase} manifest path is invalid"
+                    ) from error
+            if actual != expected_value:
+                raise TrainingPreflightError(
+                    f"phase disjointness {phase} {field} mismatch: "
+                    f"expected {expected_value!r}, got {actual!r}"
+                )
+
+    complete_path = path.parent / "COMPLETE"
+    complete = _load_json_file(
+        complete_path,
+        "phase disjointness COMPLETE marker",
+    )
+    if (
+        complete.get("schema_version") != 1
+        or complete.get("kind") != "twen_v4_phase_disjointness_complete"
+        or complete.get("attestation") != path.name
+        or complete.get("attestation_sha256") != sha256_file(path)
+        or complete.get("attestation_fingerprint") != fingerprint
+        or complete.get("passed") is not True
+    ):
+        raise TrainingPreflightError(
+            "phase disjointness COMPLETE marker does not bind the attestation"
+        )
 
 
 def _validate_calibration_contract(
@@ -610,16 +961,12 @@ def run_training_preflight(
                 raise ValueError(
                     "authenticated source-map SHA256 differs from the configured identity"
                 )
-            lineage_mix, effective_mix, source_mix_weight_override = (
-                _source_mix_weight_contract(
-                    config,
-                    authenticated_source_map,
-                )
+            lineage_mix, effective_mix, source_mix_weight_override = _source_mix_weight_contract(
+                config,
+                authenticated_source_map,
             )
             source_mix_lineage_basis_points = tuple(sorted(lineage_mix.items()))
-            source_mix_effective_basis_points = tuple(
-                sorted(effective_mix.items())
-            )
+            source_mix_effective_basis_points = tuple(sorted(effective_mix.items()))
             if config.data.source_mix_algorithm != SOURCE_MIX_ALGORITHM:
                 raise ValueError("configured source-mix algorithm is unsupported")
             source_mix_cursor = DeterministicSourceMixCursor(
@@ -700,21 +1047,19 @@ def run_training_preflight(
     quality_cooldown_summary = None
     cooldown_data_manifest: Path | None = None
     cooldown_kd_manifest: Path | None = None
+    cooldown_prepared = None
+    cooldown_authenticated_source_map = None
+    cooldown_source_mix_dataset_fingerprint: str | None = None
+    cooldown_source_mix_basis_points: tuple[tuple[str, int], ...] = ()
+    cooldown_source_map_payload_json: str | None = None
+    phase_disjointness_attestation: Path | None = None
     if config.data.quality_cooldown_enabled():
-        if kd_manifest is None or kd_corpus is None:
-            raise TrainingPreflightError(
-                "quality cooldown requires data.mode='teacher-kd'"
-            )
         cooldown_prepared_path = config.data.quality_cooldown_manifest_path
         cooldown_prepared_sha = config.data.quality_cooldown_manifest_sha256
-        cooldown_kd_path = config.data.quality_cooldown_teacher_kd_manifest_path
-        cooldown_kd_sha = config.data.quality_cooldown_teacher_kd_manifest_sha256
         cooldown_start = config.data.quality_cooldown_start_tokens
         assert (
             cooldown_prepared_path is not None
             and cooldown_prepared_sha is not None
-            and cooldown_kd_path is not None
-            and cooldown_kd_sha is not None
             and cooldown_start is not None
         )
         cooldown_data_manifest = _require_file(
@@ -733,65 +1078,224 @@ def run_training_preflight(
             cooldown_prepared.tokenizer_sha256,
             config.sources.tokenizer.manifest_sha256,
         )
-        cooldown_kd_manifest = _require_file(
-            cooldown_kd_path,
-            cooldown_kd_sha,
-            "quality cooldown teacher KD manifest",
-        )
-        cooldown_kd = validate_kd_corpus_manifest(
-            cooldown_kd_manifest,
-            expected_temperature=config.losses.kd_temperature,
-        )
-        validate_kd_corpus_coverage(cooldown_kd, cooldown_prepared)
-        _require_same(
-            "quality cooldown prepared/KD dataset fingerprint",
-            cooldown_kd.dataset_fingerprint,
-            cooldown_prepared.dataset_fingerprint,
-        )
-        _require_same(
-            "quality cooldown KD teacher model_id",
-            cooldown_kd.teacher_model_id,
-            config.sources.teacher.model_id,
-        )
-        _require_same(
-            "quality cooldown KD teacher revision",
-            cooldown_kd.teacher_revision,
-            config.sources.teacher.revision,
-        )
-        _require_same(
-            "quality cooldown KD teacher manifest",
-            cooldown_kd.teacher_model_sha256,
-            config.sources.teacher.manifest_sha256,
-        )
-        _require_same(
-            "quality cooldown KD tokenizer manifest",
-            cooldown_kd.tokenizer_sha256,
-            config.sources.tokenizer.manifest_sha256,
-        )
-        for entry in cooldown_kd.shards:
-            shard_manifest = read_kd_manifest(cooldown_kd_manifest.parent / entry.path)
-            _require_same(
-                f"quality cooldown KD shard {entry.path} sequence length",
-                shard_manifest.sequence_length,
-                config.data.max_sequence_length,
+        if cooldown_prepared.dataset_fingerprint == prepared_corpus.dataset_fingerprint:
+            raise TrainingPreflightError(
+                "quality cooldown requires an independent prepared dataset fingerprint"
             )
-            _require_same(
-                f"quality cooldown KD shard {entry.path} vocab_size",
-                shard_manifest.vocab_size,
-                source_configs["teacher"].get("vocab_size"),
+        required_cooldown_tokens = config.optimizer.max_tokens - cooldown_start
+        if (
+            data_mode == "prepared-text"
+            and cooldown_prepared.token_count < required_cooldown_tokens
+        ):
+            raise TrainingPreflightError(
+                "quality cooldown corpus is too small: "
+                f"requires {required_cooldown_tokens}, has {cooldown_prepared.token_count}"
             )
-        from .data import validate_quality_cooldown_subset
 
-        quality_cooldown_summary = validate_quality_cooldown_subset(
-            prepared_corpus,
-            kd_corpus,
-            cooldown_prepared,
-            cooldown_kd,
-            primary_prepared_manifest_sha256=config.data.manifest_sha256,
-            primary_kd_manifest_sha256=config.data.teacher_kd_manifest_sha256,
-            required_cooldown_tokens=config.optimizer.max_tokens - cooldown_start,
+        if data_mode == "teacher-kd":
+            if kd_manifest is None or kd_corpus is None:
+                raise TrainingPreflightError(
+                    "teacher-KD quality cooldown is missing the primary KD corpus"
+                )
+            cooldown_kd_path = config.data.quality_cooldown_teacher_kd_manifest_path
+            cooldown_kd_sha = config.data.quality_cooldown_teacher_kd_manifest_sha256
+            assert cooldown_kd_path is not None and cooldown_kd_sha is not None
+            cooldown_kd_manifest = _require_file(
+                cooldown_kd_path,
+                cooldown_kd_sha,
+                "quality cooldown teacher KD manifest",
+            )
+            cooldown_kd = validate_kd_corpus_manifest(
+                cooldown_kd_manifest,
+                expected_temperature=config.losses.kd_temperature,
+            )
+            validate_kd_corpus_coverage(cooldown_kd, cooldown_prepared)
+            _require_same(
+                "quality cooldown prepared/KD dataset fingerprint",
+                cooldown_kd.dataset_fingerprint,
+                cooldown_prepared.dataset_fingerprint,
+            )
+            _require_same(
+                "quality cooldown KD teacher model_id",
+                cooldown_kd.teacher_model_id,
+                config.sources.teacher.model_id,
+            )
+            _require_same(
+                "quality cooldown KD teacher revision",
+                cooldown_kd.teacher_revision,
+                config.sources.teacher.revision,
+            )
+            _require_same(
+                "quality cooldown KD teacher manifest",
+                cooldown_kd.teacher_model_sha256,
+                config.sources.teacher.manifest_sha256,
+            )
+            _require_same(
+                "quality cooldown KD tokenizer manifest",
+                cooldown_kd.tokenizer_sha256,
+                config.sources.tokenizer.manifest_sha256,
+            )
+            for entry in cooldown_kd.shards:
+                shard_manifest = read_kd_manifest(cooldown_kd_manifest.parent / entry.path)
+                _require_same(
+                    f"quality cooldown KD shard {entry.path} sequence length",
+                    shard_manifest.sequence_length,
+                    config.data.max_sequence_length,
+                )
+                _require_same(
+                    f"quality cooldown KD shard {entry.path} vocab_size",
+                    shard_manifest.vocab_size,
+                    source_configs["teacher"].get("vocab_size"),
+                )
+            from .data import validate_quality_cooldown_subset
+
+            quality_cooldown_summary = validate_quality_cooldown_subset(
+                prepared_corpus,
+                kd_corpus,
+                cooldown_prepared,
+                cooldown_kd,
+                primary_prepared_manifest_sha256=config.data.manifest_sha256,
+                primary_kd_manifest_sha256=config.data.teacher_kd_manifest_sha256,
+                required_cooldown_tokens=required_cooldown_tokens,
+            )
+            checked.extend((str(cooldown_data_manifest), str(cooldown_kd_manifest)))
+        else:
+            cooldown_governance = _prepared_data_governance(cooldown_prepared)
+            if (
+                not cooldown_governance.ready_for_training
+                or cooldown_governance.research_only
+                or cooldown_governance.pending_audits
+            ):
+                raise TrainingPreflightError(
+                    "prepared-text quality cooldown corpus must be fully training-ready"
+                )
+            cooldown_source_mix_token_counts: tuple[tuple[str, int], ...] = ()
+            if authenticated_source_map is not None:
+                from .data.cursor import (
+                    AuthenticatedSourceMap,
+                    DeterministicSourceMixCursor,
+                )
+
+                try:
+                    cooldown_authenticated_source_map = (
+                        AuthenticatedSourceMap.from_prepared_manifest(cooldown_prepared)
+                    )
+                    cooldown_weights = cooldown_authenticated_source_map.source_mix_weights
+                    if not cooldown_weights:
+                        raise ValueError("cooldown prepared lineage has no source-mix weights")
+                    cooldown_cursor = DeterministicSourceMixCursor(
+                        cooldown_authenticated_source_map,
+                        cooldown_weights,
+                        seed=config.data.shuffle_seed,
+                    )
+                except (TypeError, ValueError, OSError) as error:
+                    raise TrainingPreflightError(
+                        f"authenticated cooldown source-mix preflight failed: {error}"
+                    ) from error
+                if (
+                    cooldown_authenticated_source_map.fingerprint
+                    == authenticated_source_map.fingerprint
+                ):
+                    raise TrainingPreflightError(
+                        "quality cooldown requires an independent source-map identity"
+                    )
+                cooldown_source_mix_dataset_fingerprint = cooldown_cursor.dataset_fingerprint
+                cooldown_source_mix_basis_points = tuple(sorted(cooldown_weights.items()))
+                cooldown_source_map_payload_json = json.dumps(
+                    cooldown_authenticated_source_map.to_dict(),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                entries_by_id = {entry.shard_id: entry for entry in cooldown_prepared.shards}
+                token_counts: dict[str, int] = {}
+                for source_id in cooldown_authenticated_source_map.source_ids:
+                    token_counts[source_id] = sum(
+                        entries_by_id[shard.shard_id].token_count
+                        for shard in (
+                            cooldown_authenticated_source_map.shards_for_source(source_id)
+                        )
+                    )
+                if sum(token_counts.values()) != cooldown_prepared.token_count:
+                    raise TrainingPreflightError(
+                        "cooldown source-map token inventory differs from prepared corpus"
+                    )
+                cooldown_source_mix_token_counts = tuple(sorted(token_counts.items()))
+            quality_cooldown_summary = _PreparedTextCooldownSummary(
+                cooldown_dataset_fingerprint=(cooldown_prepared.dataset_fingerprint),
+                selected_shard_ids=tuple(entry.shard_id for entry in cooldown_prepared.shards),
+                source_mix_token_counts=cooldown_source_mix_token_counts,
+                sequence_count=cooldown_prepared.sequence_count,
+                token_count=cooldown_prepared.token_count,
+            )
+            checked.append(str(cooldown_data_manifest))
+
+    if config.data.phase_disjointness_attestation_path is not None:
+        if (
+            data_mode != "prepared-text"
+            or cooldown_data_manifest is None
+            or cooldown_prepared is None
+            or authenticated_source_map is None
+            or cooldown_authenticated_source_map is None
+        ):
+            raise TrainingPreflightError(
+                "phase disjointness requires two authenticated prepared-text source maps"
+            )
+        phase_disjointness_attestation = _require_file(
+            config.data.phase_disjointness_attestation_path,
+            config.data.phase_disjointness_attestation_sha256,
+            "phase disjointness attestation",
         )
-        checked.extend((str(cooldown_data_manifest), str(cooldown_kd_manifest)))
+        _validate_phase_disjointness_attestation(
+            phase_disjointness_attestation,
+            primary_manifest=data_manifest,
+            primary_prepared=prepared_corpus,
+            primary_source_map=authenticated_source_map,
+            cooldown_manifest=cooldown_data_manifest,
+            cooldown_prepared=cooldown_prepared,
+            cooldown_source_map=cooldown_authenticated_source_map,
+        )
+        checked.append(str(phase_disjointness_attestation))
+
+    if data_mode == "prepared-text" and not config.data.allow_corpus_reuse:
+        primary_phase_budget = (
+            int(config.data.quality_cooldown_start_tokens)
+            if quality_cooldown_summary is not None
+            else config.optimizer.max_tokens
+        )
+        _validate_no_reuse_capacity(
+            prepared_corpus,
+            label="primary",
+            phase_budget_tokens=primary_phase_budget,
+            global_batch_tokens=config.data.global_batch_tokens,
+            sequence_length=config.data.max_sequence_length,
+            source_map=authenticated_source_map,
+            source_mix_basis_points=(
+                dict(source_mix_effective_basis_points)
+                if authenticated_source_map is not None
+                else None
+            ),
+            seed=config.data.shuffle_seed,
+        )
+        if quality_cooldown_summary is not None:
+            assert cooldown_prepared is not None
+            assert config.data.quality_cooldown_start_tokens is not None
+            _validate_no_reuse_capacity(
+                cooldown_prepared,
+                label="quality cooldown",
+                phase_budget_tokens=(
+                    config.optimizer.max_tokens - config.data.quality_cooldown_start_tokens
+                ),
+                global_batch_tokens=config.data.global_batch_tokens,
+                sequence_length=config.data.max_sequence_length,
+                source_map=cooldown_authenticated_source_map,
+                source_mix_basis_points=(
+                    dict(cooldown_source_mix_basis_points)
+                    if cooldown_authenticated_source_map is not None
+                    else None
+                ),
+                seed=config.data.shuffle_seed,
+            )
 
     layer_map_path = _require_file(config.architecture.layer_map_path, None, "layer map")
     channel_map_path = _require_file(config.architecture.channel_map_path, None, "channel map")
@@ -919,28 +1423,62 @@ def run_training_preflight(
         teacher_cpu_shadow_bytes = cpu_shadow.bytes + teacher_buffer_bytes
         teacher_gpu_stage_bytes = cpu_shadow.bytes + teacher_buffer_bytes
     data_fingerprint = sha256_file(data_manifest)
-    if authenticated_source_map is not None:
+    if data_mode == "prepared-text" and quality_cooldown_summary is not None:
+        assert cooldown_data_manifest is not None
+        data_fingerprint = hashlib.sha256(
+            json.dumps(
+                {
+                    "kind": "two-phase-prepared-text-quality-cooldown-data-v1",
+                    "primary_prepared_sha256": sha256_file(data_manifest),
+                    "primary_dataset_fingerprint": (prepared_corpus.dataset_fingerprint),
+                    "primary_source_map_sha256": (
+                        authenticated_source_map.fingerprint
+                        if authenticated_source_map is not None
+                        else None
+                    ),
+                    "primary_source_mix_dataset_fingerprint": (source_mix_dataset_fingerprint),
+                    "primary_source_mix_effective_basis_points": dict(
+                        source_mix_effective_basis_points
+                    ),
+                    "cooldown_prepared_sha256": sha256_file(cooldown_data_manifest),
+                    "cooldown_dataset_fingerprint": (
+                        quality_cooldown_summary.cooldown_dataset_fingerprint
+                    ),
+                    "cooldown_source_map_sha256": (
+                        cooldown_authenticated_source_map.fingerprint
+                        if cooldown_authenticated_source_map is not None
+                        else None
+                    ),
+                    "cooldown_source_mix_dataset_fingerprint": (
+                        cooldown_source_mix_dataset_fingerprint
+                    ),
+                    "cooldown_source_mix_basis_points": dict(cooldown_source_mix_basis_points),
+                    "cooldown_start_tokens": (config.data.quality_cooldown_start_tokens),
+                    "ordered_cooldown_shard_ids": list(quality_cooldown_summary.selected_shard_ids),
+                    "phase_disjointness_attestation_sha256": (
+                        sha256_file(phase_disjointness_attestation)
+                        if phase_disjointness_attestation is not None
+                        else None
+                    ),
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+    elif authenticated_source_map is not None:
         assert source_mix_dataset_fingerprint is not None
         data_fingerprint = hashlib.sha256(
             json.dumps(
                 {
                     "kind": "authenticated-source-mixed-prepared-text-data-v2",
                     "prepared_manifest_sha256": sha256_file(data_manifest),
-                    "prepared_dataset_fingerprint": (
-                        prepared_corpus.dataset_fingerprint
-                    ),
+                    "prepared_dataset_fingerprint": (prepared_corpus.dataset_fingerprint),
                     "source_map_sha256": authenticated_source_map.fingerprint,
                     "source_mix_algorithm": config.data.source_mix_algorithm,
-                    "source_mix_lineage_basis_points": dict(
-                        source_mix_lineage_basis_points
-                    ),
-                    "source_mix_effective_basis_points": dict(
-                        source_mix_effective_basis_points
-                    ),
+                    "source_mix_lineage_basis_points": dict(source_mix_lineage_basis_points),
+                    "source_mix_effective_basis_points": dict(source_mix_effective_basis_points),
                     "source_mix_weight_override": source_mix_weight_override,
-                    "source_mix_dataset_fingerprint": (
-                        source_mix_dataset_fingerprint
-                    ),
+                    "source_mix_dataset_fingerprint": (source_mix_dataset_fingerprint),
                 },
                 sort_keys=True,
                 separators=(",", ":"),
@@ -1056,30 +1594,39 @@ def run_training_preflight(
             if quality_cooldown_summary is not None
             else ()
         ),
-        source_mix_enabled=authenticated_source_map is not None,
-        source_mix_algorithm=(
+        quality_cooldown_source_mix_enabled=(cooldown_authenticated_source_map is not None),
+        quality_cooldown_source_mix_algorithm=(
             config.data.source_mix_algorithm
-            if authenticated_source_map is not None
+            if cooldown_authenticated_source_map is not None
             else None
         ),
-        source_map_sha256=(
-            authenticated_source_map.fingerprint
-            if authenticated_source_map is not None
+        quality_cooldown_source_map_sha256=(
+            cooldown_authenticated_source_map.fingerprint
+            if cooldown_authenticated_source_map is not None
             else None
+        ),
+        quality_cooldown_source_mix_dataset_fingerprint=(cooldown_source_mix_dataset_fingerprint),
+        quality_cooldown_source_mix_basis_points=(cooldown_source_mix_basis_points),
+        quality_cooldown_source_mix_seed=(
+            config.data.shuffle_seed if cooldown_authenticated_source_map is not None else None
+        ),
+        quality_cooldown_source_map_payload_json=(cooldown_source_map_payload_json),
+        source_mix_enabled=authenticated_source_map is not None,
+        source_mix_algorithm=(
+            config.data.source_mix_algorithm if authenticated_source_map is not None else None
+        ),
+        source_map_sha256=(
+            authenticated_source_map.fingerprint if authenticated_source_map is not None else None
         ),
         source_mix_dataset_fingerprint=source_mix_dataset_fingerprint,
         source_mix_basis_points=(
-            source_mix_effective_basis_points
-            if authenticated_source_map is not None
-            else ()
+            source_mix_effective_basis_points if authenticated_source_map is not None else ()
         ),
         source_mix_lineage_basis_points=source_mix_lineage_basis_points,
         source_mix_effective_basis_points=source_mix_effective_basis_points,
         source_mix_weight_override=source_mix_weight_override,
         source_mix_seed=(
-            config.data.shuffle_seed
-            if authenticated_source_map is not None
-            else None
+            config.data.shuffle_seed if authenticated_source_map is not None else None
         ),
         source_map_payload_json=source_map_payload_json,
     )
@@ -1136,18 +1683,29 @@ def _preflight_report_payload(report: PreflightReport) -> dict[str, object]:
             "source_mix_token_counts": [
                 list(item) for item in report.quality_cooldown_source_mix_token_counts
             ],
+            "source_mix": {
+                "enabled": report.quality_cooldown_source_mix_enabled,
+                "algorithm": report.quality_cooldown_source_mix_algorithm,
+                "source_map_sha256": report.quality_cooldown_source_map_sha256,
+                "dataset_fingerprint": (report.quality_cooldown_source_mix_dataset_fingerprint),
+                "basis_points": [
+                    list(item) for item in report.quality_cooldown_source_mix_basis_points
+                ],
+                "seed": report.quality_cooldown_source_mix_seed,
+                "source_map": (
+                    json.loads(report.quality_cooldown_source_map_payload_json)
+                    if report.quality_cooldown_source_map_payload_json is not None
+                    else None
+                ),
+            },
         },
         "source_mix": {
             "enabled": report.source_mix_enabled,
             "algorithm": report.source_mix_algorithm,
             "source_map_sha256": report.source_map_sha256,
             "dataset_fingerprint": report.source_mix_dataset_fingerprint,
-            "basis_points": [
-                list(item) for item in report.source_mix_basis_points
-            ],
-            "lineage_basis_points": [
-                list(item) for item in report.source_mix_lineage_basis_points
-            ],
+            "basis_points": [list(item) for item in report.source_mix_basis_points],
+            "lineage_basis_points": [list(item) for item in report.source_mix_lineage_basis_points],
             "effective_basis_points": [
                 list(item) for item in report.source_mix_effective_basis_points
             ],
@@ -1216,6 +1774,24 @@ def _preflight_report_from_payload(value: object) -> PreflightReport:
     cooldown_token_count = raw_cooldown.get("token_count", 0)
     raw_cooldown_shards = raw_cooldown.get("selected_shard_ids", [])
     raw_cooldown_mix = raw_cooldown.get("source_mix_token_counts", [])
+    raw_cooldown_source_mix = raw_cooldown.get(
+        "source_mix",
+        {"enabled": False},
+    )
+    if not isinstance(raw_cooldown_source_mix, dict) or not isinstance(
+        raw_cooldown_source_mix.get("enabled"), bool
+    ):
+        raise TrainingPreflightError("rank zero returned invalid cooldown source-mix status")
+    cooldown_source_mix_enabled = raw_cooldown_source_mix["enabled"]
+    cooldown_source_mix_algorithm = raw_cooldown_source_mix.get("algorithm")
+    cooldown_source_map_sha256 = raw_cooldown_source_mix.get("source_map_sha256")
+    cooldown_source_mix_dataset_fingerprint = raw_cooldown_source_mix.get("dataset_fingerprint")
+    raw_cooldown_source_mix_basis_points = raw_cooldown_source_mix.get(
+        "basis_points",
+        [],
+    )
+    cooldown_source_mix_seed = raw_cooldown_source_mix.get("seed")
+    raw_cooldown_source_map = raw_cooldown_source_mix.get("source_map")
     if cooldown_enabled:
         if (
             isinstance(cooldown_start, bool)
@@ -1270,16 +1846,13 @@ def _preflight_report_from_payload(value: object) -> PreflightReport:
         raise TrainingPreflightError("rank zero returned non-canonical cooldown source mix")
     if cooldown_enabled and (
         not raw_cooldown_shards
-        or not cooldown_mix
-        or sum(item[1] for item in cooldown_mix) != cooldown_token_count
+        or (bool(cooldown_mix) and sum(item[1] for item in cooldown_mix) != cooldown_token_count)
+        or (cooldown_source_mix_enabled and not cooldown_mix)
     ):
         raise TrainingPreflightError("rank zero returned incomplete cooldown corpus inventory")
 
     raw_source_mix = value.get("source_mix", {"enabled": False})
-    if (
-        not isinstance(raw_source_mix, dict)
-        or not isinstance(raw_source_mix.get("enabled"), bool)
-    ):
+    if not isinstance(raw_source_mix, dict) or not isinstance(raw_source_mix.get("enabled"), bool):
         raise TrainingPreflightError("rank zero returned invalid source-mix status")
     source_mix_enabled = raw_source_mix["enabled"]
     source_mix_algorithm = raw_source_mix.get("algorithm")
@@ -1337,6 +1910,86 @@ def _preflight_report_from_payload(value: object) -> PreflightReport:
             )
         return parsed
 
+    cooldown_source_mix_basis_points: list[tuple[str, int]] = []
+    cooldown_source_map_payload_json: str | None = None
+    cooldown_source_map = None
+    if cooldown_source_mix_enabled:
+        from .data.cursor import (
+            SOURCE_MIX_ALGORITHM,
+            AuthenticatedSourceMap,
+            DeterministicSourceMixCursor,
+        )
+
+        if (
+            not cooldown_enabled
+            or not source_mix_enabled
+            or cooldown_source_mix_algorithm != SOURCE_MIX_ALGORITHM
+            or not isinstance(cooldown_source_map_sha256, str)
+            or len(cooldown_source_map_sha256) != 64
+            or any(character not in "0123456789abcdef" for character in cooldown_source_map_sha256)
+            or not isinstance(
+                cooldown_source_mix_dataset_fingerprint,
+                str,
+            )
+            or len(cooldown_source_mix_dataset_fingerprint) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in cooldown_source_mix_dataset_fingerprint
+            )
+            or isinstance(cooldown_source_mix_seed, bool)
+            or not isinstance(cooldown_source_mix_seed, int)
+            or not isinstance(raw_cooldown_source_map, Mapping)
+        ):
+            raise TrainingPreflightError(
+                "rank zero returned incomplete cooldown source-mix identity"
+            )
+        cooldown_source_mix_basis_points = source_mix_weights(
+            raw_cooldown_source_mix_basis_points,
+            label="cooldown",
+            allow_empty=False,
+        )
+        try:
+            cooldown_source_map = AuthenticatedSourceMap.from_dict(raw_cooldown_source_map)
+            if cooldown_source_map.fingerprint != cooldown_source_map_sha256:
+                raise ValueError("cooldown source-map fingerprint mismatch")
+            if cooldown_source_map.source_mix_weights != dict(cooldown_source_mix_basis_points):
+                raise ValueError("cooldown source-map weights mismatch")
+            cooldown_source_mix_cursor = DeterministicSourceMixCursor(
+                cooldown_source_map,
+                dict(cooldown_source_mix_basis_points),
+                seed=cooldown_source_mix_seed,
+            )
+        except (TypeError, ValueError) as error:
+            raise TrainingPreflightError(
+                f"rank zero returned invalid cooldown source-map payload: {error}"
+            ) from error
+        if (
+            cooldown_source_mix_cursor.dataset_fingerprint
+            != cooldown_source_mix_dataset_fingerprint
+        ):
+            raise TrainingPreflightError(
+                "rank zero cooldown source-mix dataset fingerprint mismatch"
+            )
+        cooldown_source_map_payload_json = json.dumps(
+            cooldown_source_map.to_dict(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    else:
+        if any(
+            item not in (None, [], ())
+            for item in (
+                cooldown_source_mix_algorithm,
+                cooldown_source_map_sha256,
+                cooldown_source_mix_dataset_fingerprint,
+                raw_cooldown_source_mix_basis_points,
+                cooldown_source_mix_seed,
+                raw_cooldown_source_map,
+            )
+        ):
+            raise TrainingPreflightError("disabled cooldown source mixing contains active identity")
+
     if source_mix_enabled:
         from .data.cursor import (
             SOURCE_MIX_ALGORITHM,
@@ -1348,24 +2001,18 @@ def _preflight_report_from_payload(value: object) -> PreflightReport:
             source_mix_algorithm != SOURCE_MIX_ALGORITHM
             or not isinstance(source_map_sha256, str)
             or len(source_map_sha256) != 64
-            or any(
-                character not in "0123456789abcdef"
-                for character in source_map_sha256
-            )
+            or any(character not in "0123456789abcdef" for character in source_map_sha256)
             or not isinstance(source_mix_dataset_fingerprint, str)
             or len(source_mix_dataset_fingerprint) != 64
             or any(
-                character not in "0123456789abcdef"
-                for character in source_mix_dataset_fingerprint
+                character not in "0123456789abcdef" for character in source_mix_dataset_fingerprint
             )
             or not isinstance(source_mix_weight_override, bool)
             or isinstance(source_mix_seed, bool)
             or not isinstance(source_mix_seed, int)
             or not isinstance(raw_source_map, Mapping)
         ):
-            raise TrainingPreflightError(
-                "rank zero returned incomplete source-mix identity"
-            )
+            raise TrainingPreflightError("rank zero returned incomplete source-mix identity")
         source_mix_basis_points = source_mix_weights(
             raw_source_mix_basis_points,
             label="compatibility",
@@ -1389,15 +2036,9 @@ def _preflight_report_from_payload(value: object) -> PreflightReport:
             source_map = AuthenticatedSourceMap.from_dict(raw_source_map)
             if source_map.fingerprint != source_map_sha256:
                 raise ValueError("source-map fingerprint mismatch")
-            if (
-                source_map.source_mix_weights
-                != dict(source_mix_lineage_basis_points)
-            ):
+            if source_map.source_mix_weights != dict(source_mix_lineage_basis_points):
                 raise ValueError("source-map lineage weights mismatch")
-            weights_differ = (
-                source_mix_lineage_basis_points
-                != source_mix_effective_basis_points
-            )
+            weights_differ = source_mix_lineage_basis_points != source_mix_effective_basis_points
             if source_mix_weight_override != weights_differ:
                 raise ValueError(
                     "source-mix override flag disagrees with lineage/effective weights"
@@ -1412,8 +2053,14 @@ def _preflight_report_from_payload(value: object) -> PreflightReport:
                 f"rank zero returned invalid source-map payload: {error}"
             ) from error
         if source_mix_cursor.dataset_fingerprint != source_mix_dataset_fingerprint:
+            raise TrainingPreflightError("rank zero source-mix dataset fingerprint mismatch")
+        if cooldown_source_mix_enabled and (
+            cooldown_source_map is None
+            or cooldown_source_map.fingerprint == source_map.fingerprint
+            or cooldown_source_mix_seed != source_mix_seed
+        ):
             raise TrainingPreflightError(
-                "rank zero source-mix dataset fingerprint mismatch"
+                "rank zero cooldown source-mix identity is not independent/coordinated"
             )
         source_map_payload_json = json.dumps(
             source_map.to_dict(),
@@ -1422,22 +2069,23 @@ def _preflight_report_from_payload(value: object) -> PreflightReport:
             separators=(",", ":"),
         )
     else:
-        if any(
-            item not in (None, [], ())
-            for item in (
-                source_mix_algorithm,
-                source_map_sha256,
-                source_mix_dataset_fingerprint,
-                raw_source_mix_basis_points,
-                raw_source_mix_lineage_basis_points,
-                raw_source_mix_effective_basis_points,
-                source_mix_seed,
-                raw_source_map,
+        if (
+            any(
+                item not in (None, [], ())
+                for item in (
+                    source_mix_algorithm,
+                    source_map_sha256,
+                    source_mix_dataset_fingerprint,
+                    raw_source_mix_basis_points,
+                    raw_source_mix_lineage_basis_points,
+                    raw_source_mix_effective_basis_points,
+                    source_mix_seed,
+                    raw_source_map,
+                )
             )
-        ) or source_mix_weight_override is not False:
-            raise TrainingPreflightError(
-                "disabled source mixing contains active identity"
-            )
+            or source_mix_weight_override is not False
+        ):
+            raise TrainingPreflightError("disabled source mixing contains active identity")
         source_map_payload_json = None
 
     def checkpoint_indices(field: str) -> tuple[int, ...]:
@@ -1556,28 +2204,31 @@ def _preflight_report_from_payload(value: object) -> PreflightReport:
         quality_cooldown_token_count=(int(cooldown_token_count) if cooldown_enabled else 0),
         quality_cooldown_selected_shard_ids=tuple(raw_cooldown_shards),
         quality_cooldown_source_mix_token_counts=tuple(cooldown_mix),
+        quality_cooldown_source_mix_enabled=cooldown_source_mix_enabled,
+        quality_cooldown_source_mix_algorithm=(
+            str(cooldown_source_mix_algorithm) if cooldown_source_mix_enabled else None
+        ),
+        quality_cooldown_source_map_sha256=(
+            str(cooldown_source_map_sha256) if cooldown_source_mix_enabled else None
+        ),
+        quality_cooldown_source_mix_dataset_fingerprint=(
+            str(cooldown_source_mix_dataset_fingerprint) if cooldown_source_mix_enabled else None
+        ),
+        quality_cooldown_source_mix_basis_points=tuple(cooldown_source_mix_basis_points),
+        quality_cooldown_source_mix_seed=(
+            cooldown_source_mix_seed if cooldown_source_mix_enabled else None
+        ),
+        quality_cooldown_source_map_payload_json=(cooldown_source_map_payload_json),
         source_mix_enabled=source_mix_enabled,
-        source_mix_algorithm=(
-            str(source_mix_algorithm) if source_mix_enabled else None
-        ),
-        source_map_sha256=(
-            str(source_map_sha256) if source_mix_enabled else None
-        ),
+        source_mix_algorithm=(str(source_mix_algorithm) if source_mix_enabled else None),
+        source_map_sha256=(str(source_map_sha256) if source_mix_enabled else None),
         source_mix_dataset_fingerprint=(
-            str(source_mix_dataset_fingerprint)
-            if source_mix_enabled
-            else None
+            str(source_mix_dataset_fingerprint) if source_mix_enabled else None
         ),
         source_mix_basis_points=tuple(source_mix_basis_points),
-        source_mix_lineage_basis_points=tuple(
-            source_mix_lineage_basis_points
-        ),
-        source_mix_effective_basis_points=tuple(
-            source_mix_effective_basis_points
-        ),
-        source_mix_weight_override=(
-            source_mix_weight_override if source_mix_enabled else False
-        ),
+        source_mix_lineage_basis_points=tuple(source_mix_lineage_basis_points),
+        source_mix_effective_basis_points=tuple(source_mix_effective_basis_points),
+        source_mix_weight_override=(source_mix_weight_override if source_mix_enabled else False),
         source_mix_seed=(source_mix_seed if source_mix_enabled else None),
         source_map_payload_json=source_map_payload_json,
     )

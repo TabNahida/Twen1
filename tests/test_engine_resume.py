@@ -510,7 +510,7 @@ class EngineResumeControlTest(unittest.TestCase):
     def test_quality_cooldown_requires_second_store_before_model_resume(self) -> None:
         config, report, store = _inputs()
         config.data.quality_cooldown_start_tokens = 1024
-        with self.assertRaisesRegex(RuntimeError, "requires a cooldown KD store"):
+        with self.assertRaisesRegex(RuntimeError, "requires a cooldown store"):
             _load_or_initialize(
                 _FailingManager(Path(".")),  # type: ignore[arg-type]
                 {},

@@ -14,6 +14,7 @@ from twen.evaluation import (
     _canonical_sha256,
     _load_evaluation_baseline,
     _nll_sum,
+    _normalize_evaluation_device,
     _read_progress,
     _validate_inference_checkpoint_lineage,
 )
@@ -21,6 +22,11 @@ from twen.utils import sha256_file
 
 
 class EvaluationCpuTest(unittest.TestCase):
+    def test_cuda_default_is_normalized_to_an_explicit_device(self) -> None:
+        self.assertEqual(_normalize_evaluation_device("cuda"), "cuda:0")
+        self.assertEqual(_normalize_evaluation_device("cuda:1"), "cuda:1")
+        self.assertEqual(_normalize_evaluation_device("cpu"), "cpu")
+
     def test_inference_lineage_allows_recorded_source_tree_drift_only(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config_path = Path(directory) / "resolved_config.yaml"

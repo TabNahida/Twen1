@@ -18,8 +18,18 @@ from twen.config import (
     SourcesConfig,
     TrainConfig,
 )
-from twen.data import QualityCooldownSummary
-from twen.preflight import run_training_preflight
+from twen.data import (
+    AuthenticatedSourceMap,
+    AuthenticatedSourceShard,
+    QualityCooldownSummary,
+)
+from twen.preflight import (
+    TrainingPreflightError,
+    _validate_no_reuse_capacity,
+    _validate_phase_disjointness_attestation,
+    run_training_preflight,
+)
+from twen.source_identity import twen_source_tree_sha256
 
 
 def _write(path: Path, payload: bytes) -> str:
@@ -74,6 +84,177 @@ def _preflight_config(tmp_path: Path) -> TrainConfig:
         checkpoint=CheckpointConfig(str(tmp_path / "run")),
         runtime=RuntimeConfig(),
     )
+
+
+def _canonical_sha256(value: object) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def test_phase_disjointness_preflight_binds_both_prepared_identities(
+    tmp_path: Path,
+) -> None:
+    primary_manifest = tmp_path / "primary" / "manifest.json"
+    cooldown_manifest = tmp_path / "cooldown" / "manifest.json"
+    primary_sha = _write(primary_manifest, b'{"kind":"prepared-primary"}\n')
+    cooldown_sha = _write(cooldown_manifest, b'{"kind":"prepared-cooldown"}\n')
+    primary_prepared = SimpleNamespace(dataset_fingerprint="a" * 64)
+    cooldown_prepared = SimpleNamespace(dataset_fingerprint="b" * 64)
+    primary_map = SimpleNamespace(fingerprint="c" * 64)
+    cooldown_map = SimpleNamespace(fingerprint="d" * 64)
+    payload: dict[str, object] = {
+        "schema_version": 1,
+        "kind": "twen_v4_phase_disjointness_attestation",
+        "scanner_source_sha256": hashlib.sha256(
+            (Path(__file__).parents[1] / "scripts" / "attest_v4_phase_disjointness.py").read_bytes()
+        ).hexdigest(),
+        "scanner_source_tree_sha256": twen_source_tree_sha256(),
+        "primary": {
+            "prepared": {
+                "manifest_path": str(primary_manifest.resolve()),
+                "manifest_sha256": primary_sha,
+                "dataset_fingerprint": primary_prepared.dataset_fingerprint,
+                "source_map_sha256": primary_map.fingerprint,
+            }
+        },
+        "cooldown": {
+            "prepared": {
+                "manifest_path": str(cooldown_manifest.resolve()),
+                "manifest_sha256": cooldown_sha,
+                "dataset_fingerprint": cooldown_prepared.dataset_fingerprint,
+                "source_map_sha256": cooldown_map.fingerprint,
+            }
+        },
+        "scope": "authenticated_train_inventories_only",
+        "metrics": {
+            "stable_id_exact_matches": 0,
+            "normalized_text_exact_matches": 0,
+            "near_duplicate_matches": 0,
+        },
+        "stores_raw_text": False,
+        "gates": {
+            name: {
+                "algorithm": algorithm,
+                "matches": 0,
+                "passed": True,
+                **({"estimated_jaccard_threshold": 0.8} if name == "near_duplicate" else {}),
+            }
+            for name, algorithm in {
+                "stable_id_exact": ("source-scoped-authenticated-stable-id-intersection-v1"),
+                "normalized_text_exact": ("unicode-nfkc-whitespace-sha256-intersection-v1"),
+                "near_duplicate": ("lexical-5gram-one-permutation-minhash-lsh-v1"),
+            }.items()
+        },
+        "passed": True,
+    }
+    payload["attestation_fingerprint"] = _canonical_sha256(payload)
+    attestation = tmp_path / "phase" / "attestation.json"
+    attestation.parent.mkdir()
+    attestation.write_text(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True),
+        encoding="utf-8",
+    )
+    complete = {
+        "schema_version": 1,
+        "kind": "twen_v4_phase_disjointness_complete",
+        "attestation": attestation.name,
+        "attestation_sha256": hashlib.sha256(attestation.read_bytes()).hexdigest(),
+        "attestation_fingerprint": payload["attestation_fingerprint"],
+        "passed": True,
+    }
+    (attestation.parent / "COMPLETE").write_text(
+        json.dumps(complete, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    _validate_phase_disjointness_attestation(
+        attestation,
+        primary_manifest=primary_manifest,
+        primary_prepared=primary_prepared,
+        primary_source_map=primary_map,
+        cooldown_manifest=cooldown_manifest,
+        cooldown_prepared=cooldown_prepared,
+        cooldown_source_map=cooldown_map,
+    )
+
+    with pytest.raises(
+        TrainingPreflightError,
+        match="cooldown source_map_sha256 mismatch",
+    ):
+        _validate_phase_disjointness_attestation(
+            attestation,
+            primary_manifest=primary_manifest,
+            primary_prepared=primary_prepared,
+            primary_source_map=primary_map,
+            cooldown_manifest=cooldown_manifest,
+            cooldown_prepared=cooldown_prepared,
+            cooldown_source_map=SimpleNamespace(fingerprint="f" * 64),
+        )
+
+    gates = payload["gates"]
+    assert isinstance(gates, dict)
+    near_duplicate = gates["near_duplicate"]
+    assert isinstance(near_duplicate, dict)
+    near_duplicate["estimated_jaccard_threshold"] = 1.0
+    payload.pop("attestation_fingerprint")
+    payload["attestation_fingerprint"] = _canonical_sha256(payload)
+    attestation.write_text(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True),
+        encoding="utf-8",
+    )
+    complete["attestation_sha256"] = hashlib.sha256(attestation.read_bytes()).hexdigest()
+    complete["attestation_fingerprint"] = payload["attestation_fingerprint"]
+    (attestation.parent / "COMPLETE").write_text(
+        json.dumps(complete, sort_keys=True),
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        TrainingPreflightError,
+        match=r"near_duplicate.*did not pass",
+    ):
+        _validate_phase_disjointness_attestation(
+            attestation,
+            primary_manifest=primary_manifest,
+            primary_prepared=primary_prepared,
+            primary_source_map=primary_map,
+            cooldown_manifest=cooldown_manifest,
+            cooldown_prepared=cooldown_prepared,
+            cooldown_source_map=cooldown_map,
+        )
+
+    near_duplicate["estimated_jaccard_threshold"] = 0.8
+    payload["scanner_source_tree_sha256"] = "0" * 64
+    payload.pop("attestation_fingerprint")
+    payload["attestation_fingerprint"] = _canonical_sha256(payload)
+    attestation.write_text(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True),
+        encoding="utf-8",
+    )
+    complete["attestation_sha256"] = hashlib.sha256(attestation.read_bytes()).hexdigest()
+    complete["attestation_fingerprint"] = payload["attestation_fingerprint"]
+    (attestation.parent / "COMPLETE").write_text(
+        json.dumps(complete, sort_keys=True),
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        TrainingPreflightError,
+        match="scanner source tree changed",
+    ):
+        _validate_phase_disjointness_attestation(
+            attestation,
+            primary_manifest=primary_manifest,
+            primary_prepared=primary_prepared,
+            primary_source_map=primary_map,
+            cooldown_manifest=cooldown_manifest,
+            cooldown_prepared=cooldown_prepared,
+            cooldown_source_map=cooldown_map,
+        )
 
 
 @pytest.mark.parametrize(
@@ -248,6 +429,156 @@ def test_prepared_text_preflight_never_opens_poisoned_kd_assets(
     assert all("kd" not in Path(path).name.lower() for path in report.checked_paths)
 
 
+def test_prepared_text_cooldown_preflight_authenticates_two_source_maps_without_kd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _preflight_config(tmp_path)
+    cooldown_manifest = tmp_path / "cooldown-prepared.json"
+    config.data.mode = "prepared-text"
+    config.data.teacher_kd_manifest_path = None
+    config.data.teacher_kd_manifest_sha256 = None
+    config.data.quality_cooldown_manifest_path = str(cooldown_manifest)
+    config.data.quality_cooldown_manifest_sha256 = _write(
+        cooldown_manifest,
+        b'{"kind":"prepared-text-cooldown"}\n',
+    )
+    config.data.quality_cooldown_start_tokens = 450_000_000
+    config.losses.teacher_kd = 0.0
+    config.losses.hidden_alignment = 0.0
+    config.losses.anchor_kl = 0.0
+
+    primary_fingerprint = "a" * 64
+    cooldown_fingerprint = "b" * 64
+    primary_entry = SimpleNamespace(
+        shard_id="primary-shard",
+        sequence_count=57_500_000,
+        token_count=460_000_000,
+    )
+    cooldown_entry = SimpleNamespace(
+        shard_id="cooldown-shard",
+        sequence_count=7_500_000,
+        token_count=60_000_000,
+    )
+
+    def prepared(
+        fingerprint: str,
+        entry: SimpleNamespace,
+    ) -> SimpleNamespace:
+        return SimpleNamespace(
+            sequence_length=config.data.max_sequence_length,
+            sequence_count=entry.sequence_count,
+            token_count=entry.token_count,
+            dataset_fingerprint=fingerprint,
+            tokenizer_sha256=config.sources.tokenizer.manifest_sha256,
+            shards=(entry,),
+            lineage={
+                "kind": "authenticated_extracted_corpus",
+                "ready_for_training": True,
+                "research_only": False,
+                "pending_audits": [],
+            },
+        )
+
+    primary_prepared = prepared(primary_fingerprint, primary_entry)
+    cooldown_prepared = prepared(cooldown_fingerprint, cooldown_entry)
+    primary_map = AuthenticatedSourceMap(
+        prepared_dataset_fingerprint=primary_fingerprint,
+        extracted_manifest_sha256="c" * 64,
+        sequence_length=config.data.max_sequence_length,
+        shards=(
+            AuthenticatedSourceShard(
+                source_id="primary",
+                shard_id=primary_entry.shard_id,
+                sequence_count=primary_entry.sequence_count,
+                global_sample_start=0,
+                output_path="primary.jsonl",
+                output_sha256="d" * 64,
+            ),
+        ),
+        mix_basis_points=(("primary", 10_000),),
+    )
+    cooldown_map = AuthenticatedSourceMap(
+        prepared_dataset_fingerprint=cooldown_fingerprint,
+        extracted_manifest_sha256="e" * 64,
+        sequence_length=config.data.max_sequence_length,
+        shards=(
+            AuthenticatedSourceShard(
+                source_id="quality",
+                shard_id=cooldown_entry.shard_id,
+                sequence_count=cooldown_entry.sequence_count,
+                global_sample_start=0,
+                output_path="quality.jsonl",
+                output_sha256="f" * 64,
+            ),
+        ),
+        mix_basis_points=(("quality", 10_000),),
+    )
+    config.data.source_mix_algorithm = "token-deficit-corrected-source-mix-bp-v2"
+    config.data.source_map_sha256 = primary_map.fingerprint
+    config.data.source_mix_basis_points = {"primary": 10_000}
+    config.validate()
+
+    import twen.data
+    import twen.preflight
+
+    monkeypatch.setattr(twen.preflight, "enforce_offline_environment", lambda: None)
+    monkeypatch.setattr(twen.preflight, "twen_source_tree_sha256", lambda: "1" * 64)
+    source_root = Path(config.sources.backbone.local_path)
+    source_manifest = source_root / "download-manifest.json"
+    monkeypatch.setattr(
+        twen.preflight,
+        "_check_source",
+        lambda _name, _source: (
+            source_root,
+            source_manifest,
+            {"model_type": "qwen3_5_text", "vocab_size": 128},
+        ),
+    )
+    monkeypatch.setattr(twen.preflight, "_audit_architecture", lambda *_args: None)
+    monkeypatch.setattr(
+        twen.preflight,
+        "_validate_calibration_contract",
+        lambda *_args: [],
+    )
+    monkeypatch.setattr(
+        twen.data,
+        "validate_prepared_corpus",
+        lambda path: (
+            cooldown_prepared
+            if Path(path).resolve() == cooldown_manifest.resolve()
+            else primary_prepared
+        ),
+    )
+    monkeypatch.setattr(
+        AuthenticatedSourceMap,
+        "from_prepared_manifest",
+        classmethod(
+            lambda _cls, value: (
+                cooldown_map if value.dataset_fingerprint == cooldown_fingerprint else primary_map
+            )
+        ),
+    )
+
+    def poison_kd(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("prepared-text cooldown preflight touched KD")
+
+    monkeypatch.setattr(twen.data, "validate_kd_corpus_manifest", poison_kd)
+    monkeypatch.setattr(twen.data, "validate_kd_corpus_coverage", poison_kd)
+    monkeypatch.setattr(twen.data, "read_kd_manifest", poison_kd)
+
+    report = run_training_preflight(config, world_size=1)
+
+    assert report.quality_cooldown_enabled is True
+    assert report.quality_cooldown_source_mix_enabled is True
+    assert report.quality_cooldown_source_map_sha256 == cooldown_map.fingerprint
+    assert report.quality_cooldown_source_mix_basis_points == (("quality", 10_000),)
+    assert report.quality_cooldown_source_mix_token_counts == (("quality", 60_000_000),)
+    assert report.quality_cooldown_source_map_payload_json is not None
+    assert str(cooldown_manifest.resolve()) in report.checked_paths
+    assert all("kd" not in Path(path).name.lower() for path in report.checked_paths)
+
+
 def test_preflight_authenticates_second_prepared_kd_cooldown_contract(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -352,3 +683,127 @@ def test_preflight_authenticates_second_prepared_kd_cooldown_contract(
     }
     assert str(cooldown_prepared.resolve()) in report.checked_paths
     assert str(cooldown_kd.resolve()) in report.checked_paths
+
+
+def test_no_reuse_capacity_rejects_nominally_sufficient_smoke_tail_batch() -> None:
+    smoke = SimpleNamespace(
+        token_count=16_013_672,
+        sequence_count=3_923,
+        shards=(),
+    )
+
+    with pytest.raises(
+        TrainingPreflightError,
+        match=r"complete tail optimizer batch.*requires_tokens=16262144",
+    ):
+        _validate_no_reuse_capacity(
+            smoke,
+            label="primary",
+            phase_budget_tokens=16_000_000,
+            global_batch_tokens=262_144,
+            sequence_length=4_096,
+            seed=73,
+        )
+
+
+def test_no_reuse_capacity_is_fail_closed_per_source() -> None:
+    source_map = AuthenticatedSourceMap(
+        prepared_dataset_fingerprint="1" * 64,
+        extracted_manifest_sha256="2" * 64,
+        sequence_length=4,
+        shards=(
+            AuthenticatedSourceShard(
+                source_id="alpha",
+                shard_id="alpha",
+                sequence_count=4,
+                global_sample_start=0,
+                output_path="alpha.jsonl",
+                output_sha256="3" * 64,
+            ),
+            AuthenticatedSourceShard(
+                source_id="beta",
+                shard_id="beta",
+                sequence_count=4,
+                global_sample_start=4,
+                output_path="beta.jsonl",
+                output_sha256="4" * 64,
+            ),
+        ),
+        mix_basis_points=(("alpha", 5_000), ("beta", 5_000)),
+    )
+    prepared = SimpleNamespace(
+        token_count=28,
+        sequence_count=8,
+        shards=(
+            SimpleNamespace(
+                shard_id="alpha",
+                sequence_count=4,
+                token_count=15,
+            ),
+            SimpleNamespace(
+                shard_id="beta",
+                sequence_count=4,
+                token_count=13,
+            ),
+        ),
+    )
+
+    with pytest.raises(
+        TrainingPreflightError,
+        match=r"source 'beta' would wrap.*requires_tokens=14",
+    ):
+        _validate_no_reuse_capacity(
+            prepared,
+            label="primary",
+            phase_budget_tokens=20,
+            global_batch_tokens=8,
+            sequence_length=4,
+            source_map=source_map,
+            source_mix_basis_points={"alpha": 5_000, "beta": 5_000},
+            seed=73,
+        )
+
+
+def test_no_reuse_capacity_rejects_non_dense_shard_ledger() -> None:
+    source_map = AuthenticatedSourceMap(
+        prepared_dataset_fingerprint="1" * 64,
+        extracted_manifest_sha256="2" * 64,
+        sequence_length=4,
+        shards=(
+            AuthenticatedSourceShard(
+                source_id="only",
+                shard_id="only",
+                sequence_count=8,
+                global_sample_start=0,
+                output_path="only.jsonl",
+                output_sha256="3" * 64,
+            ),
+        ),
+        mix_basis_points=(("only", 10_000),),
+    )
+    prepared = SimpleNamespace(
+        token_count=20,
+        sequence_count=8,
+        shards=(
+            SimpleNamespace(
+                shard_id="only",
+                sequence_count=8,
+                token_count=20,
+            ),
+        ),
+    )
+
+    with pytest.raises(
+        TrainingPreflightError,
+        match=r"shard 'only' violates dense packing",
+    ):
+        _validate_no_reuse_capacity(
+            prepared,
+            label="primary",
+            phase_budget_tokens=12,
+            global_batch_tokens=8,
+            sequence_length=4,
+            source_map=source_map,
+            source_mix_basis_points={"only": 10_000},
+            seed=73,
+        )
