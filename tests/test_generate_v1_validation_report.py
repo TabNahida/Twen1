@@ -376,6 +376,8 @@ def test_report_generator_builds_authenticated_svg_bundle(tmp_path: Path) -> Non
         encoding="utf-8",
     )
     output = tmp_path / "report"
+    greedy_samples = output / "greedy-samples.json"
+    _json(greedy_samples, {"kind": "twen_dense_greedy_samples", "samples": []})
 
     result = reporting.generate_report(
         run_dir=run,
@@ -397,6 +399,10 @@ def test_report_generator_builds_authenticated_svg_bundle(tmp_path: Path) -> Non
     assert manifest["files"]["runtime-gpu-sample.csv"]["sha256"] == _sha(
         output / "runtime-gpu-sample.csv"
     )
+    assert manifest["files"]["greedy-samples.json"] == {
+        "sha256": _sha(greedy_samples),
+        "size": greedy_samples.stat().st_size,
+    }
     report = (output / "REPORT.md").read_text()
     assert "Teacher gap closed" in report
     assert "research_only=true" in report

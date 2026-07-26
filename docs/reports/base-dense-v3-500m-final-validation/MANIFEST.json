@@ -84,6 +84,10 @@
       "sha256": "56caa77ee722211f7e356e52c716c1894ef484753bb3d342226c9d0d297e8d6c",
       "size": 2259
     },
+    "greedy-samples.json": {
+      "sha256": "7b690e52af3d985da75addc6a7065177390966ffb4e631514857e3b88ec5e5d7",
+      "size": 11004
+    },
     "runtime-gpu-sample.csv": {
       "sha256": "a26ce774dfd799acec90945b00959faa4fd627340a2b6d72fefd1cd56452e2aa",
       "size": 627478

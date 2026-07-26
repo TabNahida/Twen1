@@ -2850,6 +2850,9 @@ def generate_report(
         _build_report_zh_cn(training, validation, baseline_comparison),
     )
     payloads = [summary_path, report_path, report_zh_path, *chart_paths]
+    greedy_samples_path = output_dir / "greedy-samples.json"
+    if greedy_samples_path.is_file():
+        payloads.append(greedy_samples_path)
     gpu_sample_path = evaluation_dir.resolve() / "runtime-gpu-sample.csv"
     if gpu_sample_path.is_file():
         copied_sample = output_dir / "runtime-gpu-sample.csv"
