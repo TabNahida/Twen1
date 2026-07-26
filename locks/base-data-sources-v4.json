@@ -1,0 +1,892 @@
+{
+  "schema_version": 2,
+  "schema_status": "draft",
+  "kind": "twen_base_data_source_recipe_v2_draft",
+  "recipe_id": "base-v4-20260726",
+  "activation": {
+    "runnable": false,
+    "current_parser_compatible": false,
+    "reason": "The current v1 resolver accepts only native Parquet. This draft also locks immutable JSON Lines gzip inputs and dotted metadata fields.",
+    "required_implementation": [
+      "schema-v2 validation",
+      "immutable jsonl_gzip download with LFS SHA256 verification",
+      "streaming gzip JSON Lines extraction",
+      "dotted-field access and canonical license normalization",
+      "source-stratified optimizer-batch mixing"
+    ]
+  },
+  "objective": {
+    "route": "base_dense_adapter",
+    "training_text_objective": "causal_ntp_plus_qwen35_native_mtp",
+    "teacher_logits_kd": false,
+    "teacher_hidden_alignment": false
+  },
+  "network_policy": {
+    "mode": "fallback",
+    "huggingface_primary": "direct",
+    "huggingface_fallback": "configured_proxy",
+    "github": "configured_proxy",
+    "unrelated_hosts": "direct"
+  },
+  "split": {
+    "algorithm": "sha256_mod",
+    "seed": "twen-base-v4-20260726",
+    "modulus": 6,
+    "validation_remainder": 0,
+    "grouping": "use each source's split_group_fields to prevent repository or document leakage"
+  },
+  "output_shard_tokens": 1000000,
+  "profiles": {
+    "smoke": {
+      "description": "20M-token end-to-end data and training smoke",
+      "train_tokens": 20000000
+    },
+    "pilot": {
+      "description": "250M-token v4 optimizer and text-objective pilot",
+      "train_tokens": 250000000
+    },
+    "dense": {
+      "description": "500M-token formal v4 dense Adapter run",
+      "train_tokens": 500000000
+    }
+  },
+  "validation_tokens": 20000000,
+  "mix_contract": {
+    "basis_points_total": 10000,
+    "existing_sources_basis_points": 7000,
+    "new_sources_basis_points": 3000,
+    "quota_shortfall_policy": "fail_closed_and_revise_recipe",
+    "silent_redistribution_allowed": false
+  },
+  "license_policy": {
+    "mode": "allowlist_only_for_per_document_licenses",
+    "normalization_required": true,
+    "canonical_permissive_allowlist": [
+      "public-domain",
+      "cc0-1.0",
+      "cc-by-1.0",
+      "cc-by-2.0",
+      "cc-by-2.5",
+      "cc-by-3.0",
+      "cc-by-4.0",
+      "apache-2.0",
+      "bsd-2-clause",
+      "bsd-3-clause",
+      "isc",
+      "mit"
+    ],
+    "excluded_families": [
+      "cc-by-sa",
+      "gfdl",
+      "gpl",
+      "agpl",
+      "lgpl",
+      "mpl",
+      "unknown",
+      "no-license"
+    ],
+    "attribution_manifest_required": true
+  },
+  "storage_format_contract": {
+    "parquet": {
+      "current_v1_parser_supported": true,
+      "read_mode": "immutable Hub LFS range reads"
+    },
+    "jsonl_gzip": {
+      "current_v1_parser_supported": false,
+      "read_mode": "download the complete locked LFS object, verify compressed SHA256, then stream one JSON object per line through gzip",
+      "derived_artifacts": [
+        "download manifest with source path, size and SHA256",
+        "extracted JSONL size, SHA256 and row count",
+        "deterministic extraction cursor"
+      ],
+      "forbidden_shortcut": "Do not use mutable datasets-server refs/convert/parquet as source identity."
+    }
+  },
+  "sources": [
+    {
+      "source_id": "english_fineweb_edu_dedup",
+      "origin_group": "existing",
+      "mix_basis_points": 2400,
+      "category": "english_general",
+      "repo_id": "HuggingFaceTB/smollm-corpus",
+      "revision": "3ba9d605774198c5868892d7a8deda78031a781f",
+      "config": "fineweb-edu-dedup",
+      "split": "train",
+      "storage_format": "parquet",
+      "file_patterns": [
+        "fineweb-edu-dedup/train-00068-of-00234.parquet"
+      ],
+      "locked_files": [
+        {
+          "path": "fineweb-edu-dedup/train-00068-of-00234.parquet",
+          "size": 2251835383,
+          "sha256": "245efe3d53a22ca1d491bfae10478b8a3ae4170df4b89108a3728f6336e34425"
+        }
+      ],
+      "license_declaration": "ODC-By-1.0",
+      "license_scope": "Database license; underlying Common Crawl page rights are not individually cleared.",
+      "card_url": "https://huggingface.co/datasets/HuggingFaceTB/smollm-corpus/blob/3ba9d605774198c5868892d7a8deda78031a781f/README.md",
+      "gated": false,
+      "trust_remote_code": false,
+      "text_field": "text",
+      "stable_id_fields": [
+        "id"
+      ],
+      "split_group_fields": [
+        "id"
+      ],
+      "required_fields": [
+        "text",
+        "id"
+      ],
+      "attribution_fields": [
+        "id"
+      ],
+      "train_token_quotas": {
+        "smoke": 4800000,
+        "pilot": 60000000,
+        "dense": 120000000
+      },
+      "validation_token_quota": 4800000,
+      "min_characters": 200,
+      "max_document_tokens": 32768
+    },
+    {
+      "source_id": "chinese_fineweb2_cmn_hani",
+      "origin_group": "existing",
+      "mix_basis_points": 1800,
+      "category": "chinese_general",
+      "repo_id": "HuggingFaceFW/fineweb-2",
+      "revision": "af9c13333eb981300149d5ca60a8e9d659b276b9",
+      "config": "cmn_Hani",
+      "split": "train",
+      "storage_format": "parquet",
+      "file_patterns": [
+        "data/cmn_Hani/train/004_00073.parquet"
+      ],
+      "locked_files": [
+        {
+          "path": "data/cmn_Hani/train/004_00073.parquet",
+          "size": 1137716850,
+          "sha256": "431fbdf9fd4f8fb807aa7be056cfbf9c57016e0e33d8f73f465703e15b4b5537"
+        }
+      ],
+      "license_declaration": "ODC-By-1.0",
+      "license_scope": "Database license; also subject to Common Crawl Terms of Use.",
+      "card_url": "https://huggingface.co/datasets/HuggingFaceFW/fineweb-2/blob/af9c13333eb981300149d5ca60a8e9d659b276b9/README.md",
+      "gated": false,
+      "trust_remote_code": false,
+      "text_field": "text",
+      "stable_id_fields": [
+        "id"
+      ],
+      "split_group_fields": [
+        "id"
+      ],
+      "required_fields": [
+        "text",
+        "id"
+      ],
+      "attribution_fields": [
+        "id"
+      ],
+      "train_token_quotas": {
+        "smoke": 3600000,
+        "pilot": 45000000,
+        "dense": 90000000
+      },
+      "validation_token_quota": 3600000,
+      "min_characters": 100,
+      "max_document_tokens": 32768
+    },
+    {
+      "source_id": "math_finemath_4plus",
+      "origin_group": "existing",
+      "mix_basis_points": 1400,
+      "category": "math",
+      "repo_id": "HuggingFaceTB/finemath",
+      "revision": "e92b25a616738fe95dc186b64dfb19f9c8525594",
+      "config": "finemath-4plus",
+      "split": "train",
+      "storage_format": "parquet",
+      "file_patterns": [
+        "finemath-4plus/train-00060-of-00064.parquet"
+      ],
+      "locked_files": [
+        {
+          "path": "finemath-4plus/train-00060-of-00064.parquet",
+          "size": 284239808,
+          "sha256": "d8ee743cf9f6eaa336b99c50b556c6aea1fa34a8209bbd3220716444485aa27f"
+        }
+      ],
+      "license_declaration": "ODC-By-1.0",
+      "license_scope": "Database license; also subject to Common Crawl Terms of Use.",
+      "card_url": "https://huggingface.co/datasets/HuggingFaceTB/finemath/blob/e92b25a616738fe95dc186b64dfb19f9c8525594/README.md",
+      "gated": false,
+      "trust_remote_code": false,
+      "text_field": "text",
+      "stable_id_fields": [
+        "url"
+      ],
+      "split_group_fields": [
+        "url"
+      ],
+      "required_fields": [
+        "text",
+        "url"
+      ],
+      "attribution_fields": [
+        "url"
+      ],
+      "train_token_quotas": {
+        "smoke": 2800000,
+        "pilot": 35000000,
+        "dense": 70000000
+      },
+      "validation_token_quota": 2800000,
+      "min_characters": 200,
+      "max_document_tokens": 32768
+    },
+    {
+      "source_id": "code_github_clean_allowlisted",
+      "origin_group": "existing",
+      "mix_basis_points": 800,
+      "category": "code",
+      "repo_id": "codeparrot/github-code-clean",
+      "revision": "c48d40f9e70f0196f8236901ee35807f7d6c44c0",
+      "config": "native_parquet",
+      "split": "train",
+      "storage_format": "parquet",
+      "file_patterns": [
+        "data/train-00570-of-00880.parquet"
+      ],
+      "locked_files": [
+        {
+          "path": "data/train-00570-of-00880.parquet",
+          "size": 345453831,
+          "sha256": "3df56ea64531cf25a2721320bab619aedf3ca4f4f427bbbe68423d9ecb7c6e15"
+        }
+      ],
+      "license_declaration": "per-row SPDX field",
+      "license_scope": "Cleaning code is Apache-2.0; every source file retains its repository license.",
+      "license_field": "license",
+      "license_value_mode": "canonical_spdx",
+      "license_allowlist": [
+        "apache-2.0",
+        "bsd-2-clause",
+        "bsd-3-clause",
+        "cc0-1.0",
+        "isc",
+        "mit"
+      ],
+      "card_url": "https://huggingface.co/datasets/codeparrot/github-code-clean/blob/c48d40f9e70f0196f8236901ee35807f7d6c44c0/README.md",
+      "gated": false,
+      "trust_remote_code": false,
+      "text_field": "code",
+      "stable_id_fields": [
+        "repo_name",
+        "path"
+      ],
+      "split_group_fields": [
+        "repo_name"
+      ],
+      "required_fields": [
+        "code",
+        "repo_name",
+        "path",
+        "license"
+      ],
+      "attribution_fields": [
+        "repo_name",
+        "path",
+        "license"
+      ],
+      "reject_detected_secrets": true,
+      "train_token_quotas": {
+        "smoke": 1600000,
+        "pilot": 20000000,
+        "dense": 40000000
+      },
+      "validation_token_quota": 1600000,
+      "min_characters": 80,
+      "max_document_tokens": 16384
+    },
+    {
+      "source_id": "science_cosmopedia_openstax",
+      "origin_group": "existing",
+      "mix_basis_points": 300,
+      "category": "science_synthetic",
+      "repo_id": "HuggingFaceTB/cosmopedia",
+      "revision": "0ae6ec63f91742bd2d1eaef4f02232c55d719385",
+      "config": "openstax",
+      "split": "train",
+      "storage_format": "parquet",
+      "file_patterns": [
+        "data/openstax/train-00001-of-00002.parquet"
+      ],
+      "locked_files": [
+        {
+          "path": "data/openstax/train-00001-of-00002.parquet",
+          "size": 173491421,
+          "sha256": "05ed6afca68a93f1ec1f062165a49c08dd6d29b2b728165fce7ab96a7f702e24"
+        }
+      ],
+      "license_declaration": "Apache-2.0",
+      "license_scope": "Synthetic Mixtral output released by the dataset authors.",
+      "card_url": "https://huggingface.co/datasets/HuggingFaceTB/cosmopedia/blob/0ae6ec63f91742bd2d1eaef4f02232c55d719385/README.md",
+      "gated": false,
+      "trust_remote_code": false,
+      "text_field": "text",
+      "stable_id_fields": [
+        "prompt",
+        "text"
+      ],
+      "split_group_fields": [
+        "prompt"
+      ],
+      "required_fields": [
+        "text",
+        "prompt"
+      ],
+      "attribution_fields": [
+        "prompt"
+      ],
+      "train_token_quotas": {
+        "smoke": 600000,
+        "pilot": 7500000,
+        "dense": 15000000
+      },
+      "validation_token_quota": 600000,
+      "min_characters": 200,
+      "max_document_tokens": 32768
+    },
+    {
+      "source_id": "science_cosmopedia_stanford",
+      "origin_group": "existing",
+      "mix_basis_points": 300,
+      "category": "science_synthetic",
+      "repo_id": "HuggingFaceTB/cosmopedia",
+      "revision": "0ae6ec63f91742bd2d1eaef4f02232c55d719385",
+      "config": "stanford",
+      "split": "train",
+      "storage_format": "parquet",
+      "file_patterns": [
+        "data/stanford/train-00002-of-00013.parquet"
+      ],
+      "locked_files": [
+        {
+          "path": "data/stanford/train-00002-of-00013.parquet",
+          "size": 253591785,
+          "sha256": "a34d00e3b3b130a92f0e637fc2d125c18ac68ae0b480d074691f4b0e6ae6a68f"
+        }
+      ],
+      "license_declaration": "Apache-2.0",
+      "license_scope": "Synthetic Mixtral output released by the dataset authors.",
+      "card_url": "https://huggingface.co/datasets/HuggingFaceTB/cosmopedia/blob/0ae6ec63f91742bd2d1eaef4f02232c55d719385/README.md",
+      "gated": false,
+      "trust_remote_code": false,
+      "text_field": "text",
+      "stable_id_fields": [
+        "prompt",
+        "text"
+      ],
+      "split_group_fields": [
+        "prompt"
+      ],
+      "required_fields": [
+        "text",
+        "prompt"
+      ],
+      "attribution_fields": [
+        "prompt"
+      ],
+      "train_token_quotas": {
+        "smoke": 600000,
+        "pilot": 7500000,
+        "dense": 15000000
+      },
+      "validation_token_quota": 600000,
+      "min_characters": 200,
+      "max_document_tokens": 32768
+    },
+    {
+      "source_id": "education_libretexts_permissive",
+      "origin_group": "new",
+      "mix_basis_points": 700,
+      "category": "education_open",
+      "repo_id": "common-pile/libretexts_filtered",
+      "revision": "70388bca52b4a93515e14b1d56618fd7944988fd",
+      "config": "default",
+      "split": "train",
+      "storage_format": "jsonl_gzip",
+      "file_patterns": [
+        "libretexts-0000.json.gz"
+      ],
+      "locked_files": [
+        {
+          "path": "libretexts-0000.json.gz",
+          "size": 115037937,
+          "sha256": "71851a2b5acfccf80659729a0eccd07ab6ed737f0edc659a662aa9c1cd2194db"
+        }
+      ],
+      "verified_scale": {
+        "documents": 40049,
+        "datasets_server_decoded_bytes": 386771581,
+        "card_claimed_utf8_gb": 3.6,
+        "scale_note": "The card and current datasets-server byte totals disagree; quota admission must use materialized token counts."
+      },
+      "license_declaration": "per-document Public Domain, CC BY, CC BY-SA or GFDL",
+      "license_scope": "Only normalized Public Domain, CC0 and CC BY rows are admitted by this draft.",
+      "license_field": "metadata.license",
+      "license_value_mode": "canonical_after_normalization",
+      "license_allowlist": [
+        "public-domain",
+        "cc0-1.0",
+        "cc-by-1.0",
+        "cc-by-2.0",
+        "cc-by-2.5",
+        "cc-by-3.0",
+        "cc-by-4.0"
+      ],
+      "card_url": "https://huggingface.co/datasets/common-pile/libretexts_filtered/blob/70388bca52b4a93515e14b1d56618fd7944988fd/README.md",
+      "gated": false,
+      "trust_remote_code": false,
+      "text_field": "text",
+      "stable_id_fields": [
+        "id"
+      ],
+      "split_group_fields": [
+        "metadata.book_url"
+      ],
+      "required_fields": [
+        "id",
+        "text",
+        "metadata.license",
+        "metadata.url",
+        "metadata.provenance"
+      ],
+      "attribution_fields": [
+        "id",
+        "source",
+        "metadata.url",
+        "metadata.book_url",
+        "metadata.title",
+        "metadata.author",
+        "metadata.license",
+        "metadata.provenance"
+      ],
+      "train_token_quotas": {
+        "smoke": 1400000,
+        "pilot": 17500000,
+        "dense": 35000000
+      },
+      "validation_token_quota": 1400000,
+      "min_characters": 200,
+      "max_document_tokens": 32768
+    },
+    {
+      "source_id": "education_oercommons_permissive",
+      "origin_group": "new",
+      "mix_basis_points": 200,
+      "category": "education_open",
+      "repo_id": "common-pile/oercommons_filtered",
+      "revision": "506b6159dadcbc0dc67611cea024eedb04232fb2",
+      "config": "default",
+      "split": "train",
+      "storage_format": "jsonl_gzip",
+      "file_patterns": [
+        "oercommons-0000.json.gz"
+      ],
+      "locked_files": [
+        {
+          "path": "oercommons-0000.json.gz",
+          "size": 17028282,
+          "sha256": "e1c5fcbd9232183cbbd3d1967f637cc0371fcc6fce3e14d9da7f75ee2c66bec5"
+        }
+      ],
+      "verified_scale": {
+        "documents": 5249,
+        "datasets_server_decoded_bytes": 53764491
+      },
+      "license_declaration": "per-document Public Domain, CC BY or CC BY-SA",
+      "license_scope": "Only normalized Public Domain, CC0 and CC BY rows are admitted by this draft.",
+      "license_field": "metadata.license",
+      "license_value_mode": "canonical_after_normalization",
+      "license_allowlist": [
+        "public-domain",
+        "cc0-1.0",
+        "cc-by-1.0",
+        "cc-by-2.0",
+        "cc-by-2.5",
+        "cc-by-3.0",
+        "cc-by-4.0"
+      ],
+      "card_url": "https://huggingface.co/datasets/common-pile/oercommons_filtered/blob/506b6159dadcbc0dc67611cea024eedb04232fb2/README.md",
+      "gated": false,
+      "trust_remote_code": false,
+      "text_field": "text",
+      "stable_id_fields": [
+        "id"
+      ],
+      "split_group_fields": [
+        "id"
+      ],
+      "required_fields": [
+        "id",
+        "text",
+        "metadata.license",
+        "metadata.url",
+        "metadata.provenance"
+      ],
+      "attribution_fields": [
+        "id",
+        "source",
+        "metadata.url",
+        "metadata.title",
+        "metadata.author",
+        "metadata.license",
+        "metadata.provenance"
+      ],
+      "train_token_quotas": {
+        "smoke": 400000,
+        "pilot": 5000000,
+        "dense": 10000000
+      },
+      "validation_token_quota": 400000,
+      "min_characters": 100,
+      "max_document_tokens": 32768
+    },
+    {
+      "source_id": "education_pressbooks_permissive",
+      "origin_group": "new",
+      "mix_basis_points": 400,
+      "category": "education_open",
+      "repo_id": "common-pile/pressbooks_filtered",
+      "revision": "1a1d3b50d77f834370f8eb4c0d174668dd1676bb",
+      "config": "default",
+      "split": "train",
+      "storage_format": "jsonl_gzip",
+      "file_patterns": [
+        "pressbooks-0000.json.gz"
+      ],
+      "locked_files": [
+        {
+          "path": "pressbooks-0000.json.gz",
+          "size": 191725499,
+          "sha256": "dd251acfa9b535a0aadeb7f61743a61934a1783bd1bdac947d4d136781b22d22"
+        }
+      ],
+      "verified_scale": {
+        "documents": 54455,
+        "datasets_server_decoded_bytes": 607688680
+      },
+      "license_declaration": "per-document Public Domain, CC BY or CC BY-SA",
+      "license_scope": "Only normalized Public Domain, CC0 and CC BY rows are admitted by this draft.",
+      "license_field": "metadata.license",
+      "license_value_mode": "canonical_after_normalization",
+      "license_allowlist": [
+        "public-domain",
+        "cc0-1.0",
+        "cc-by-1.0",
+        "cc-by-2.0",
+        "cc-by-2.5",
+        "cc-by-3.0",
+        "cc-by-4.0"
+      ],
+      "card_url": "https://huggingface.co/datasets/common-pile/pressbooks_filtered/blob/1a1d3b50d77f834370f8eb4c0d174668dd1676bb/README.md",
+      "gated": false,
+      "trust_remote_code": false,
+      "text_field": "text",
+      "stable_id_fields": [
+        "id"
+      ],
+      "split_group_fields": [
+        "metadata.book_url"
+      ],
+      "required_fields": [
+        "id",
+        "text",
+        "metadata.license",
+        "metadata.url",
+        "metadata.provenance"
+      ],
+      "attribution_fields": [
+        "id",
+        "source",
+        "metadata.url",
+        "metadata.book_url",
+        "metadata.title",
+        "metadata.author",
+        "metadata.institution",
+        "metadata.subject",
+        "metadata.license",
+        "metadata.provenance"
+      ],
+      "train_token_quotas": {
+        "smoke": 800000,
+        "pilot": 10000000,
+        "dense": 20000000
+      },
+      "validation_token_quota": 800000,
+      "min_characters": 200,
+      "max_document_tokens": 32768
+    },
+    {
+      "source_id": "science_arxiv_open_permissive",
+      "origin_group": "new",
+      "mix_basis_points": 500,
+      "category": "science_math_open",
+      "repo_id": "common-pile/arxiv_papers_filtered",
+      "revision": "033cf7f53f9b348deec868c1a5a48484f3ee9e52",
+      "config": "default",
+      "split": "train",
+      "storage_format": "jsonl_gzip",
+      "file_patterns": [
+        "arxiv-papers-0007.json.gz"
+      ],
+      "locked_files": [
+        {
+          "path": "arxiv-papers-0007.json.gz",
+          "size": 210893770,
+          "sha256": "3c930859c88959b37519b77f597da9ccbb5bb2825bba1458d216f9ec5c94a90c"
+        }
+      ],
+      "verified_scale": {
+        "documents": 304048,
+        "card_claimed_utf8_gb": 19,
+        "full_repo_compressed_bytes": 6037455094,
+        "scope_note": "This draft intentionally locks only the smallest verified shard."
+      },
+      "license_declaration": "per-document CC BY, CC BY-SA or CC0",
+      "license_scope": "Only normalized CC0 and CC BY rows are admitted by this draft.",
+      "license_field": "metadata.license",
+      "license_value_mode": "canonical_after_normalization",
+      "license_allowlist": [
+        "cc0-1.0",
+        "cc-by-1.0",
+        "cc-by-2.0",
+        "cc-by-2.5",
+        "cc-by-3.0",
+        "cc-by-4.0"
+      ],
+      "card_url": "https://huggingface.co/datasets/common-pile/arxiv_papers_filtered/blob/033cf7f53f9b348deec868c1a5a48484f3ee9e52/README.md",
+      "gated": false,
+      "trust_remote_code": false,
+      "text_field": "text",
+      "stable_id_fields": [
+        "id"
+      ],
+      "split_group_fields": [
+        "id"
+      ],
+      "required_fields": [
+        "id",
+        "text",
+        "metadata.license",
+        "metadata.url",
+        "metadata.provenance"
+      ],
+      "attribution_fields": [
+        "id",
+        "source",
+        "metadata.url",
+        "metadata.authors",
+        "metadata.license",
+        "metadata.provenance"
+      ],
+      "train_token_quotas": {
+        "smoke": 1000000,
+        "pilot": 12500000,
+        "dense": 25000000
+      },
+      "validation_token_quota": 1000000,
+      "min_characters": 200,
+      "max_document_tokens": 32768
+    },
+    {
+      "source_id": "code_stackv2_edu_permissive",
+      "origin_group": "new",
+      "mix_basis_points": 400,
+      "category": "code",
+      "repo_id": "common-pile/stackv2_edu_filtered",
+      "revision": "c354dbe88469a1153e97c6a63ac50591849654de",
+      "config": "default",
+      "split": "train",
+      "storage_format": "jsonl_gzip",
+      "file_patterns": [
+        "stack-edu-0094.json.gz"
+      ],
+      "locked_files": [
+        {
+          "path": "stack-edu-0094.json.gz",
+          "size": 474450587,
+          "sha256": "fab627a4e8add9478c5c08107cf5f2385bab1c3f741a3771a855cb1c32d09f56"
+        }
+      ],
+      "verified_scale": {
+        "documents": 69588607,
+        "card_claimed_utf8_gb": 255,
+        "full_repo_compressed_bytes": 83037672896,
+        "scope_note": "This draft intentionally locks only the smallest verified shard."
+      },
+      "license_declaration": "per-document repository license; upstream filtering admits Blue Oak certified licenses",
+      "license_scope": "This draft narrows the upstream set to the project's existing permissive code allowlist.",
+      "license_field": "metadata.license",
+      "license_value_mode": "canonical_spdx_after_normalization",
+      "license_allowlist": [
+        "apache-2.0",
+        "bsd-2-clause",
+        "bsd-3-clause",
+        "cc0-1.0",
+        "isc",
+        "mit"
+      ],
+      "card_url": "https://huggingface.co/datasets/common-pile/stackv2_edu_filtered/blob/c354dbe88469a1153e97c6a63ac50591849654de/README.md",
+      "gated": false,
+      "trust_remote_code": false,
+      "text_field": "text",
+      "stable_id_fields": [
+        "id"
+      ],
+      "split_group_fields": [
+        "metadata.repo_name"
+      ],
+      "required_fields": [
+        "id",
+        "text",
+        "metadata.repo_name",
+        "metadata.path",
+        "metadata.license",
+        "metadata.provenance"
+      ],
+      "attribution_fields": [
+        "id",
+        "source",
+        "metadata.repo_name",
+        "metadata.path",
+        "metadata.revision_id",
+        "metadata.url",
+        "metadata.license",
+        "metadata.detected_licenses",
+        "metadata.provenance"
+      ],
+      "reject_detected_secrets": true,
+      "train_token_quotas": {
+        "smoke": 800000,
+        "pilot": 10000000,
+        "dense": 20000000
+      },
+      "validation_token_quota": 800000,
+      "min_characters": 80,
+      "max_document_tokens": 16384
+    },
+    {
+      "source_id": "multilingual_common_corpus_permissive",
+      "origin_group": "new",
+      "mix_basis_points": 800,
+      "category": "multilingual_open_knowledge",
+      "repo_id": "PleIAs/common_corpus",
+      "revision": "307910e4c5d040d6f318e6edf2a2b97849155771",
+      "config": "default",
+      "split": "train",
+      "storage_format": "parquet",
+      "file_patterns": [
+        "common_corpus_1/subset_100_1.parquet"
+      ],
+      "locked_files": [
+        {
+          "path": "common_corpus_1/subset_100_1.parquet",
+          "size": 429962586,
+          "sha256": "4ee719a130b7f86978b08c20cc9f490309e2bae2a5c0df4f04fd427365530f07"
+        }
+      ],
+      "verified_scale": {
+        "documents": 69907,
+        "datasets_server_decoded_bytes": 808219040,
+        "scope_note": "The declared default config exposes this one heterogeneous sample, not the complete 2.27T-token corpus."
+      },
+      "license_declaration": "per-document public-domain or open-license field",
+      "license_scope": "Rows are admitted only after canonical permissive-license and domain filters.",
+      "license_field": "license",
+      "license_value_mode": "canonical_after_normalization",
+      "license_allowlist": [
+        "public-domain",
+        "cc0-1.0",
+        "cc-by-1.0",
+        "cc-by-2.0",
+        "cc-by-2.5",
+        "cc-by-3.0",
+        "cc-by-4.0",
+        "apache-2.0",
+        "bsd-2-clause",
+        "bsd-3-clause",
+        "isc",
+        "mit"
+      ],
+      "verified_raw_license_examples": [
+        "Public Domain",
+        "CC0",
+        "MIT"
+      ],
+      "row_filters": {
+        "language_in": [
+          "Chinese",
+          "English"
+        ],
+        "language_type_in": [
+          "Written"
+        ],
+        "open_type_in": [
+          "Open Government",
+          "Open Science",
+          "Open Culture"
+        ],
+        "collection_not_in": [
+          "Wikipedia",
+          "Github Open Source",
+          "Wikidata"
+        ]
+      },
+      "card_url": "https://huggingface.co/datasets/PleIAs/common_corpus/blob/307910e4c5d040d6f318e6edf2a2b97849155771/README.md",
+      "gated": false,
+      "trust_remote_code": false,
+      "text_field": "text",
+      "stable_id_fields": [
+        "identifier"
+      ],
+      "split_group_fields": [
+        "identifier"
+      ],
+      "required_fields": [
+        "identifier",
+        "collection",
+        "open_type",
+        "curator",
+        "license",
+        "language",
+        "language_type",
+        "text"
+      ],
+      "attribution_fields": [
+        "identifier",
+        "collection",
+        "open_type",
+        "curator",
+        "license",
+        "date",
+        "title",
+        "creator",
+        "language"
+      ],
+      "train_token_quotas": {
+        "smoke": 1600000,
+        "pilot": 20000000,
+        "dense": 40000000
+      },
+      "validation_token_quota": 1600000,
+      "min_characters": 200,
+      "max_document_tokens": 32768
+    }
+  ]
+}
