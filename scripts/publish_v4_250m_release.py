@@ -75,6 +75,14 @@ CLOSURE_COMPLETE_KIND = "twen_v4_250m_formal_evidence_closure_complete"
 CLOSURE_KIND = "twen_v4_250m_formal_evidence_closure"
 CAPACITY_KIND = "twen_v4_250m_capacity_attestation"
 READINESS_KIND = "twen_v4_250m_pilot_readiness"
+PENDING_FORMAL_CONFIG_ISSUES = frozenset(
+    {
+        "authenticated config retains missing or PENDING data identities",
+        "config phase-disjointness identity differs from closed capacity evidence",
+        "cooldown config identities differ from closed capacity evidence",
+        "primary config identities differ from closed capacity evidence",
+    }
+)
 
 PHASES = ("primary", "cooldown")
 REPORT_BUNDLE_NAMES = (
@@ -706,8 +714,7 @@ def _authenticate_governed_closure_gates(
             "acknowledgement"
         ),
         "chinese_semantic_quality_gate does not authorize training",
-        "authenticated config retains missing or PENDING data identities",
-    }
+    } | set(PENDING_FORMAL_CONFIG_ISSUES)
     required_blocked_issues = {
         "readiness launch_enabled is not true",
         "readiness authorizes_training is not true",
@@ -718,8 +725,7 @@ def _authenticate_governed_closure_gates(
             "acknowledgement"
         ),
         "chinese_semantic_quality_gate does not authorize training",
-        "authenticated config retains missing or PENDING data identities",
-    }
+    } | set(PENDING_FORMAL_CONFIG_ISSUES)
     if (
         not required_blocked_issues.issubset(actual_blocked_issues)
         or not actual_blocked_issues.issubset(allowed_blocked_issues)
