@@ -17,6 +17,7 @@ import json
 import math
 import os
 import re
+import stat
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from datetime import datetime
@@ -27,7 +28,7 @@ from typing import Any
 import numpy as np
 import yaml
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 KIND = "twen_dense_training_analysis"
 GIB = 1024**3
 METRIC_COMPONENTS = (
@@ -53,6 +54,33 @@ LOSS_COMPONENTS = (
 SOURCE_SUFFIX = re.compile(r"[-_]\d{6}$")
 SOURCE_TOKENS_STEP_PREFIX = "source_tokens_this_step/"
 SOURCE_TOKENS_TOTAL_PREFIX = "source_tokens/"
+DASHBOARD_GPU_ARCHIVE_RELATIVE = "raw/dashboard-gpu-telemetry-last-session.jsonl"
+DASHBOARD_GPU_ARCHIVE_SERIALIZATION = "canonical-jsonl-sort-keys-v1"
+DASHBOARD_GPU_CAPTURE_SCHEMA_VERSION = 1
+DASHBOARD_GPU_SNAPSHOT_ATTEMPTS = 4
+DASHBOARD_GPU_INPUTS = (
+    ("dashboard_gpu_telemetry_rotated", "gpu-telemetry.jsonl.1"),
+    ("dashboard_gpu_telemetry_current", "gpu-telemetry.jsonl"),
+)
+DASHBOARD_GPU_FIELDS = (
+    "power_draw_w",
+    "power_limit_w",
+    "gpu_utilization_percent",
+    "memory_utilization_percent",
+    "vram_used_mib",
+    "temperature_c",
+)
+DASHBOARD_GPU_SELECTION_CONDITION = (
+    "window_started_at_utc >= session_start and window_ended_at_utc <= session_end"
+)
+RELEASE_REQUIRED_METRIC_SOURCES = {
+    "loss": ("loss",),
+    "ntp": ("ntp",),
+    "mtp": ("mtp",),
+    "grad_norm": ("grad_norm",),
+    "nominal_lr": ("lr/adapters", "lr"),
+    "adjusted_lr": ("lr_adjusted/adapters",),
+}
 
 
 class AnalysisError(ValueError):
@@ -84,6 +112,25 @@ def _json_text(value: Any) -> str:
         )
         + "\n"
     )
+
+
+def _canonical_jsonl_text(rows: Sequence[Mapping[str, Any]]) -> str:
+    lines: list[str] = []
+    for index, row in enumerate(rows, 1):
+        if not isinstance(row, Mapping):
+            raise AnalysisError(f"canonical JSONL row {index} must be an object")
+        try:
+            line = json.dumps(
+                dict(row),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+        except (TypeError, ValueError) as exc:
+            raise AnalysisError(f"canonical JSONL row {index} is not serializable") from exc
+        lines.append(f"{line}\n")
+    return "".join(lines)
 
 
 def _atomic_write_text(path: Path, value: str) -> None:
@@ -187,7 +234,12 @@ def _json_object(payload: bytes, path: Path) -> dict[str, Any]:
     return value
 
 
-def _jsonl_rows(payload: bytes, path: Path) -> list[dict[str, Any]]:
+def _jsonl_rows(
+    payload: bytes,
+    path: Path,
+    *,
+    allow_empty: bool = False,
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for line_number, line in enumerate(payload.decode("utf-8").splitlines(), 1):
         if not line.strip():
@@ -196,7 +248,7 @@ def _jsonl_rows(payload: bytes, path: Path) -> list[dict[str, Any]]:
         if not isinstance(value, dict):
             raise AnalysisError(f"expected JSON object at {path}:{line_number}")
         rows.append(value)
-    if not rows:
+    if not rows and not allow_empty:
         raise AnalysisError(f"empty JSONL input: {path}")
     return rows
 
@@ -934,17 +986,13 @@ def _source_mix_event_contract(
                     label=f"{label}.source_mix_basis_points.{source}",
                 )
                 if value <= 0:
-                    raise AnalysisError(
-                        f"{label} source-mix basis points must be positive"
-                    )
+                    raise AnalysisError(f"{label} source-mix basis points must be positive")
                 normalized_basis_points[source] = value
         enabled = raw.get("enabled")
         if not isinstance(enabled, bool):
             raise AnalysisError(f"{label} source-mix enabled flag must be boolean")
         if enabled and sum(normalized_basis_points.values()) != 10_000:
-            raise AnalysisError(
-                f"{label} source-mix basis points must sum to 10000"
-            )
+            raise AnalysisError(f"{label} source-mix basis points must sum to 10000")
         if not enabled and normalized_basis_points:
             raise AnalysisError(f"{label} disabled source mix contains weights")
         return {
@@ -1004,13 +1052,9 @@ def _source_mix_event_contract(
                 for phase, raw_phase in raw_phases.items()
             }
             if phases["primary"] != primary:
-                raise AnalysisError(
-                    "flat and phase-specific primary source-mix contracts disagree"
-                )
+                raise AnalysisError("flat and phase-specific primary source-mix contracts disagree")
             if not phases["cooldown"]["enabled"]:
-                raise AnalysisError(
-                    "phase-specific cooldown source-mix contract is disabled"
-                )
+                raise AnalysisError("phase-specific cooldown source-mix contract is disabled")
         cooldown_start = nested.get("cooldown_start_tokens")
         if cooldown_start is not None:
             cooldown_start = _integer(
@@ -1018,13 +1062,9 @@ def _source_mix_event_contract(
                 label="source_mix.cooldown_start_tokens",
             )
             if cooldown_start <= 0:
-                raise AnalysisError(
-                    "source_mix.cooldown_start_tokens must be positive"
-                )
+                raise AnalysisError("source_mix.cooldown_start_tokens must be positive")
         if "cooldown" in phases and cooldown_start is None:
-            raise AnalysisError(
-                "phase-specific source mix is missing cooldown_start_tokens"
-            )
+            raise AnalysisError("phase-specific source mix is missing cooldown_start_tokens")
         contracts.append(
             {
                 **primary,
@@ -1111,12 +1151,10 @@ def _combined_manifest_source_capacity(
         for phase, (manifest, phase_sources) in phase_inputs.items()
     }
     complete = all(
-        bool(capacity["source_mapping_complete"])
-        for capacity in phase_capacities.values()
+        bool(capacity["source_mapping_complete"]) for capacity in phase_capacities.values()
     )
     token_complete = complete and all(
-        capacity["tokens_by_source"] is not None
-        for capacity in phase_capacities.values()
+        capacity["tokens_by_source"] is not None for capacity in phase_capacities.values()
     )
     samples = dict.fromkeys(sources, 0)
     tokens = dict.fromkeys(sources, 0)
@@ -1161,19 +1199,13 @@ def _logged_source_token_replay(
     batch = _event_batch_contract(events)
     source_mix = _source_mix_event_contract(events)
     phase_contracts = {
-        phase: contract
-        for phase, contract in source_mix["phases"].items()
-        if contract["enabled"]
+        phase: contract for phase, contract in source_mix["phases"].items() if contract["enabled"]
     }
     logged_cooldown_start = source_mix.get("cooldown_start_tokens")
     if logged_cooldown_start != cooldown_start_tokens:
-        raise AnalysisError(
-            "logged/configured source-mix cooldown thresholds disagree"
-        )
+        raise AnalysisError("logged/configured source-mix cooldown thresholds disagree")
     if ("cooldown" in phase_contracts) != (cooldown_manifest is not None):
-        raise AnalysisError(
-            "phase-specific source-mix contract and cooldown manifest disagree"
-        )
+        raise AnalysisError("phase-specific source-mix contract and cooldown manifest disagree")
     observed_sources = sorted(
         {
             key[len(SOURCE_TOKENS_STEP_PREFIX) :]
@@ -1185,21 +1217,14 @@ def _logged_source_token_replay(
     if not observed_sources or any(not source for source in observed_sources):
         raise AnalysisError("logged source-token metrics have invalid source IDs")
     declared_sources = sorted(
-        {
-            source
-            for contract in phase_contracts.values()
-            for source in contract["basis_points"]
-        }
+        {source for contract in phase_contracts.values() for source in contract["basis_points"]}
     )
     if declared_sources and declared_sources != observed_sources:
         raise AnalysisError("logged source-token IDs disagree with the session source-mix contract")
     sources = declared_sources or observed_sources
     fractions: list[dict[str, float]] = []
     committed = {source: 0 for source in sources}
-    phase_committed = {
-        phase: {source: 0 for source in sources}
-        for phase in phase_contracts
-    }
+    phase_committed = {phase: {source: 0 for source in sources} for phase in phase_contracts}
     phase_token_totals = dict.fromkeys(phase_contracts, 0)
     pure_by_phase: Counter[str] = Counter()
     rows_by_phase: Counter[str] = Counter()
@@ -1208,9 +1233,7 @@ def _logged_source_token_replay(
         phase = str(row.get("data_phase", "primary"))
         phase_contract = phase_contracts.get(phase)
         if phase_contract is None:
-            raise AnalysisError(
-                f"metrics step {step} uses undeclared source-mix phase {phase!r}"
-            )
+            raise AnalysisError(f"metrics step {step} uses undeclared source-mix phase {phase!r}")
         step_keys = {
             key[len(SOURCE_TOKENS_STEP_PREFIX) :]
             for key in row
@@ -1271,8 +1294,7 @@ def _logged_source_token_replay(
         for source in sources
     }
     expected_basis_points = {
-        source: expected_token_mass[source] / final_tokens * 10_000
-        for source in sources
+        source: expected_token_mass[source] / final_tokens * 10_000 for source in sources
     }
     observed_basis_points = {
         source: committed[source] / final_tokens * 10_000 for source in sources
@@ -1282,23 +1304,17 @@ def _logged_source_token_replay(
         if total <= 0:
             continue
         expected = {
-            source: float(
-                phase_contracts[phase]["basis_points"].get(source, 0)
-            )
+            source: float(phase_contracts[phase]["basis_points"].get(source, 0))
             for source in sources
         }
-        observed = {
-            source: phase_committed[phase][source] / total * 10_000
-            for source in sources
-        }
+        observed = {source: phase_committed[phase][source] / total * 10_000 for source in sources}
         phase_token_mix[phase] = {
             "committed_tokens": total,
             "committed_tokens_by_source": phase_committed[phase],
             "expected_basis_points": expected,
             "observed_basis_points": observed,
             "deviation_basis_points": {
-                source: observed[source] - expected[source]
-                for source in sources
+                source: observed[source] - expected[source] for source in sources
             },
         }
     phase_manifests: dict[
@@ -1327,9 +1343,7 @@ def _logged_source_token_replay(
             "cooldown_start_tokens": cooldown_start_tokens,
             "primary_manifest": str(manifest_path),
             "quality_cooldown_manifest": (
-                str(cooldown_manifest_path)
-                if cooldown_manifest_path is not None
-                else None
+                str(cooldown_manifest_path) if cooldown_manifest_path is not None else None
             ),
             "dataset_fingerprint": source_mix["dataset_fingerprint"],
             "source_map_sha256": source_mix["source_map_sha256"],
@@ -1421,8 +1435,7 @@ def _source_replay(
         configured_cooldown_sha = data.get("quality_cooldown_manifest_sha256")
         if (
             isinstance(configured_cooldown_sha, str)
-            and identities["quality_cooldown_manifest"]["sha256"]
-            != configured_cooldown_sha
+            and identities["quality_cooldown_manifest"]["sha256"] != configured_cooldown_sha
         ):
             raise AnalysisError("cooldown manifest SHA does not match resolved config")
     else:
@@ -1552,9 +1565,7 @@ def _source_fixed_effects(
     if logged_token_mix:
         mean_fractions = source_matrix.mean(axis=0)
         active_indices = [
-            index
-            for index, mean_fraction in enumerate(mean_fractions)
-            if mean_fraction > 0.0
+            index for index, mean_fraction in enumerate(mean_fractions) if mean_fraction > 0.0
         ]
         if not active_indices:
             raise AnalysisError("analysis phase has no active logged source")
@@ -1579,9 +1590,7 @@ def _source_fixed_effects(
         for index in active_indices:
             if index == reference_index:
                 continue
-            candidate = np.column_stack(
-                [rank_probe, centered_sources[:, index]]
-            )
+            candidate = np.column_stack([rank_probe, centered_sources[:, index]])
             candidate_rank = int(np.linalg.matrix_rank(candidate))
             if candidate_rank > current_rank:
                 modeled_indices.append(index)
@@ -1842,9 +1851,7 @@ def _cooldown_analysis(
                 current_rank = candidate_rank
                 modeled_sources.append(source)
         design = np.column_stack(design_columns)
-        names = [f"source:{source}" for source in modeled_sources] + [
-            axis_name
-        ]
+        names = [f"source:{source}" for source in modeled_sources] + [axis_name]
         return {
             key: _regression(
                 design,
@@ -2067,25 +2074,108 @@ def _nearest_rank_percentile(values: Sequence[float], percentile: float) -> floa
     return ordered[index]
 
 
-def _dashboard_gpu_telemetry(
+def _dashboard_gpu_capture(
+    selected: Sequence[tuple[datetime, datetime, str, Mapping[str, Any]]],
     *,
-    project_root: Path,
-    rank_session: Mapping[str, Any],
-    identities: dict[str, Any],
+    snapshot_input_keys: Sequence[str],
 ) -> dict[str, Any]:
-    dashboard_dir = project_root / ".twen" / "dashboard"
-    candidates = (
-        ("dashboard_gpu_telemetry_rotated", dashboard_dir / "gpu-telemetry.jsonl.1"),
-        ("dashboard_gpu_telemetry_current", dashboard_dir / "gpu-telemetry.jsonl"),
+    rows = [dict(row) for _started, _ended, _identity_key, row in selected]
+    source_input_keys = [identity_key for _started, _ended, identity_key, _row in selected]
+    payload = _canonical_jsonl_text(rows)
+    encoded = payload.encode("utf-8")
+    return {
+        "captured_buckets": rows,
+        "raw_capture": {
+            "schema_version": DASHBOARD_GPU_CAPTURE_SCHEMA_VERSION,
+            "bundle_path": DASHBOARD_GPU_ARCHIVE_RELATIVE,
+            "encoding": "utf-8",
+            "serialization": DASHBOARD_GPU_ARCHIVE_SERIALIZATION,
+            "row_count": len(rows),
+            "snapshot_input_keys": list(snapshot_input_keys),
+            "source_input_keys_by_row": source_input_keys,
+            "size": len(encoded),
+            "sha256": hashlib.sha256(encoded).hexdigest(),
+        },
+    }
+
+
+def _dashboard_gpu_file_state(path: Path) -> tuple[int, int, int, int, int, int] | None:
+    try:
+        value = path.lstat()
+    except FileNotFoundError:
+        return None
+    if stat.S_ISLNK(value.st_mode) or not stat.S_ISREG(value.st_mode):
+        raise AnalysisError(
+            f"Dashboard GPU telemetry input must be a regular non-symlink file: {path}"
+        )
+    return (
+        value.st_dev,
+        value.st_ino,
+        value.st_size,
+        value.st_mtime_ns,
+        value.st_ctime_ns,
+        value.st_mode,
     )
-    file_rows: list[tuple[str, list[dict[str, Any]]]] = []
-    for identity_key, path in candidates:
-        if not path.exists():
+
+
+def _dashboard_gpu_joint_snapshot(
+    dashboard_dir: Path,
+) -> list[tuple[str, Path, bytes, dict[str, Any]]]:
+    candidates = tuple(
+        (identity_key, dashboard_dir / filename) for identity_key, filename in DASHBOARD_GPU_INPUTS
+    )
+    last_race: str | None = None
+    for attempt in range(1, DASHBOARD_GPU_SNAPSHOT_ATTEMPTS + 1):
+        before = {
+            identity_key: _dashboard_gpu_file_state(path) for identity_key, path in candidates
+        }
+        captured: list[tuple[str, Path, bytes, dict[str, Any]]] = []
+        pair_raced = False
+        try:
+            for identity_key, path in candidates:
+                state = before[identity_key]
+                if state is None:
+                    continue
+                if _dashboard_gpu_file_state(path) != state:
+                    pair_raced = True
+                    break
+                payload, identity = _read_stable_bytes(path)
+                if _dashboard_gpu_file_state(path) != state:
+                    pair_raced = True
+                    break
+                captured.append((identity_key, path, payload, identity))
+        except FileNotFoundError:
+            last_race = f"attempt {attempt}: input disappeared while opening"
             continue
-        payload, identity = _read_stable_bytes(path)
-        identities[identity_key] = identity
-        file_rows.append((identity_key, _jsonl_rows(payload, path)))
-    scope = {
+        except AnalysisError as exc:
+            if "changed repeatedly while reading" not in str(exc):
+                raise
+            last_race = f"attempt {attempt}: {exc}"
+            continue
+        if pair_raced:
+            last_race = f"attempt {attempt}: input changed around individual read"
+            continue
+        after = {identity_key: _dashboard_gpu_file_state(path) for identity_key, path in candidates}
+        if before != after:
+            last_race = f"attempt {attempt}: rotated/created/changed across pair read"
+            continue
+        if any(
+            identity["size"] != before[identity_key][2] for identity_key, _, _, identity in captured
+        ):
+            last_race = f"attempt {attempt}: captured identity differs from pair state"
+            continue
+        return captured
+    detail = f" ({last_race})" if last_race is not None else ""
+    raise AnalysisError(
+        "Dashboard GPU telemetry pair did not stabilize after "
+        f"{DASHBOARD_GPU_SNAPSHOT_ATTEMPTS} attempts{detail}"
+    )
+
+
+def _dashboard_gpu_scope(
+    rank_session: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
         "kind": "last_rank0_session_only",
         "session_id": rank_session.get("session_id"),
         "started_at_utc": rank_session.get("started_at_utc"),
@@ -2095,81 +2185,131 @@ def _dashboard_gpu_telemetry(
             "represent earlier resumed sessions or the entire run."
         ),
     }
-    if not file_rows:
-        return {
-            "available": False,
-            "scope": scope,
-            "note": "Dashboard GPU telemetry files are absent.",
-        }
+
+
+def _dashboard_scope_datetimes(
+    scope: Mapping[str, Any],
+) -> tuple[datetime, datetime]:
     session_start = _parse_timestamp(
-        rank_session.get("started_at_utc"),
+        scope.get("started_at_utc"),
         label="rank0-session.started_at_utc",
     )
     session_end = _parse_timestamp(
-        rank_session.get("ended_at_utc"),
+        scope.get("ended_at_utc"),
         label="rank0-session.ended_at_utc",
     )
     if session_start.utcoffset() is None or session_end.utcoffset() is None:
         raise AnalysisError("rank0 session timestamps must be timezone-aware")
     if session_end <= session_start:
         raise AnalysisError("rank0 session end must be after its start")
-    selected: list[tuple[datetime, datetime, str, dict[str, Any]]] = []
-    rows_by_input: Counter[str] = Counter({identity_key: 0 for identity_key, _rows in file_rows})
-    for identity_key, rows in file_rows:
-        for index, row in enumerate(rows, 1):
-            if row.get("kind") != "twen_gpu_telemetry_aggregate":
-                raise AnalysisError(f"{identity_key}[{index}] has unsupported GPU telemetry kind")
-            started = _parse_timestamp(
-                row.get("window_started_at_utc"),
-                label=f"{identity_key}[{index}].window_started_at_utc",
-            )
-            ended = _parse_timestamp(
-                row.get("window_ended_at_utc"),
-                label=f"{identity_key}[{index}].window_ended_at_utc",
-            )
-            if started.utcoffset() is None or ended.utcoffset() is None:
-                raise AnalysisError("GPU telemetry timestamps must be timezone-aware")
-            if ended < started:
-                raise AnalysisError("GPU telemetry window end must not precede its start")
-            if ended == started:
-                samples = _integer(
-                    row.get("sample_count"),
-                    label=f"{identity_key}[{index}].sample_count",
-                )
-                if samples != 1:
-                    raise AnalysisError(
-                        "zero-duration GPU telemetry windows must contain one sample"
-                    )
-            if started >= session_start and ended <= session_end:
-                selected.append((started, ended, identity_key, row))
-                rows_by_input[identity_key] += 1
+    return session_start, session_end
+
+
+def _dashboard_gpu_row_window(
+    row: Mapping[str, Any],
+    *,
+    label: str,
+) -> tuple[datetime, datetime]:
+    if row.get("kind") != "twen_gpu_telemetry_aggregate":
+        raise AnalysisError(f"{label} has unsupported GPU telemetry kind")
+    started = _parse_timestamp(
+        row.get("window_started_at_utc"),
+        label=f"{label}.window_started_at_utc",
+    )
+    ended = _parse_timestamp(
+        row.get("window_ended_at_utc"),
+        label=f"{label}.window_ended_at_utc",
+    )
+    if started.utcoffset() is None or ended.utcoffset() is None:
+        raise AnalysisError("GPU telemetry timestamps must be timezone-aware")
+    if ended < started:
+        raise AnalysisError("GPU telemetry window end must not precede its start")
+    if ended == started:
+        samples = _integer(
+            row.get("sample_count"),
+            label=f"{label}.sample_count",
+        )
+        if samples != 1:
+            raise AnalysisError("zero-duration GPU telemetry windows must contain one sample")
+    return started, ended
+
+
+def _dashboard_gpu_aggregation_contract() -> dict[str, str]:
+    return {
+        "weighted_mean": (
+            "sum(bucket field mean * available_sample_count) / sum(available_sample_count)"
+        ),
+        "bucket_mean_nearest_rank_p95": ("nearest-rank ceil(0.95 * available_bucket_count) - 1"),
+    }
+
+
+def _dashboard_gpu_summary(
+    selected: Sequence[tuple[datetime, datetime, str, Mapping[str, Any]]],
+    *,
+    scope: Mapping[str, Any],
+    snapshot_input_keys: Sequence[str],
+) -> dict[str, Any]:
+    session_start, session_end = _dashboard_scope_datetimes(scope)
+    allowed_keys = [identity_key for identity_key, _filename in DASHBOARD_GPU_INPUTS]
+    expected_snapshot_order = [
+        identity_key for identity_key in allowed_keys if identity_key in snapshot_input_keys
+    ]
+    if list(snapshot_input_keys) != expected_snapshot_order or len(set(snapshot_input_keys)) != len(
+        snapshot_input_keys
+    ):
+        raise AnalysisError("Dashboard GPU telemetry snapshot inventory is invalid")
+    rows_by_input: Counter[str] = Counter({identity_key: 0 for identity_key in snapshot_input_keys})
+    if any(identity_key not in rows_by_input for _start, _end, identity_key, _row in selected):
+        raise AnalysisError("Dashboard GPU telemetry selected row lacks snapshot provenance")
+    deterministic = sorted(selected, key=lambda item: (item[0], item[1], item[2]))
+    if list(selected) != deterministic:
+        raise AnalysisError("Dashboard GPU telemetry selected rows are not deterministic")
+    selection = {
+        "condition": DASHBOARD_GPU_SELECTION_CONDITION,
+        "selected_bucket_count": len(selected),
+        "rows_by_input": {},
+        "first_window_started_at_utc": None,
+        "last_window_ended_at_utc": None,
+    }
     if not selected:
+        selection["rows_by_input"] = dict(sorted(rows_by_input.items()))
         return {
             "available": False,
-            "scope": scope,
-            "selected_bucket_count": 0,
-            "rows_by_input": dict(rows_by_input),
-            "note": "No complete Dashboard GPU telemetry buckets fall within the last session.",
+            "scope": dict(scope),
+            "selection": selection,
+            "samples": None,
+            "coverage": None,
+            "aggregation": _dashboard_gpu_aggregation_contract(),
+            "fields": None,
+            "note": (
+                "Dashboard GPU telemetry files are absent."
+                if not snapshot_input_keys
+                else "No complete Dashboard GPU telemetry buckets fall within the last session."
+            ),
         }
-    selected.sort(key=lambda item: (item[0], item[1]))
+
     sample_count = 0
     available_count = 0
     unavailable_count = 0
     sampled_seconds = 0.0
-    fields = (
-        "power_draw_w",
-        "power_limit_w",
-        "gpu_utilization_percent",
-        "memory_utilization_percent",
-        "vram_used_mib",
-        "temperature_c",
-    )
-    weighted_sums = {field: 0.0 for field in fields}
-    bucket_means: dict[str, list[float]] = {field: [] for field in fields}
-    minima: dict[str, list[float]] = {field: [] for field in fields}
-    maxima: dict[str, list[float]] = {field: [] for field in fields}
+    weighted_sums = {field: 0.0 for field in DASHBOARD_GPU_FIELDS}
+    bucket_means: dict[str, list[float]] = {field: [] for field in DASHBOARD_GPU_FIELDS}
+    minima: dict[str, list[float]] = {field: [] for field in DASHBOARD_GPU_FIELDS}
+    maxima: dict[str, list[float]] = {field: [] for field in DASHBOARD_GPU_FIELDS}
     raw_intervals: set[int] = set()
-    for _started, _ended, _identity_key, row in selected:
+    for index, (started, ended, identity_key, row) in enumerate(selected, 1):
+        checked_start, checked_end = _dashboard_gpu_row_window(
+            row,
+            label=f"captured Dashboard GPU telemetry row {index}",
+        )
+        if (
+            checked_start != started
+            or checked_end != ended
+            or started < session_start
+            or ended > session_end
+        ):
+            raise AnalysisError("captured Dashboard GPU telemetry row is outside its scope")
+        rows_by_input[identity_key] += 1
         samples = _integer(row.get("sample_count"), label="GPU telemetry sample_count")
         available = _integer(
             row.get("available_sample_count"),
@@ -2197,7 +2337,7 @@ def _dashboard_gpu_telemetry(
         raw_fields = row.get("fields")
         if not isinstance(raw_fields, Mapping):
             raise AnalysisError("GPU telemetry fields must be an object")
-        for field in fields:
+        for field in DASHBOARD_GPU_FIELDS:
             summary = raw_fields.get(field)
             if not isinstance(summary, Mapping):
                 raise AnalysisError(f"GPU telemetry field is missing: {field}")
@@ -2224,30 +2364,17 @@ def _dashboard_gpu_telemetry(
             raise AnalysisError("selected GPU telemetry windows overlap")
         internal_gap_seconds += gap
     session_seconds = (session_end - session_start).total_seconds()
-    summaries = {
-        field: {
-            "weighted_mean": weighted_sums[field] / available_count,
-            "bucket_mean_nearest_rank_p95": _nearest_rank_percentile(
-                bucket_means[field],
-                0.95,
-            ),
-            "min": min(minima[field]),
-            "max": max(maxima[field]),
-        }
-        for field in fields
-    }
-    return {
-        "available": True,
-        "scope": scope,
-        "selection": {
-            "condition": (
-                "window_started_at_utc >= session_start and window_ended_at_utc <= session_end"
-            ),
-            "selected_bucket_count": len(selected),
+    selection.update(
+        {
             "rows_by_input": dict(sorted(rows_by_input.items())),
             "first_window_started_at_utc": first_start.isoformat(),
             "last_window_ended_at_utc": last_end.isoformat(),
-        },
+        }
+    )
+    return {
+        "available": True,
+        "scope": dict(scope),
+        "selection": selection,
         "samples": {
             "sample_count": sample_count,
             "available_sample_count": available_count,
@@ -2269,15 +2396,59 @@ def _dashboard_gpu_telemetry(
                 "including normal collector spacing."
             ),
         },
-        "aggregation": {
-            "weighted_mean": (
-                "sum(bucket field mean * available_sample_count) / sum(available_sample_count)"
-            ),
-            "bucket_mean_nearest_rank_p95": (
-                "nearest-rank ceil(0.95 * available_bucket_count) - 1"
-            ),
+        "aggregation": _dashboard_gpu_aggregation_contract(),
+        "fields": {
+            field: {
+                "weighted_mean": weighted_sums[field] / available_count,
+                "bucket_mean_nearest_rank_p95": _nearest_rank_percentile(
+                    bucket_means[field],
+                    0.95,
+                ),
+                "min": min(minima[field]),
+                "max": max(maxima[field]),
+            }
+            for field in DASHBOARD_GPU_FIELDS
         },
-        "fields": summaries,
+        "note": None,
+    }
+
+
+def _dashboard_gpu_telemetry(
+    *,
+    project_root: Path,
+    rank_session: Mapping[str, Any],
+    identities: dict[str, Any],
+) -> dict[str, Any]:
+    dashboard_dir = project_root / ".twen" / "dashboard"
+    snapshots = _dashboard_gpu_joint_snapshot(dashboard_dir)
+    for identity_key, _filename in DASHBOARD_GPU_INPUTS:
+        identities.pop(identity_key, None)
+    for identity_key, _path, _payload, identity in snapshots:
+        identities[identity_key] = identity
+    scope = _dashboard_gpu_scope(rank_session)
+    session_start, session_end = _dashboard_scope_datetimes(scope)
+    selected: list[tuple[datetime, datetime, str, Mapping[str, Any]]] = []
+    for identity_key, path, payload, _identity in snapshots:
+        rows = _jsonl_rows(payload, path, allow_empty=True)
+        for index, row in enumerate(rows, 1):
+            started, ended = _dashboard_gpu_row_window(
+                row,
+                label=f"{identity_key}[{index}]",
+            )
+            if started >= session_start and ended <= session_end:
+                selected.append((started, ended, identity_key, row))
+    selected.sort(key=lambda item: (item[0], item[1], item[2]))
+    snapshot_input_keys = [identity_key for identity_key, _path, _payload, _identity in snapshots]
+    return {
+        **_dashboard_gpu_summary(
+            selected,
+            scope=scope,
+            snapshot_input_keys=snapshot_input_keys,
+        ),
+        **_dashboard_gpu_capture(
+            selected,
+            snapshot_input_keys=snapshot_input_keys,
+        ),
     }
 
 
@@ -2536,6 +2707,251 @@ def _data_consumption_analysis(
     }
 
 
+def _cursor_release_observation(
+    checkpoint_metadata: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Derive no-reuse claims from the authenticated terminal cursor.
+
+    Older non-source-mix runs do not carry an authenticated source map.  Those
+    reports remain usable for descriptive analysis, but their release claims
+    stay unavailable instead of being guessed from configured capacity.
+    """
+
+    cursor = checkpoint_metadata.get("data_cursor")
+    if not isinstance(cursor, Mapping):
+        return {
+            "reference_epochs": None,
+            "reference_epoch_max": None,
+            "reused_sequences": None,
+            "reused_tokens": None,
+        }
+    raw_epoch = cursor.get("epoch")
+    top_epoch = (
+        raw_epoch
+        if isinstance(raw_epoch, int) and not isinstance(raw_epoch, bool) and raw_epoch >= 0
+        else None
+    )
+    extra = cursor.get("extra")
+    if not isinstance(extra, Mapping):
+        return {
+            "reference_epochs": ([top_epoch] if top_epoch is not None else None),
+            "reference_epoch_max": top_epoch,
+            "reused_sequences": None,
+            "reused_tokens": None,
+        }
+    if extra.get("kind") in {
+        "deterministic-source-mix-quality-cooldown",
+        "deterministic-source-mix-cooldown",
+    }:
+        raw_leaves = (extra.get("primary_cursor"), extra.get("cooldown_cursor"))
+        if not all(isinstance(item, Mapping) for item in raw_leaves):
+            return {
+                "reference_epochs": ([top_epoch] if top_epoch is not None else None),
+                "reference_epoch_max": top_epoch,
+                "reused_sequences": None,
+                "reused_tokens": None,
+            }
+        leaves = list(raw_leaves)
+    elif isinstance(extra.get("source_map"), Mapping):
+        leaves = [extra]
+    else:
+        return {
+            "reference_epochs": ([top_epoch] if top_epoch is not None else None),
+            "reference_epoch_max": top_epoch,
+            "reused_sequences": None,
+            "reused_tokens": None,
+        }
+
+    reference_epochs = [top_epoch] if top_epoch is not None else []
+    reused_sequences = 0
+    reused_tokens = 0
+    for leaf_index, raw_leaf in enumerate(leaves):
+        assert isinstance(raw_leaf, Mapping)
+        source_map = raw_leaf.get("source_map")
+        committed = raw_leaf.get("committed_samples_by_source")
+        if not isinstance(source_map, Mapping) or not isinstance(committed, Mapping):
+            raise AnalysisError(
+                f"terminal source-mix cursor[{leaf_index}] lacks source-map counters"
+            )
+        sequence_length = _integer(
+            source_map.get("sequence_length"),
+            label=f"terminal cursor[{leaf_index}].source_map.sequence_length",
+        )
+        if sequence_length <= 0:
+            raise AnalysisError("terminal source-map sequence length must be positive")
+        shards = source_map.get("shards")
+        if not isinstance(shards, list) or not shards:
+            raise AnalysisError(
+                f"terminal source-mix cursor[{leaf_index}] has no source-map shards"
+            )
+        capacities: dict[str, int] = {}
+        for shard_index, raw_shard in enumerate(shards):
+            if not isinstance(raw_shard, Mapping):
+                raise AnalysisError(
+                    f"terminal cursor[{leaf_index}].shards[{shard_index}] is invalid"
+                )
+            source_id = raw_shard.get("source_id")
+            if not isinstance(source_id, str) or not source_id:
+                raise AnalysisError("terminal source-map shard has an invalid source ID")
+            capacity = _integer(
+                raw_shard.get("sequence_count"),
+                label=(f"terminal cursor[{leaf_index}].shards[{shard_index}].sequence_count"),
+            )
+            if capacity <= 0:
+                raise AnalysisError("terminal source-map shard capacity must be positive")
+            capacities[source_id] = capacities.get(source_id, 0) + capacity
+        if set(committed) != set(capacities):
+            raise AnalysisError(
+                f"terminal cursor[{leaf_index}] committed/source-map inventories differ"
+            )
+        for source_id in sorted(capacities):
+            count = _integer(
+                committed[source_id],
+                label=f"terminal cursor[{leaf_index}].committed.{source_id}",
+            )
+            if count < 0:
+                raise AnalysisError("terminal source committed count must be non-negative")
+            capacity = capacities[source_id]
+            if count:
+                reference_epochs.append((count - 1) // capacity)
+            overflow = max(count - capacity, 0)
+            reused_sequences += overflow
+            reused_tokens += overflow * sequence_length
+    if not reference_epochs:
+        reference_epochs.append(0)
+    return {
+        "reference_epochs": reference_epochs,
+        "reference_epoch_max": max(reference_epochs),
+        "reused_sequences": reused_sequences,
+        "reused_tokens": reused_tokens,
+    }
+
+
+def _fork_checkpoint_binding(
+    events: Sequence[Mapping[str, Any]],
+    *,
+    run_dir: Path,
+    project_root: Path,
+) -> dict[str, Any] | None:
+    """Authenticate the model-only fork sentinel named by the initialization log."""
+
+    initialized = [row for row in events if row.get("event") == "initialized"]
+    if not initialized:
+        return None
+    if len(initialized) != 1:
+        raise AnalysisError("events.jsonl must contain at most one initialized event")
+    fork_value = initialized[0].get("fork_from")
+    if fork_value is None:
+        return None
+    if not isinstance(fork_value, str) or not fork_value:
+        raise AnalysisError("initialized fork_from must be a non-empty path")
+    raw = Path(fork_value).expanduser()
+    if ".." in raw.parts:
+        raise AnalysisError("initialized fork checkpoint path is unsafe")
+    candidates = (
+        (raw,) if raw.is_absolute() else (project_root / raw, Path.cwd() / raw, run_dir / raw)
+    )
+    fork: Path | None = None
+    for candidate in candidates:
+        if candidate.is_symlink():
+            raise AnalysisError("initialized fork checkpoint must not be a symlink")
+        if candidate.is_dir():
+            fork = candidate.resolve(strict=True)
+            break
+    if fork is None:
+        raise AnalysisError("initialized fork checkpoint does not exist")
+    manifest_path = fork / "manifest.json"
+    complete_path = fork / "COMPLETE"
+    manifest_bytes, manifest_identity = _read_stable_bytes(manifest_path)
+    marker_bytes, complete_identity = _read_stable_bytes(complete_path)
+    manifest = _json_object(manifest_bytes, manifest_path)
+    if (
+        manifest.get("algorithm") != "sha256"
+        or manifest.get("version") != 1
+        or not isinstance(manifest.get("files"), Mapping)
+        or not manifest["files"]
+    ):
+        raise AnalysisError("initialized fork checkpoint manifest is invalid")
+    if marker_bytes.decode("ascii").strip() != manifest_identity["sha256"]:
+        raise AnalysisError(
+            "initialized fork checkpoint COMPLETE does not authenticate manifest.json"
+        )
+    return {
+        "path": str(fork),
+        "manifest_sha256": manifest_identity["sha256"],
+        "complete_sha256": complete_identity["sha256"],
+    }
+
+
+def _release_metric_finiteness(
+    metrics: Sequence[Mapping[str, Any]],
+) -> tuple[dict[str, bool], dict[str, str | None]]:
+    finite: dict[str, bool] = {}
+    sources: dict[str, str | None] = {}
+    for claim_name, candidates in RELEASE_REQUIRED_METRIC_SOURCES.items():
+        source = next(
+            (
+                field
+                for field in candidates
+                if all(field in row and row.get(field) is not None for row in metrics)
+            ),
+            None,
+        )
+        sources[claim_name] = source
+        if source is None:
+            finite[claim_name] = False
+            continue
+        try:
+            for row in metrics:
+                _finite(row.get(source), label=f"release metric {source}")
+        except AnalysisError:
+            finite[claim_name] = False
+        else:
+            finite[claim_name] = True
+    return finite, sources
+
+
+def _release_gate_observation(
+    *,
+    metrics: Sequence[Mapping[str, Any]],
+    events: Sequence[Mapping[str, Any]],
+    config: Mapping[str, Any],
+    checkpoint_metadata: Mapping[str, Any],
+    terminal: Mapping[str, Any],
+    identities: Mapping[str, Any],
+    run_dir: Path,
+    project_root: Path,
+) -> dict[str, Any]:
+    cursor = _cursor_release_observation(checkpoint_metadata)
+    finite_metrics, metric_sources = _release_metric_finiteness(metrics)
+    grad_clip_norm = _configured_grad_clip(config)
+    clipped = sum(
+        _finite(row.get("grad_norm"), label="release metric grad_norm") > grad_clip_norm
+        for row in metrics
+    )
+    fork = _fork_checkpoint_binding(
+        events,
+        run_dir=run_dir,
+        project_root=project_root,
+    )
+    return {
+        **cursor,
+        "required_metrics_finite": finite_metrics,
+        "required_metric_sources": metric_sources,
+        "clip_fraction": clipped / len(metrics),
+        "clip_threshold": grad_clip_norm,
+        "fork_checkpoint_complete_sha256": (fork["complete_sha256"] if fork is not None else None),
+        "fork_checkpoint": fork,
+        "source_binding": {
+            "terminal_checkpoint_manifest_sha256": terminal["manifest"]["sha256"],
+            "terminal_checkpoint_complete_sha256": terminal["complete_marker"]["sha256"],
+            "metrics_sha256": identities["metrics"]["sha256"],
+            "events_sha256": identities["events"]["sha256"],
+            "resolved_config_sha256": identities["resolved_config"]["sha256"],
+        },
+    }
+
+
 def _input_bundle(run_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     files = {
         "metrics": run_dir / "metrics.jsonl",
@@ -2634,6 +3050,16 @@ def analyze_dense_training(run_dir: Path) -> dict[str, Any]:
         replay=replay,
         checkpoint_metadata=checkpoint_metadata,
     )
+    release_gate = _release_gate_observation(
+        metrics=metrics,
+        events=events,
+        config=config,
+        checkpoint_metadata=checkpoint_metadata,
+        terminal=terminal,
+        identities=identities,
+        run_dir=resolved_run,
+        project_root=project_root,
+    )
     metadata_cursor = checkpoint_metadata.get("data_cursor", {})
     metadata_extra = (
         metadata_cursor.get("extra", {}) if isinstance(metadata_cursor, Mapping) else {}
@@ -2679,6 +3105,7 @@ def analyze_dense_training(run_dir: Path) -> dict[str, Any]:
         "performance": performance,
         "lr_dose": lr_dose,
         "data_consumption": data_consumption,
+        "release_gate": release_gate,
         "interpretation": {
             "raw_loss_plateau": (
                 "Every optimizer batch mixes sources at nearly fixed token ratios; "
@@ -3017,36 +3444,145 @@ def _authenticated_plot_rows(
     return _jsonl_rows(payload, path)
 
 
-def _dashboard_plot_rows(analysis: Mapping[str, Any]) -> list[dict[str, Any]]:
+def _captured_dashboard_payload(
+    analysis: Mapping[str, Any],
+) -> tuple[str, list[dict[str, Any]]]:
+    dashboard = analysis["performance"]["dashboard_gpu_last_session"]
+    if not isinstance(dashboard, Mapping):
+        raise AnalysisError("Dashboard GPU telemetry analysis must be an object")
+    raw_rows = dashboard.get("captured_buckets")
+    if not isinstance(raw_rows, list):
+        raise AnalysisError("Dashboard GPU telemetry capture rows must be a list")
+    if any(not isinstance(row, Mapping) for row in raw_rows):
+        raise AnalysisError("Dashboard GPU telemetry capture rows must be objects")
+    payload = _canonical_jsonl_text(raw_rows)
+    encoded = payload.encode("utf-8")
+    capture = dashboard.get("raw_capture")
+    if not isinstance(capture, Mapping):
+        raise AnalysisError("Dashboard GPU telemetry capture identity is missing")
+    expected_capture_keys = {
+        "schema_version",
+        "bundle_path",
+        "encoding",
+        "serialization",
+        "row_count",
+        "snapshot_input_keys",
+        "source_input_keys_by_row",
+        "size",
+        "sha256",
+    }
+    if set(capture) != expected_capture_keys:
+        raise AnalysisError("Dashboard GPU telemetry capture schema differs")
+    expected_capture = {
+        "schema_version": DASHBOARD_GPU_CAPTURE_SCHEMA_VERSION,
+        "bundle_path": DASHBOARD_GPU_ARCHIVE_RELATIVE,
+        "encoding": "utf-8",
+        "serialization": DASHBOARD_GPU_ARCHIVE_SERIALIZATION,
+        "row_count": len(raw_rows),
+        "size": len(encoded),
+        "sha256": hashlib.sha256(encoded).hexdigest(),
+    }
+    for key, expected in expected_capture.items():
+        if capture.get(key) != expected:
+            raise AnalysisError(f"Dashboard GPU telemetry capture {key} mismatch")
+    snapshot_keys = capture.get("snapshot_input_keys")
+    source_keys = capture.get("source_input_keys_by_row")
+    if (
+        not isinstance(snapshot_keys, list)
+        or any(not isinstance(key, str) for key in snapshot_keys)
+        or not isinstance(source_keys, list)
+        or len(source_keys) != len(raw_rows)
+        or any(not isinstance(key, str) for key in source_keys)
+    ):
+        raise AnalysisError("Dashboard GPU telemetry capture provenance is invalid")
+    inputs = analysis.get("inputs")
+    if not isinstance(inputs, Mapping):
+        raise AnalysisError("analysis inputs must be an object")
+    allowed_keys = [identity_key for identity_key, _filename in DASHBOARD_GPU_INPUTS]
+    observed_snapshot_keys = [key for key in allowed_keys if key in inputs]
+    if snapshot_keys != observed_snapshot_keys or any(
+        key not in snapshot_keys for key in source_keys
+    ):
+        raise AnalysisError("Dashboard GPU telemetry capture snapshot binding differs")
+    for key in snapshot_keys:
+        identity = inputs.get(key)
+        if (
+            not isinstance(identity, Mapping)
+            or not isinstance(identity.get("path"), str)
+            or not isinstance(identity.get("size"), int)
+            or isinstance(identity.get("size"), bool)
+            or identity["size"] < 0
+            or not isinstance(identity.get("sha256"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", identity["sha256"]) is None
+        ):
+            raise AnalysisError(
+                f"Dashboard GPU telemetry capture source identity is invalid: {key}"
+            )
+    scope = dashboard.get("scope")
+    if not isinstance(scope, Mapping):
+        raise AnalysisError("Dashboard GPU telemetry scope must be an object")
+    expected_scope_keys = {
+        "kind",
+        "session_id",
+        "started_at_utc",
+        "ended_at_utc",
+        "caveat",
+    }
+    if (
+        set(scope) != expected_scope_keys
+        or scope.get("kind") != "last_rank0_session_only"
+        or scope.get("caveat")
+        != (
+            "Dashboard telemetry is filtered to the last rank0 session and does not "
+            "represent earlier resumed sessions or the entire run."
+        )
+    ):
+        raise AnalysisError("Dashboard GPU telemetry capture scope schema differs")
+    selected: list[tuple[datetime, datetime, str, Mapping[str, Any]]] = []
+    for index, (raw_row, source_key) in enumerate(
+        zip(raw_rows, source_keys, strict=True),
+        1,
+    ):
+        row = dict(raw_row)
+        started, ended = _dashboard_gpu_row_window(
+            row,
+            label=f"Dashboard GPU telemetry capture row {index}",
+        )
+        selected.append((started, ended, source_key, row))
+    recomputed = _dashboard_gpu_summary(
+        selected,
+        scope=scope,
+        snapshot_input_keys=snapshot_keys,
+    )
+    observed = {
+        key: value
+        for key, value in dashboard.items()
+        if key not in {"captured_buckets", "raw_capture"}
+    }
+    if _json_text(observed) != _json_text(recomputed):
+        raise AnalysisError("Dashboard GPU telemetry derived summary differs from captured rows")
+    copied_rows = _jsonl_rows(encoded, Path(DASHBOARD_GPU_ARCHIVE_RELATIVE)) if encoded else []
+    return payload, copied_rows
+
+
+def _dashboard_plot_rows(
+    analysis: Mapping[str, Any],
+    captured_rows: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
     dashboard = analysis["performance"]["dashboard_gpu_last_session"]
     if not dashboard.get("available"):
         return []
-    scope = dashboard["scope"]
-    started = _parse_timestamp(scope["started_at_utc"], label="dashboard start")
-    ended = _parse_timestamp(scope["ended_at_utc"], label="dashboard end")
     rows: list[dict[str, Any]] = []
-    for key in (
-        "dashboard_gpu_telemetry_rotated",
-        "dashboard_gpu_telemetry_current",
-    ):
-        identity = analysis["inputs"].get(key)
-        if not isinstance(identity, Mapping):
-            continue
-        path = Path(str(identity["path"]))
-        payload, actual = _read_stable_bytes(path)
-        if actual["sha256"] != identity.get("sha256"):
-            raise AnalysisError("Dashboard GPU telemetry changed after analysis")
-        for row in _jsonl_rows(payload, path):
-            row_start = _parse_timestamp(
-                row.get("window_started_at_utc"),
-                label="GPU telemetry window start",
-            )
-            row_end = _parse_timestamp(
-                row.get("window_ended_at_utc"),
-                label="GPU telemetry window end",
-            )
-            if started <= row_start and row_end <= ended:
-                rows.append({**row, "_midpoint": row_start + (row_end - row_start) / 2})
+    for row in captured_rows:
+        row_start = _parse_timestamp(
+            row.get("window_started_at_utc"),
+            label="GPU telemetry window start",
+        )
+        row_end = _parse_timestamp(
+            row.get("window_ended_at_utc"),
+            label="GPU telemetry window end",
+        )
+        rows.append({**row, "_midpoint": row_start + (row_end - row_start) / 2})
     rows.sort(key=lambda row: row["_midpoint"])
     return rows
 
@@ -3055,6 +3591,7 @@ def _chart_payloads(
     *,
     analysis: Mapping[str, Any],
     run_dir: Path,
+    dashboard_captured_rows: Sequence[Mapping[str, Any]],
 ) -> dict[str, str]:
     metrics = _authenticated_plot_rows(
         run_dir=run_dir,
@@ -3213,7 +3750,7 @@ def _chart_payloads(
         ],
         y_floor=0.0,
     )
-    dashboard_rows = _dashboard_plot_rows(analysis)
+    dashboard_rows = _dashboard_plot_rows(analysis, dashboard_captured_rows)
     session_start = None
     dashboard = analysis["performance"]["dashboard_gpu_last_session"]
     if dashboard.get("available"):
@@ -3221,14 +3758,10 @@ def _chart_payloads(
             dashboard["scope"]["started_at_utc"],
             label="dashboard session start",
         )
-    dashboard_minutes = (
-        [(row["_midpoint"] - session_start).total_seconds() / 60 for row in dashboard_rows]
-        if session_start is not None
-        else []
-    )
 
-    def dashboard_values(field: str) -> list[float]:
-        result = []
+    def dashboard_series(field: str) -> tuple[list[float], list[float]]:
+        x_values: list[float] = []
+        y_values: list[float] = []
         for row in dashboard_rows:
             fields = row.get("fields")
             if not isinstance(fields, Mapping):
@@ -3236,13 +3769,14 @@ def _chart_payloads(
             summary = fields.get(field)
             if not isinstance(summary, Mapping):
                 continue
-            result.append(_finite(summary.get("mean"), label=f"dashboard {field}"))
-        return result
+            if session_start is None:
+                raise AnalysisError("Dashboard GPU telemetry session start is missing")
+            x_values.append((row["_midpoint"] - session_start).total_seconds() / 60)
+            y_values.append(_finite(summary.get("mean"), label=f"dashboard {field}"))
+        return x_values, y_values
 
-    utilization = dashboard_values("gpu_utilization_percent")
-    power = dashboard_values("power_draw_w")
-    util_x = dashboard_minutes[: len(utilization)]
-    power_x = dashboard_minutes[: len(power)]
+    util_x, utilization = dashboard_series("gpu_utilization_percent")
+    power_x, power = dashboard_series("power_draw_w")
     charts["charts/gpu_utilization.svg"] = _svg_line_chart(
         title="Dashboard GPU utilization",
         x_label="Minutes since final rank0 session start",
@@ -3485,6 +4019,7 @@ def _markdown(analysis: Mapping[str, Any], json_name: str) -> str:
         f"- reserved headroom: `{_fmt(memory['reserved_headroom_gib'], 3)} GiB`",
     ]
     dashboard_gpu = performance["dashboard_gpu_last_session"]
+    dashboard_capture = dashboard_gpu["raw_capture"]
     lines += ["", "## Dashboard GPU telemetry", ""]
     if dashboard_gpu["available"]:
         power = dashboard_gpu["fields"]["power_draw_w"]
@@ -3514,11 +4049,18 @@ def _markdown(analysis: Mapping[str, Any], json_name: str) -> str:
             "- internal gap 包含 aggregate window 之间的正常 collector spacing。",
             f"- first/last window: `{selection['first_window_started_at_utc']}` / "
             f"`{selection['last_window_ended_at_utc']}`",
+            f"- immutable raw archive: `{dashboard_capture['bundle_path']}` "
+            f"(`{dashboard_capture['row_count']:,}` buckets, "
+            f"SHA256 `{dashboard_capture['sha256']}`)",
             "",
             dashboard_gpu["scope"]["caveat"],
         ]
     else:
-        lines.append(dashboard_gpu["note"])
+        lines += [
+            dashboard_gpu["note"],
+            f"Immutable raw archive `{dashboard_capture['bundle_path']}` is empty "
+            f"(SHA256 `{dashboard_capture['sha256']}`).",
+        ]
     lines += [
         "",
         "## 图表",
@@ -3605,19 +4147,28 @@ def _markdown(analysis: Mapping[str, Any], json_name: str) -> str:
 
 
 def write_analysis(analysis: Mapping[str, Any], *, output: Path, run_dir: Path) -> dict[str, Any]:
+    if analysis.get("schema_version") != SCHEMA_VERSION or analysis.get("kind") != KIND:
+        raise AnalysisError(
+            "analysis schema is not current; rerun analyze_dense_training against the "
+            "authenticated run (legacy reports are never backfilled from live telemetry)"
+        )
     json_path, markdown_path = _output_paths(output)
     resolved_run = run_dir.expanduser().resolve(strict=True)
     output_root = json_path.parent
+    dashboard_raw_payload, dashboard_captured_rows = _captured_dashboard_payload(analysis)
     chart_payloads = _chart_payloads(
         analysis=analysis,
         run_dir=resolved_run,
+        dashboard_captured_rows=dashboard_captured_rows,
     )
     chart_paths = {relative: output_root / relative for relative in chart_payloads}
+    dashboard_raw_path = output_root / DASHBOARD_GPU_ARCHIVE_RELATIVE
     manifest_path = output_root / "MANIFEST.json"
     complete_path = output_root / "COMPLETE"
     destinations = [
         json_path,
         markdown_path,
+        dashboard_raw_path,
         manifest_path,
         complete_path,
         *chart_paths.values(),
@@ -3626,25 +4177,68 @@ def write_analysis(analysis: Mapping[str, Any], *, output: Path, run_dir: Path) 
         raise AnalysisError("analysis outputs must not be written inside run-dir")
     json_payload = _json_text(analysis)
     markdown_payload = _markdown(analysis, json_path.name)
+    _atomic_write_text(dashboard_raw_path, dashboard_raw_payload)
     _atomic_write_text(json_path, json_payload)
     for relative, payload in chart_payloads.items():
         _atomic_write_text(chart_paths[relative], payload)
     _atomic_write_text(markdown_path, markdown_payload)
-    payload_paths = [json_path, markdown_path, *chart_paths.values()]
+    payload_paths = [
+        json_path,
+        markdown_path,
+        dashboard_raw_path,
+        *chart_paths.values(),
+    ]
     files = {}
     for path in sorted(payload_paths):
         identity = _stable_file_identity(path)
         files[str(path.relative_to(output_root))] = {
+            "path": str(path.relative_to(output_root)),
             "size": identity["size"],
             "sha256": identity["sha256"],
         }
+    dashboard_raw_relative = str(dashboard_raw_path.relative_to(output_root))
+    dashboard_capture = analysis["performance"]["dashboard_gpu_last_session"]["raw_capture"]
+    if (
+        files[dashboard_raw_relative]["size"] != dashboard_capture["size"]
+        or files[dashboard_raw_relative]["sha256"] != dashboard_capture["sha256"]
+    ):
+        raise AnalysisError("archived Dashboard GPU telemetry identity mismatch")
+    terminal = analysis["terminal_validation"]
+    release_gate = analysis["release_gate"]
+    fork = release_gate["fork_checkpoint"]
+    source_fork_checkpoint = (
+        {
+            "path": fork["path"],
+            "manifest_sha256": fork["manifest_sha256"],
+            "complete_sha256": fork["complete_sha256"],
+        }
+        if isinstance(fork, Mapping)
+        else None
+    )
     manifest = {
         "schema_version": 1,
         "kind": "twen_dense_training_analysis_bundle",
+        "bundle_producer": _stable_file_identity(Path(__file__).resolve()),
         "run_id": analysis["run"].get("run_id"),
-        "source_checkpoint_manifest_sha256": analysis["terminal_validation"]["manifest"]["sha256"],
-        "source_metrics_sha256": analysis["inputs"]["metrics"]["sha256"],
-        "source_telemetry_sha256": analysis["inputs"]["telemetry"]["sha256"],
+        "source_run_dir": analysis["run"]["run_dir"],
+        "source_inputs": {
+            name: analysis["inputs"][name]
+            for name in (
+                "metrics",
+                "telemetry",
+                "events",
+                "resolved_config",
+                "rank0_session",
+                "latest",
+            )
+        },
+        "source_terminal_checkpoint": {
+            "path": terminal["checkpoint"],
+            "manifest_sha256": terminal["manifest"]["sha256"],
+            "complete_sha256": terminal["complete_marker"]["sha256"],
+        },
+        "source_fork_checkpoint": source_fork_checkpoint,
+        "release_gate": release_gate,
         "files": files,
     }
     _atomic_write_text(manifest_path, _json_text(manifest))
@@ -3655,6 +4249,9 @@ def write_analysis(analysis: Mapping[str, Any], *, output: Path, run_dir: Path) 
         "markdown_zh_cn": str(markdown_path),
         "charts": {
             Path(relative).stem: str(path) for relative, path in sorted(chart_paths.items())
+        },
+        "raw": {
+            "dashboard_gpu_last_session": str(dashboard_raw_path),
         },
         "manifest": str(manifest_path),
         "complete": str(complete_path),

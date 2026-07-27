@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 import math
+import os
 from collections import Counter
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
@@ -19,6 +20,16 @@ if _SPEC is None or _SPEC.loader is None:
     raise RuntimeError(f"cannot load analyzer from {_ANALYZER_PATH}")
 analyzer = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(analyzer)
+
+_PUBLISHER_PATH = Path(__file__).parents[1] / "scripts" / "publish_v4_250m_release.py"
+_PUBLISHER_SPEC = importlib.util.spec_from_file_location(
+    "publish_v4_250m_release_for_analyzer_test",
+    _PUBLISHER_PATH,
+)
+if _PUBLISHER_SPEC is None or _PUBLISHER_SPEC.loader is None:
+    raise RuntimeError(f"cannot load publisher from {_PUBLISHER_PATH}")
+publisher = importlib.util.module_from_spec(_PUBLISHER_SPEC)
+_PUBLISHER_SPEC.loader.exec_module(publisher)
 
 
 def _json_bytes(value: Any) -> bytes:
@@ -556,10 +567,7 @@ def _convert_to_prepared_text_phase_source_mix(run_dir: Path) -> None:
     all_sources = sorted(set(primary_weights) | set(cooldown_weights))
     cooldown_start_tokens = int(cooldown_fields["quality_cooldown_start_tokens"])
     metrics_path = run_dir / "metrics.jsonl"
-    metrics = [
-        json.loads(line)
-        for line in metrics_path.read_text(encoding="utf-8").splitlines()
-    ]
+    metrics = [json.loads(line) for line in metrics_path.read_text(encoding="utf-8").splitlines()]
     cumulative = dict.fromkeys(all_sources, 0)
     phase_tokens = {
         "primary": dict.fromkeys(all_sources, 0),
@@ -571,11 +579,7 @@ def _convert_to_prepared_text_phase_source_mix(run_dir: Path) -> None:
                 analyzer.SOURCE_TOKENS_TOTAL_PREFIX
             ):
                 row.pop(key)
-        phase = (
-            "cooldown"
-            if int(row["tokens"]) > cooldown_start_tokens
-            else "primary"
-        )
+        phase = "cooldown" if int(row["tokens"]) > cooldown_start_tokens else "primary"
         row["data_phase"] = phase
         weights = cooldown_weights if phase == "cooldown" else primary_weights
         for source in all_sources:
@@ -583,22 +587,15 @@ def _convert_to_prepared_text_phase_source_mix(run_dir: Path) -> None:
             cumulative[source] += tokens
             phase_tokens[phase][source] += tokens
             row[f"{analyzer.SOURCE_TOKENS_STEP_PREFIX}{source}"] = tokens
-            row[f"{analyzer.SOURCE_TOKENS_TOTAL_PREFIX}{source}"] = cumulative[
-                source
-            ]
+            row[f"{analyzer.SOURCE_TOKENS_TOTAL_PREFIX}{source}"] = cumulative[source]
     _write_jsonl(metrics_path, metrics)
 
     telemetry_path = run_dir / "telemetry.jsonl"
     telemetry = [
-        json.loads(line)
-        for line in telemetry_path.read_text(encoding="utf-8").splitlines()
+        json.loads(line) for line in telemetry_path.read_text(encoding="utf-8").splitlines()
     ]
     for row in telemetry:
-        row["data_phase"] = (
-            "cooldown"
-            if int(row["tokens"]) > cooldown_start_tokens
-            else "primary"
-        )
+        row["data_phase"] = "cooldown" if int(row["tokens"]) > cooldown_start_tokens else "primary"
     _write_jsonl(telemetry_path, telemetry)
 
     def phase_contract(
@@ -620,18 +617,13 @@ def _convert_to_prepared_text_phase_source_mix(run_dir: Path) -> None:
     primary_contract = phase_contract("primary", primary_weights)
     cooldown_contract = phase_contract("cooldown", cooldown_weights)
     events_path = run_dir / "events.jsonl"
-    events = [
-        json.loads(line)
-        for line in events_path.read_text(encoding="utf-8").splitlines()
-    ]
+    events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]
     session_start = next(row for row in events if row["event"] == "session_start")
     session_start.update(
         {
             "source_mix_algorithm": primary_contract["algorithm"],
             "source_mix_effective_basis_points": primary_weights,
-            "source_mix_dataset_fingerprint": primary_contract[
-                "dataset_fingerprint"
-            ],
+            "source_mix_dataset_fingerprint": primary_contract["dataset_fingerprint"],
             "source_map_sha256": primary_contract["source_map_sha256"],
             "source_mix": {
                 **primary_contract,
@@ -648,13 +640,9 @@ def _convert_to_prepared_text_phase_source_mix(run_dir: Path) -> None:
     checkpoint = run_dir / (run_dir / "latest").read_text(encoding="utf-8").strip()
     metadata_path = checkpoint / "metadata.json"
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    primary_samples = {
-        source: weight * 840 // 10_000
-        for source, weight in primary_weights.items()
-    }
+    primary_samples = {source: weight * 840 // 10_000 for source, weight in primary_weights.items()}
     cooldown_samples = {
-        source: weight * 120 // 10_000
-        for source, weight in cooldown_weights.items()
+        source: weight * 120 // 10_000 for source, weight in cooldown_weights.items()
     }
     committed_samples = dict.fromkeys(all_sources, 0)
     for source, count in (*primary_samples.items(), *cooldown_samples.items()):
@@ -664,22 +652,14 @@ def _convert_to_prepared_text_phase_source_mix(run_dir: Path) -> None:
         "committed_samples_by_source": committed_samples,
         "committed_tokens_by_source": cumulative,
         "phase_committed_samples_by_source": {
-            "primary": {
-                source: primary_samples.get(source, 0)
-                for source in all_sources
-            },
-            "cooldown": {
-                source: cooldown_samples.get(source, 0)
-                for source in all_sources
-            },
+            "primary": {source: primary_samples.get(source, 0) for source in all_sources},
+            "cooldown": {source: cooldown_samples.get(source, 0) for source in all_sources},
         },
         "phase_committed_tokens_by_source": phase_tokens,
     }
     _write_json(metadata_path, metadata)
     checkpoint_manifest_path = checkpoint / "manifest.json"
-    checkpoint_manifest = json.loads(
-        checkpoint_manifest_path.read_text(encoding="utf-8")
-    )
+    checkpoint_manifest = json.loads(checkpoint_manifest_path.read_text(encoding="utf-8"))
     checkpoint_manifest["files"]["metadata.json"] = _sha256(metadata_path)
     _write_json(checkpoint_manifest_path, checkpoint_manifest)
     (checkpoint / "COMPLETE").write_text(
@@ -688,12 +668,94 @@ def _convert_to_prepared_text_phase_source_mix(run_dir: Path) -> None:
     )
 
 
+def _attach_calibration_release_evidence(run_dir: Path) -> str:
+    project_root = run_dir.parents[1]
+    config_path = run_dir / "resolved_config.yaml"
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config["data"]["allow_corpus_reuse"] = False
+    primary_path = project_root / config["data"]["manifest_path"]
+    primary = json.loads(primary_path.read_text(encoding="utf-8"))
+    for shard in primary["shards"]:
+        shard["sequence_count"] = 300
+    _write_json(primary_path, primary)
+    config["data"]["manifest_sha256"] = _sha256(primary_path)
+    config_path.write_text(
+        yaml.safe_dump(config, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    metrics_path = run_dir / "metrics.jsonl"
+    metrics = [json.loads(line) for line in metrics_path.read_text(encoding="utf-8").splitlines()]
+    for row in metrics:
+        row["grad_norm"] = 0.5
+    _write_jsonl(metrics_path, metrics)
+
+    fork = project_root / "runs" / "v3-final" / "step-000000001912-milestone-complete"
+    fork_metadata = fork / "metadata.json"
+    _write_json(fork_metadata, {"global_step": 1912, "committed_tokens": 500_009_962})
+    fork_manifest = fork / "manifest.json"
+    _write_json(
+        fork_manifest,
+        {
+            "algorithm": "sha256",
+            "version": 1,
+            "files": {"metadata.json": _sha256(fork_metadata)},
+        },
+    )
+    fork_complete = fork / "COMPLETE"
+    fork_complete.write_text(f"{_sha256(fork_manifest)}\n", encoding="ascii")
+
+    events_path = run_dir / "events.jsonl"
+    events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]
+    events.insert(
+        1,
+        {
+            "event": "initialized",
+            "step": 0,
+            "tokens": 0,
+            "fork_from": str(fork.relative_to(project_root)),
+        },
+    )
+    _write_jsonl(events_path, events)
+
+    checkpoint = run_dir / (run_dir / "latest").read_text(encoding="utf-8").strip()
+    metadata_path = checkpoint / "metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["data_cursor"]["epoch"] = 0
+    extra = metadata["data_cursor"]["extra"]
+    source_by_shard = {
+        row["shard_id"]: analyzer._source_label(row["source_path"]) for row in primary["shards"]
+    }
+    extra["source_map"] = {
+        "sequence_length": 4096,
+        "shards": [
+            {
+                "shard_id": row["shard_id"],
+                "source_id": source_by_shard[row["shard_id"]],
+                "sequence_count": row["sequence_count"],
+            }
+            for row in primary["shards"]
+        ],
+    }
+    _write_json(metadata_path, metadata)
+    checkpoint_manifest_path = checkpoint / "manifest.json"
+    checkpoint_manifest = json.loads(checkpoint_manifest_path.read_text(encoding="utf-8"))
+    checkpoint_manifest["files"]["metadata.json"] = _sha256(metadata_path)
+    _write_json(checkpoint_manifest_path, checkpoint_manifest)
+    (checkpoint / "COMPLETE").write_text(
+        f"{_sha256(checkpoint_manifest_path)}\n",
+        encoding="utf-8",
+    )
+    return _sha256(fork_complete)
+
+
 def test_completed_run_analysis_is_authenticated_read_only_and_atomic(tmp_path: Path) -> None:
     run_dir, _state_path = _build_completed_run(tmp_path)
     before = _snapshot(run_dir)
 
     analysis = analyzer.analyze_dense_training(run_dir)
 
+    assert analysis["schema_version"] == 2
     assert analysis["terminal_validation"]["passed"] is True
     assert analysis["terminal_validation"]["authenticated_payload_bytes"] > 0
     assert analysis["integrity"]["source_replay_matches_checkpoint_cursor"] is True
@@ -734,6 +796,26 @@ def test_completed_run_analysis_is_authenticated_read_only_and_atomic(tmp_path: 
     assert gpu["fields"]["power_draw_w"]["bucket_mean_nearest_rank_p95"] == 200.0
     assert gpu["coverage"]["trailing_gap_seconds"] == pytest.approx(20.0)
     assert gpu["coverage"]["coverage_fraction_of_session"] == pytest.approx(0.02)
+    assert gpu["raw_capture"] == {
+        "schema_version": 1,
+        "bundle_path": "raw/dashboard-gpu-telemetry-last-session.jsonl",
+        "encoding": "utf-8",
+        "serialization": "canonical-jsonl-sort-keys-v1",
+        "row_count": 3,
+        "snapshot_input_keys": [
+            "dashboard_gpu_telemetry_rotated",
+            "dashboard_gpu_telemetry_current",
+        ],
+        "source_input_keys_by_row": [
+            "dashboard_gpu_telemetry_rotated",
+            "dashboard_gpu_telemetry_current",
+            "dashboard_gpu_telemetry_current",
+        ],
+        "size": len(analyzer._canonical_jsonl_text(gpu["captured_buckets"]).encode("utf-8")),
+        "sha256": hashlib.sha256(
+            analyzer._canonical_jsonl_text(gpu["captured_buckets"]).encode("utf-8")
+        ).hexdigest(),
+    }
     for key in ("dashboard_gpu_telemetry_rotated", "dashboard_gpu_telemetry_current"):
         identity = analysis["inputs"][key]
         assert identity["size"] > 0
@@ -743,11 +825,23 @@ def test_completed_run_analysis_is_authenticated_read_only_and_atomic(tmp_path: 
     outputs = analyzer.write_analysis(analysis, output=output_dir, run_dir=run_dir)
     json_path = Path(outputs["json"])
     markdown_path = Path(outputs["markdown_zh_cn"])
+    dashboard_raw_path = Path(outputs["raw"]["dashboard_gpu_last_session"])
     assert json.loads(json_path.read_text(encoding="utf-8")) == analysis
     assert "NaN" not in json_path.read_text(encoding="utf-8")
+    assert dashboard_raw_path.read_text(encoding="utf-8") == (
+        analyzer._canonical_jsonl_text(gpu["captured_buckets"])
+    )
+    archived_gpu_rows = [
+        json.loads(line) for line in dashboard_raw_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert archived_gpu_rows == gpu["captured_buckets"]
+    assert [row["window_started_at_utc"] for row in archived_gpu_rows] == sorted(
+        row["window_started_at_utc"] for row in archived_gpu_rows
+    )
     report = markdown_path.read_text(encoding="utf-8")
     assert "Dashboard GPU telemetry" in report
     assert "last rank0 session" in report
+    assert "immutable raw archive" in report
     assert "primary cosine decay" not in report
     assert "![Loss、NTP 与 MTP](charts/training_loss.svg)" in report
     assert "## 后续版本建议 (v4)" in report
@@ -769,15 +863,21 @@ def test_completed_run_analysis_is_authenticated_read_only_and_atomic(tmp_path: 
     assert set(manifest["files"]) == {
         "REPORT.zh-CN.md",
         "analysis.json",
+        "raw/dashboard-gpu-telemetry-last-session.jsonl",
         *(f"charts/{path.name}" for path in chart_paths),
     }
+    assert set(manifest["source_inputs"]) == set(publisher.TRAINING_STATIC_INPUT_NAMES)
     for relative, identity in manifest["files"].items():
         path = output_dir / relative
-        assert identity == {"size": path.stat().st_size, "sha256": _sha256(path)}
+        assert identity == {
+            "path": relative,
+            "size": path.stat().st_size,
+            "sha256": _sha256(path),
+        }
     assert (output_dir / "COMPLETE").read_text(encoding="utf-8").strip() == (_sha256(manifest_path))
     assert "next_version_priority" in analysis["interpretation"]
     assert "v3_priority" not in analysis["interpretation"]
-    assert not list(output_dir.glob(".*.tmp"))
+    assert not list(output_dir.rglob(".*.tmp"))
     assert _snapshot(run_dir) == before
 
     with pytest.raises(analyzer.AnalysisError, match="inside run-dir"):
@@ -787,6 +887,335 @@ def test_completed_run_analysis_is_authenticated_read_only_and_atomic(tmp_path: 
             run_dir=run_dir,
         )
     assert not (run_dir / "forbidden-analysis").exists()
+
+
+def test_dashboard_gpu_capture_survives_live_append_and_is_deterministic(
+    tmp_path: Path,
+) -> None:
+    run_dir, _state_path = _build_completed_run(tmp_path)
+    analysis = analyzer.analyze_dense_training(run_dir)
+    captured = analysis["performance"]["dashboard_gpu_last_session"]
+    expected_raw = analyzer._canonical_jsonl_text(captured["captured_buckets"]).encode("utf-8")
+
+    before_output = tmp_path / "analysis-before-live-growth"
+    analyzer.write_analysis(analysis, output=before_output, run_dir=run_dir)
+
+    live_path = run_dir.parents[1] / ".twen" / "dashboard" / "gpu-telemetry.jsonl"
+    session_end = datetime.fromisoformat(captured["scope"]["ended_at_utc"])
+    appended = _gpu_bucket(
+        session_end + timedelta(seconds=20),
+        session_end + timedelta(seconds=30),
+        samples=4,
+        power=599.0,
+        utilization=100.0,
+        vram=31_000.0,
+        temperature=88.0,
+    )
+    live_path.write_bytes(live_path.read_bytes() + _json_bytes(appended))
+    assert _sha256(live_path) != analysis["inputs"]["dashboard_gpu_telemetry_current"]["sha256"]
+
+    after_output = tmp_path / "analysis-after-live-growth"
+    analyzer.write_analysis(analysis, output=after_output, run_dir=run_dir)
+
+    raw_relative = Path("raw/dashboard-gpu-telemetry-last-session.jsonl")
+    assert (before_output / raw_relative).read_bytes() == expected_raw
+    assert (after_output / raw_relative).read_bytes() == expected_raw
+    assert _snapshot(after_output) == _snapshot(before_output)
+
+
+def test_dashboard_gpu_capture_tampering_fails_before_bundle_write(
+    tmp_path: Path,
+) -> None:
+    run_dir, _state_path = _build_completed_run(tmp_path)
+    analysis = analyzer.analyze_dense_training(run_dir)
+    analysis["performance"]["dashboard_gpu_last_session"]["captured_buckets"][0]["fields"][
+        "power_draw_w"
+    ]["mean"] = 101.0
+    output = tmp_path / "tampered-capture"
+
+    with pytest.raises(
+        analyzer.AnalysisError,
+        match="Dashboard GPU telemetry capture sha256 mismatch",
+    ):
+        analyzer.write_analysis(analysis, output=output, run_dir=run_dir)
+
+    assert not output.exists()
+
+
+def test_dashboard_gpu_derived_summary_tampering_fails_closed(
+    tmp_path: Path,
+) -> None:
+    run_dir, _state_path = _build_completed_run(tmp_path)
+    analysis = analyzer.analyze_dense_training(run_dir)
+    power = analysis["performance"]["dashboard_gpu_last_session"]["fields"]["power_draw_w"]
+    power.update(
+        {
+            "weighted_mean": 150.0,
+            "bucket_mean_nearest_rank_p95": 150.0,
+            "min": 150.0,
+            "max": 150.0,
+        }
+    )
+    output = tmp_path / "coherently-tampered-derived-summary"
+
+    with pytest.raises(
+        analyzer.AnalysisError,
+        match="derived summary differs from captured rows",
+    ):
+        analyzer.write_analysis(analysis, output=output, run_dir=run_dir)
+
+    assert not output.exists()
+
+
+def test_dashboard_gpu_joint_snapshot_retries_absent_to_created(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_dir, _state_path = _build_completed_run(tmp_path)
+    dashboard = run_dir.parents[1] / ".twen" / "dashboard"
+    rotated = dashboard / "gpu-telemetry.jsonl.1"
+    current = dashboard / "gpu-telemetry.jsonl"
+    current_payload = current.read_bytes()
+    current.unlink()
+    original_read = analyzer._read_stable_bytes
+    created = False
+
+    def create_current_during_pair_read(path: Path) -> tuple[bytes, dict[str, Any]]:
+        nonlocal created
+        result = original_read(path)
+        if path == rotated and not created:
+            current.write_bytes(current_payload)
+            created = True
+        return result
+
+    monkeypatch.setattr(
+        analyzer,
+        "_read_stable_bytes",
+        create_current_during_pair_read,
+    )
+
+    analysis = analyzer.analyze_dense_training(run_dir)
+
+    assert created is True
+    gpu = analysis["performance"]["dashboard_gpu_last_session"]
+    assert gpu["selection"]["selected_bucket_count"] == 3
+    assert gpu["raw_capture"]["snapshot_input_keys"] == [
+        "dashboard_gpu_telemetry_rotated",
+        "dashboard_gpu_telemetry_current",
+    ]
+
+
+def test_dashboard_gpu_joint_snapshot_retries_current_to_rotated(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_dir, _state_path = _build_completed_run(tmp_path)
+    dashboard = run_dir.parents[1] / ".twen" / "dashboard"
+    rotated = dashboard / "gpu-telemetry.jsonl.1"
+    current = dashboard / "gpu-telemetry.jsonl"
+    original_read = analyzer._read_stable_bytes
+    rotated_once = False
+
+    def rotate_during_pair_read(path: Path) -> tuple[bytes, dict[str, Any]]:
+        nonlocal rotated_once
+        result = original_read(path)
+        if path == rotated and not rotated_once:
+            rotated.unlink()
+            os.replace(current, rotated)
+            current.write_bytes(b"")
+            rotated_once = True
+        return result
+
+    monkeypatch.setattr(
+        analyzer,
+        "_read_stable_bytes",
+        rotate_during_pair_read,
+    )
+
+    analysis = analyzer.analyze_dense_training(run_dir)
+
+    assert rotated_once is True
+    gpu = analysis["performance"]["dashboard_gpu_last_session"]
+    assert gpu["selection"]["selected_bucket_count"] == 2
+    assert gpu["selection"]["rows_by_input"] == {
+        "dashboard_gpu_telemetry_current": 0,
+        "dashboard_gpu_telemetry_rotated": 2,
+    }
+    assert gpu["raw_capture"]["source_input_keys_by_row"] == [
+        "dashboard_gpu_telemetry_rotated",
+        "dashboard_gpu_telemetry_rotated",
+    ]
+    assert analysis["inputs"]["dashboard_gpu_telemetry_current"]["size"] == 0
+
+
+def test_dashboard_gpu_joint_snapshot_persistent_churn_fails_bounded(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_dir, _state_path = _build_completed_run(tmp_path)
+    original_state = analyzer._dashboard_gpu_file_state
+    state_calls = 0
+
+    def changing_state(path: Path) -> tuple[int, int, int, int, int, int] | None:
+        nonlocal state_calls
+        value = original_state(path)
+        if value is None:
+            return None
+        state_calls += 1
+        return (*value[:3], value[3] + state_calls, *value[4:])
+
+    monkeypatch.setattr(analyzer, "_dashboard_gpu_file_state", changing_state)
+
+    with pytest.raises(
+        analyzer.AnalysisError,
+        match=r"did not stabilize after 4 attempts",
+    ):
+        analyzer.analyze_dense_training(run_dir)
+
+    assert state_calls == analyzer.DASHBOARD_GPU_SNAPSHOT_ATTEMPTS * 3
+
+
+def test_stable_empty_dashboard_gpu_files_are_zero_row_inputs(
+    tmp_path: Path,
+) -> None:
+    run_dir, _state_path = _build_completed_run(tmp_path)
+    dashboard = run_dir.parents[1] / ".twen" / "dashboard"
+    for filename in ("gpu-telemetry.jsonl.1", "gpu-telemetry.jsonl"):
+        (dashboard / filename).write_bytes(b"")
+
+    analysis = analyzer.analyze_dense_training(run_dir)
+    gpu = analysis["performance"]["dashboard_gpu_last_session"]
+
+    assert gpu["available"] is False
+    assert gpu["selection"] == {
+        "condition": analyzer.DASHBOARD_GPU_SELECTION_CONDITION,
+        "selected_bucket_count": 0,
+        "rows_by_input": {
+            "dashboard_gpu_telemetry_current": 0,
+            "dashboard_gpu_telemetry_rotated": 0,
+        },
+        "first_window_started_at_utc": None,
+        "last_window_ended_at_utc": None,
+    }
+    assert gpu["samples"] is None
+    assert gpu["coverage"] is None
+    assert gpu["fields"] is None
+    assert (
+        gpu["note"] == "No complete Dashboard GPU telemetry buckets fall within the last session."
+    )
+    assert gpu["raw_capture"]["snapshot_input_keys"] == [
+        "dashboard_gpu_telemetry_rotated",
+        "dashboard_gpu_telemetry_current",
+    ]
+    assert analysis["inputs"]["dashboard_gpu_telemetry_rotated"]["size"] == 0
+    assert analysis["inputs"]["dashboard_gpu_telemetry_current"]["size"] == 0
+
+
+def test_legacy_analysis_schema_is_not_backfilled_from_live_telemetry(
+    tmp_path: Path,
+) -> None:
+    run_dir, _state_path = _build_completed_run(tmp_path)
+    analysis = analyzer.analyze_dense_training(run_dir)
+    analysis["schema_version"] = 1
+    output = tmp_path / "legacy-analysis"
+
+    with pytest.raises(
+        analyzer.AnalysisError,
+        match="legacy reports are never backfilled from live telemetry",
+    ):
+        analyzer.write_analysis(analysis, output=output, run_dir=run_dir)
+
+    assert not output.exists()
+
+
+def test_absent_dashboard_gpu_telemetry_emits_authenticated_empty_archive(
+    tmp_path: Path,
+) -> None:
+    run_dir, _state_path = _build_completed_run(tmp_path)
+    dashboard = run_dir.parents[1] / ".twen" / "dashboard"
+    (dashboard / "gpu-telemetry.jsonl.1").unlink()
+    (dashboard / "gpu-telemetry.jsonl").unlink()
+
+    analysis = analyzer.analyze_dense_training(run_dir)
+    gpu = analysis["performance"]["dashboard_gpu_last_session"]
+
+    assert gpu["available"] is False
+    assert gpu["captured_buckets"] == []
+    assert gpu["raw_capture"] == {
+        "schema_version": 1,
+        "bundle_path": "raw/dashboard-gpu-telemetry-last-session.jsonl",
+        "encoding": "utf-8",
+        "serialization": "canonical-jsonl-sort-keys-v1",
+        "row_count": 0,
+        "snapshot_input_keys": [],
+        "source_input_keys_by_row": [],
+        "size": 0,
+        "sha256": hashlib.sha256(b"").hexdigest(),
+    }
+    assert "dashboard_gpu_telemetry_current" not in analysis["inputs"]
+    assert "dashboard_gpu_telemetry_rotated" not in analysis["inputs"]
+
+    output = tmp_path / "analysis-without-dashboard-telemetry"
+    analyzer.write_analysis(analysis, output=output, run_dir=run_dir)
+
+    raw_relative = Path("raw/dashboard-gpu-telemetry-last-session.jsonl")
+    assert (output / raw_relative).read_bytes() == b""
+    manifest = json.loads((output / "MANIFEST.json").read_text(encoding="utf-8"))
+    assert manifest["files"][str(raw_relative)] == {
+        "path": str(raw_relative),
+        "size": 0,
+        "sha256": hashlib.sha256(b"").hexdigest(),
+    }
+    report = (output / "REPORT.zh-CN.md").read_text(encoding="utf-8")
+    assert "Dashboard GPU telemetry files are absent." in report
+    assert "Immutable raw archive" in report
+
+
+def test_calibration_release_gate_is_derived_from_authenticated_sources(
+    tmp_path: Path,
+) -> None:
+    run_dir, _state_path = _build_completed_run(tmp_path)
+    _convert_to_prepared_text_source_mix(run_dir)
+    fork_complete_sha256 = _attach_calibration_release_evidence(run_dir)
+
+    analysis = analyzer.analyze_dense_training(run_dir)
+    gate = analysis["release_gate"]
+
+    assert gate["reference_epoch_max"] == 0
+    assert gate["reused_sequences"] == 0
+    assert gate["reused_tokens"] == 0
+    assert gate["required_metrics_finite"] == {
+        "loss": True,
+        "ntp": True,
+        "mtp": True,
+        "grad_norm": True,
+        "nominal_lr": True,
+        "adjusted_lr": True,
+    }
+    assert gate["required_metric_sources"] == {
+        "loss": "loss",
+        "ntp": "ntp",
+        "mtp": "mtp",
+        "grad_norm": "grad_norm",
+        "nominal_lr": "lr/adapters",
+        "adjusted_lr": "lr_adjusted/adapters",
+    }
+    assert gate["clip_fraction"] == 0.0
+    assert gate["fork_checkpoint_complete_sha256"] == fork_complete_sha256
+    assert gate["source_binding"]["metrics_sha256"] == _sha256(run_dir / "metrics.jsonl")
+    assert gate["source_binding"]["events_sha256"] == _sha256(run_dir / "events.jsonl")
+
+    output = tmp_path / "calibration-analysis"
+    analyzer.write_analysis(analysis, output=output, run_dir=run_dir)
+    manifest = json.loads((output / "MANIFEST.json").read_text(encoding="utf-8"))
+    assert manifest["release_gate"] == gate
+    expected_publisher_manifest = publisher._training_manifest_contract(
+        analysis,
+        producer=manifest["bundle_producer"],
+    )
+    assert {
+        key: value for key, value in manifest.items() if key != "files"
+    } == expected_publisher_manifest
 
 
 def test_prepared_text_ntp_mtp_run_uses_dynamic_metrics_and_logged_source_tokens(
@@ -888,9 +1317,7 @@ def test_logged_source_mix_cooldown_uses_phase_contracts_and_union_zero_fill(
             "source_mix_enabled": True,
             "source_mix_algorithm": primary_contract["algorithm"],
             "source_mix_effective_basis_points": primary_weights,
-            "source_mix_dataset_fingerprint": primary_contract[
-                "dataset_fingerprint"
-            ],
+            "source_mix_dataset_fingerprint": primary_contract["dataset_fingerprint"],
             "source_map_sha256": primary_contract["source_map_sha256"],
             "source_mix": {
                 **primary_contract,
@@ -908,10 +1335,7 @@ def test_logged_source_mix_cooldown_uses_phase_contracts_and_union_zero_fill(
         ("primary", "primary", "cooldown", "cooldown"),
         start=1,
     ):
-        step_tokens = {
-            source: phase_weights[phase].get(source, 0)
-            for source in all_sources
-        }
+        step_tokens = {source: phase_weights[phase].get(source, 0) for source in all_sources}
         row: dict[str, Any] = {
             "step": step,
             "tokens": step * 10_000,
@@ -955,16 +1379,12 @@ def test_logged_source_mix_cooldown_uses_phase_contracts_and_union_zero_fill(
     assert replay["validation"]["phase_source_contracts_exact"] is True
     phase_mix = replay["token_mix"]["phases"]
     assert phase_mix["primary"]["observed_basis_points"] == {
-        source: float(primary_weights.get(source, 0))
-        for source in all_sources
+        source: float(primary_weights.get(source, 0)) for source in all_sources
     }
     assert phase_mix["cooldown"]["observed_basis_points"] == {
-        source: float(cooldown_weights.get(source, 0))
-        for source in all_sources
+        source: float(cooldown_weights.get(source, 0)) for source in all_sources
     }
-    assert sum(replay["token_mix"]["committed_tokens_by_source"].values()) == (
-        40_000
-    )
+    assert sum(replay["token_mix"]["committed_tokens_by_source"].values()) == (40_000)
 
 
 def test_prepared_text_phase_source_mix_cooldown_report_closes_end_to_end(
