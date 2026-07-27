@@ -36,12 +36,20 @@
       "resume": "none"
     },
     {
+      "calibration_admission": {
+        "admission_fingerprint": "d09396bb25269f81e810dab102b97c91184708723ae85e3e3bbd784fccd5ee7c",
+        "admission_sha256": "b0bd0bc7a313a569bf9bd9f960e4426d29852ee3ad169a82ed037b98b94e28d8",
+        "authorizes_formal_training": false,
+        "path": "locks/base-dense-v4-13m-calibration-admission-pass-002",
+        "required_start_confirmation": "START base-dense-v4-13m-low-lr-calibration",
+        "training_started": false
+      },
       "config": "configs/base/dense-v4-13m-low-lr-calibration.yaml",
       "config_sha256": "15ce9dbf68643b6abbcbc687a698f2994e2200587c442974903b07613a43109d",
       "fork_from": "runs/base-dense-v3-500m/step-000000001912-milestone-complete",
       "id": "base-dense-v4-13m-low-lr-calibration",
-      "label": "Base Dense v4 13M (blocked: use authenticated admission snapshot)",
-      "launch_enabled": false,
+      "label": "Base Dense v4 13M (license accepted; awaiting explicit START)",
+      "launch_enabled": true,
       "resume": "none"
     }
   ],

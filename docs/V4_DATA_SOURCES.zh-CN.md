@@ -511,8 +511,9 @@ candidate/frozen corpus 重审的 quality-v3 attestation SHA256 为
 （SHA256 `cf1d837e2130e1d5a045f151eddae5fb20250b44f037676c933b2c6ccfe75af8`）
 及其 source-map
 `d6620197c785464885461738727c320d8046c513b535090c7412615292c50efe`；
-正式语义审阅与 formal evidence closure 已通过；Wikipedia 许可确认和 calibration
-release gate 未通过前仍不可启动。
+正式语义审阅与 formal evidence closure 已通过。Wikipedia 许可确认现已由
+`locks/base-dense-v4-13m-calibration-admission-pass-002/` 认证；许可 ACK 不等于训练
+启动，13M 仍需独立输入 `START base-dense-v4-13m-low-lr-calibration`。
 
 正式 r2 选择中文 Wikipedia 的原因是：它在本轮三类候选中正文质量和 provenance 最清楚；
 Common Corpus 中文样本约 98% 为法院裁判文书并含 PII/采集站噪声，不能作为通用中文主源；

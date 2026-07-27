@@ -18,14 +18,17 @@ formal baseline。认证 closure 位于
 `artifacts/evidence/base-v4-250m-r2-semantic-excluded-closed-formal-evidence-closure-pass-001/`，
 输入指纹为
 `bc778f40527ba4f4857a673102c00989a09c896d7a49949a6f6684625174d36e`。
-当前仍然 **不允许启动训练**：13M calibration 尚未执行，Wikipedia 许可确认和最终
-发布/运行授权也尚未提供。
+13M calibration 尚未执行。Wikipedia 许可确认已于 2026-07-27 由独立 admission bundle
+`locks/base-dense-v4-13m-calibration-admission-pass-002/` 记录；它只允许用户通过
+Dashboard 再次精确确认并启动 calibration，不授权 250M formal。
 `configs/base/dense-v4-250m-pilot.blocked.yaml` 中的 prepared manifest 与
 source-map 使用显式 `PENDING_*` 值，因此即使绕过 Web 直接调用 CLI，也会在配置校验阶段
 失败。`locks/base-dense-v4-250m-pilot.readiness.json` 与容量 attestation 同时保持
 `launch_enabled=false`。旧 FineWeb2 相关证据仍全部作废；本轮 closure 只认证新的
 Wikipedia semantic-excluded `closed` 身份。13M low-LR calibration 已改绑最终 primary
-prepared manifest，但 Web profile 继续保持 `launch_enabled=false`。
+prepared manifest；模板 Dashboard 保持关闭，admission bundle 内的认证 Web allowlist
+只开放该 profile，并要求精确输入
+`START base-dense-v4-13m-low-lr-calibration`。
 
 ## 正式超参、fork 与暂停评测门
 
@@ -283,6 +286,8 @@ Primary 初始 raw 含 `225,291,527` train token；cooldown 初始过滤后容�
 refill、最终双审计、prepare、primary/cooldown train-to-train 与
 train-union/validation-union 的 stable-ID/exact/near 不相交审计现均已完成。
 External governed controller 已实现并由源码 SHA/source-tree SHA 绑定；剩余门禁是
-13M calibration、Wikipedia 许可确认、最终 release 指纹授权和 `RUN <plan-id>`。
+13M calibration 及其认证报告、最终 release 指纹授权和 `RUN <plan-id>`。Wikipedia
+许可 ACK 已进入独立 calibration admission，但正式 publisher 仍会在最终 release
+再次绑定同一精确字符串。
 全部通过后仍只能由两阶段发布器原子生成独立的最终 config；当前 blocked draft 的
 `PENDING_*` 不应被手工替换。

@@ -1,0 +1,321 @@
+{
+  "accepted_at": "2026-07-27T14:55:42.336907+00:00",
+  "acknowledgement": "ACCEPT V4 WIKIPEDIA LICENSE fbc16551a1d7c0b9020852be97f751af2759442bd4d22bade707cd50a4fa3762",
+  "admission_fingerprint": "d09396bb25269f81e810dab102b97c91184708723ae85e3e3bbd784fccd5ee7c",
+  "authenticated_inputs": {
+    "authorized_profile_contract": {
+      "config": "configs/base/dense-v4-13m-low-lr-calibration.yaml",
+      "config_sha256": "15ce9dbf68643b6abbcbc687a698f2994e2200587c442974903b07613a43109d",
+      "fork_from": "runs/base-dense-v3-500m/step-000000001912-milestone-complete",
+      "id": "base-dense-v4-13m-low-lr-calibration",
+      "label": "Base Dense v4 13M (license accepted; awaiting explicit START)",
+      "launch_enabled": true,
+      "launch_kind": "direct_train",
+      "required_start_confirmation": "START base-dense-v4-13m-low-lr-calibration",
+      "resume": "none",
+      "run_dir": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-13m-low-lr-calibration"
+    },
+    "calibration_config": {
+      "path": "/media/data1/Project/AI/Twen1/configs/base/dense-v4-13m-low-lr-calibration.yaml",
+      "sha256": "15ce9dbf68643b6abbcbc687a698f2994e2200587c442974903b07613a43109d",
+      "size": 4157
+    },
+    "dashboard_before": {
+      "path": "/media/data1/Project/AI/Twen1/configs/web/dashboard.json",
+      "sha256": "466ed5261c7af91ab1bc85108ea56f187654a19ffa89523a2abf0db69bc04412",
+      "size": 1956
+    },
+    "fork_checkpoint": {
+      "complete_sha256": "3a21a50e35de74ecd0ff5b8f00aa29ed6c83f746fc2cf97d4da6b0536262b6c7",
+      "manifest_sha256": "ef43670d7c1cbc8ed3908b258659c7426b4cfe10e14c9b7db54968e2481b0e9a",
+      "metadata": {
+        "backend": "torch-distributed-checkpoint",
+        "checkpoint_id": "step-000000001912-milestone-complete",
+        "checkpoint_schema_version": 2,
+        "committed_tokens": 500009962,
+        "created_at": "2026-07-26T05:34:30.037134+00:00",
+        "critical_fingerprint": "b7c448678a3705d50f5951041ef28f9a13176e1a77352c711b11c88d1d42c0dd",
+        "data_cursor": {
+          "epoch": 0,
+          "extra": {
+            "active_phase": "cooldown",
+            "committed_tokens": 500009962,
+            "cooldown_cursor": {
+              "committed_tokens": 49951188,
+              "dataset_fingerprint": "52232e4512917e973a9acbff1909d7f1799d6b1755ea173fa237e4eee09bba67",
+              "dataset_size": 13025,
+              "next_global_sample": 12224,
+              "schema_version": 2,
+              "seed": 3407,
+              "shuffle": true,
+              "shuffle_algorithm": "shard-local-affine-v1"
+            },
+            "cooldown_start_tokens": 450000000,
+            "dataset_fingerprint": "b3cb8a6b9249f83966d32b07c83e7663ee9bf7a3e07c10c83e13cc1705bfdafa",
+            "dataset_size": 139482,
+            "kind": "deterministic-two-phase-quality-cooldown",
+            "next_global_sample": 122368,
+            "primary_cursor": {
+              "committed_tokens": 450058774,
+              "dataset_fingerprint": "9b4f169f9834d2351ce09bafc34057db115edd1a02b18753e7f3d957cff5c5bb",
+              "dataset_size": 126457,
+              "next_global_sample": 110144,
+              "schema_version": 2,
+              "seed": 3407,
+              "shuffle": true,
+              "shuffle_algorithm": "shard-local-affine-v1"
+            },
+            "schema_version": 1,
+            "seed": 3407,
+            "shuffle": true,
+            "shuffle_algorithm": "shard-local-affine-v1"
+          },
+          "global_sample_index": 122368,
+          "global_token_index": 500009962,
+          "sample_index": 0,
+          "shard_id": null,
+          "shard_index": 0,
+          "shuffle_seed": 3407,
+          "token_offset": 0,
+          "version": 1
+        },
+        "data_fingerprint": "d296d5de1dd68b3daede80f423742323d46e196be0cdd0d78836883141371344",
+        "extra": {
+          "activation_checkpointing": {
+            "configured_layer_count": 0,
+            "enabled": true,
+            "hidden_alignment_configured_layer_count": 8,
+            "hidden_alignment_layer_indices": [
+              0,
+              3,
+              7,
+              10,
+              13,
+              16,
+              20,
+              23
+            ],
+            "ordinary_layer_indices": []
+          },
+          "calibration_artifacts": {
+            "adapter_init": "be6693250f23b87a31412f28762441ed422f44653982d5976d9daa500be49d01",
+            "adapter_init_metadata": "080076b34811ecc8dcb27077a89d4808376b6976904a352f6f522db11d71cb3f",
+            "channel_map": "1fc1a967ad1930444d330a961b7da9bf2c9012b91f4db6bc0586d27466dce347",
+            "layer_map": "8de8f6ae594a405918eb4c4b47c8526e7f741eeaf4a96d596ec6cadd86092021"
+          },
+          "data_manifest_sha256": "9290665ac1e09fbd5b9aea1966bed7a51095bab66f460a0124af4532b1805fd9",
+          "data_manifests": {
+            "prepared": "artifacts/data/base-v2-500m/manifest.json",
+            "quality_cooldown_prepared": "artifacts/data/base-v2-500m-quality-bundle/prepared/manifest.json",
+            "quality_cooldown_teacher_kd": "artifacts/data/base-v2-500m-quality-bundle/kd/manifest.json",
+            "teacher_kd": "artifacts/data/base-v2-500m-kd/manifest.json"
+          },
+          "dense_transfer_checkpointing": {
+            "enabled": true,
+            "hidden_alignment_configured_layer_count": 16,
+            "hidden_alignment_layer_indices": [
+              1,
+              2,
+              4,
+              5,
+              6,
+              8,
+              9,
+              11,
+              12,
+              14,
+              15,
+              17,
+              18,
+              19,
+              21,
+              22
+            ],
+            "ordinary_configured_layer_count": 0,
+            "ordinary_layer_indices": []
+          },
+          "dependency_lock": "uv.lock",
+          "dependency_lock_sha256": "ead3178cd4c6498942fb4902e8b9cc45f206a94dff1a04a3d684bbc174b35f34",
+          "git_commit": "3eaef84ab516b3b3ebe65896a3e6e44b69be3043",
+          "git_dirty": true,
+          "mtp": {
+            "checkpointed_as_trainable_delta": false,
+            "enabled": true,
+            "loss_weight": 0.1,
+            "parameters_frozen": true,
+            "source_manifest_sha256": "5e847be98c2d114d2fb85a67ac77f4eef416e11871c1a5580d1bc52663e2e643",
+            "source_role": "backbone"
+          },
+          "quality_cooldown": {
+            "enabled": true,
+            "prepared_manifest_sha256": "459357e415fbf77f6bd04ec2c3fe2e1dff06e81360b0a38715e51c77670514af",
+            "start_tokens": 450000000,
+            "teacher_kd_manifest_sha256": "a8a92ba0232bd33742b77c110a5dee0cbaf272ac752cd6e0aa110eaf835610b0"
+          },
+          "reason": null,
+          "source_locations": {
+            "backbone": {
+              "local_path": "artifacts/models/qwen3.5-0.8b-base",
+              "model_id": "Qwen/Qwen3.5-0.8B-Base",
+              "revision": "dc7cdfe2ee4154fa7e30f5b51ca41bfa40174e68"
+            },
+            "donor": {
+              "local_path": "artifacts/models/qwen3.5-9b-base",
+              "model_id": "Qwen/Qwen3.5-9B-Base",
+              "revision": "68c46c4b3498877f3ef123c856ecfde50c39f404"
+            },
+            "folded_experts": null,
+            "teacher": {
+              "local_path": "artifacts/models/qwen3.5-9b-base",
+              "model_id": "Qwen/Qwen3.5-9B-Base",
+              "revision": "68c46c4b3498877f3ef123c856ecfde50c39f404"
+            },
+            "tokenizer": {
+              "local_path": "artifacts/models/qwen3.5-0.8b-base",
+              "model_id": "Qwen/Qwen3.5-0.8B-Base",
+              "revision": "dc7cdfe2ee4154fa7e30f5b51ca41bfa40174e68"
+            }
+          },
+          "source_manifests": {
+            "backbone": "5e847be98c2d114d2fb85a67ac77f4eef416e11871c1a5580d1bc52663e2e643",
+            "donor": "ede9a83f7b8ab73842d79b2459262a8b963e215684177a6685b3dc2e2bb803a1",
+            "folded_experts": null,
+            "teacher": "ede9a83f7b8ab73842d79b2459262a8b963e215684177a6685b3dc2e2bb803a1",
+            "tokenizer": "5e847be98c2d114d2fb85a67ac77f4eef416e11871c1a5580d1bc52663e2e643"
+          },
+          "source_tree_sha256": "a7aff762d504557a32d0cfbeb7bfde6a812f9303333480255fcbdfec0ca0cdbd",
+          "teacher_kd_manifest_sha256": "242ed2d0fb899cb333939bbd581f8a5632e97228f0c1fda2fee14bea7291efe9"
+        },
+        "global_batch_tokens": 262144,
+        "global_step": 1912,
+        "gradient_accumulation_steps": 64,
+        "kind": "milestone",
+        "rollback_applied": false,
+        "run_id": "base-dense-v3-500m",
+        "saved_world_size": 1,
+        "stage": "dense-oracle",
+        "tag": "complete",
+        "trainer_state": {
+          "committed_tokens": 500009962,
+          "curriculum_position": 1.0,
+          "dynamic_loss_scale": null,
+          "extra": {
+            "checkpoint_request_sequence": 1,
+            "data_phase": "cooldown",
+            "last_committed_metrics": {
+              "activation_checkpoint_layer_count_configured": 0.0,
+              "activation_checkpoint_layer_count_effective": 0.0,
+              "activation_checkpointing_effective": 0.0,
+              "anchor_kl": 0.07013532297085172,
+              "anchor_kl_loss": 0.07013532297085172,
+              "dense_transfer_checkpoint_layer_count_configured": 0.0,
+              "dense_transfer_token_checkpoint_layer_count_effective": 0.0,
+              "grad_norm": 0.3719866871833801,
+              "hidden_alignment": 0.0,
+              "hidden_alignment_step": 0.0,
+              "loss": 1.4155777654921269,
+              "lr": 1.8000402842532085e-05,
+              "lr/adapters": 1.8000402842532085e-05,
+              "lr/scale": 9.000201421266041e-05,
+              "mtp": 1.1788115297018125,
+              "mtp_loss": 1.1788115297018125,
+              "mtp_target_tokens_this_step": 260809.0,
+              "next_lr": 1.8e-05,
+              "next_lr/adapters": 1.8e-05,
+              "next_lr/scale": 9e-05,
+              "ntp": 0.9330303921831696,
+              "ntp_loss": 0.9330303921831696,
+              "teacher_kd": 0.35765268804169076,
+              "teacher_kd_loss": 0.35765268804169076,
+              "tokens": 500009962.0,
+              "tokens_this_step": 260937.0
+            }
+          },
+          "global_batch_tokens": 262144,
+          "global_step": 1912,
+          "gradient_accumulation_steps": 64,
+          "loss_weights": {
+            "anchor_kl": 0.1,
+            "dense_oracle": 0.0,
+            "dense_oracle_batch_fraction": 0.0,
+            "hidden_alignment": 0.1,
+            "hidden_alignment_batch_fraction": 0.05,
+            "kd_temperature": 2.0,
+            "load_balance": 0.0,
+            "mtp": 0.1,
+            "ntp": 1.0,
+            "router_supervision": 0.0,
+            "router_z": 0.0,
+            "teacher_kd": 1.0
+          },
+          "micro_batch_tokens_per_rank": 4096,
+          "micro_step_in_accumulation": 0,
+          "router_stats": {},
+          "run_id": "base-dense-v3-500m",
+          "stage": "dense-oracle",
+          "top_k": null,
+          "version": 1,
+          "world_size": 1
+        }
+      },
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v3-500m/step-000000001912-milestone-complete"
+    },
+    "formal_closure": {
+      "bundle_fingerprint": "5b58a0afe981992d41e9c5edfee78a763bfae852657ecc7cb3628ee22c36f12d",
+      "complete_sha256": "2bc6e2c80b8b7c980275a59b341d1ed925099578e219d0b19e81a48de94aca23",
+      "manifest_sha256": "b496a8f90fc23e70ebc101c0d54a6e4cc10158f14da57b47dfa3b03a7dd01885",
+      "path": "/media/data1/Project/AI/Twen1/artifacts/evidence/base-v4-250m-r2-semantic-excluded-closed-formal-evidence-closure-pass-001"
+    },
+    "formal_primary_prepared_manifest": {
+      "dataset_fingerprint": "44d42f0f862a55cc103cc501fb66f888936ea1e9500389ceaecf9cbc914b42b7",
+      "path": "/media/data1/Project/AI/Twen1/artifacts/data/base-v4-250m-primary-r2-semantic-excluded-closed-train-pass-001/manifest.json",
+      "sha256": "cf1d837e2130e1d5a045f151eddae5fb20250b44f037676c933b2c6ccfe75af8",
+      "size": 971363,
+      "source_map_sha256": "d6620197c785464885461738727c320d8046c513b535090c7412615292c50efe"
+    },
+    "licence_contract": {
+      "contract": {
+        "attribution_fields": [
+          "id",
+          "url",
+          "title"
+        ],
+        "declared_license": "CC-BY-SA-3.0 AND GFDL",
+        "obligations": [
+          "retain the generated attribution manifests with the training evidence",
+          "document the CC-BY-SA-3.0/GFDL source in model and data reports",
+          "perform a separate final review of model/distribution compliance"
+        ],
+        "repo_id": "wikimedia/wikipedia",
+        "revision": "b04c8d1ceb2f5cd4588862100d08de323dccfbaa",
+        "scope": "formal-v4-250m-primary-and-cooldown-only",
+        "source_id": "chinese_wikipedia_zh_20231101"
+      },
+      "contract_fingerprint": "fbc16551a1d7c0b9020852be97f751af2759442bd4d22bade707cd50a4fa3762",
+      "required_acknowledgement": "ACCEPT V4 WIKIPEDIA LICENSE fbc16551a1d7c0b9020852be97f751af2759442bd4d22bade707cd50a4fa3762"
+    },
+    "source_identity": {
+      "authorizer": {
+        "import_sha256": "0eaf6354d1845aa060c54e744256fefdaee6060b4380b798c133a0a3671f75ab",
+        "path": "/media/data1/Project/AI/Twen1/scripts/authorize_v4_13m_calibration.py",
+        "sha256": "0eaf6354d1845aa060c54e744256fefdaee6060b4380b798c133a0a3671f75ab",
+        "size": 41921
+      },
+      "release_verifier": {
+        "import_sha256": "f473321c4cf4b65b64f7b8dc120a224211bfe839436de53ee27e5ee36d61e70b",
+        "path": "/media/data1/Project/AI/Twen1/scripts/publish_v4_250m_release.py",
+        "sha256": "f473321c4cf4b65b64f7b8dc120a224211bfe839436de53ee27e5ee36d61e70b",
+        "size": 111218
+      },
+      "twen_source_tree_sha256": "13331462fc032fafc0701826a59d1a5c673f83683efb7bb861efad4b02f348fd"
+    }
+  },
+  "authorizes_calibration_launch": true,
+  "authorizes_formal_training": false,
+  "input_fingerprint": "19ab031781a364ae830b064f43c33645243c4476323d8a03d9780a6256079c6c",
+  "kind": "twen_v4_13m_calibration_admission",
+  "output": "/media/data1/Project/AI/Twen1/locks/base-dense-v4-13m-calibration-admission-pass-002",
+  "schema_version": 1,
+  "status": "accepted_explicit_user_acknowledgement",
+  "training_started": false
+}

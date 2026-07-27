@@ -130,15 +130,11 @@ def _governed_settings(
         governed_plan_id=plan_id,
         governed_source_tree_sha256=twen_source_tree_sha256(source_root),
         governed_dependency_lock_name=dependency_path.name,
-        governed_dependency_lock_sha256=hashlib.sha256(
-            dependency_path.read_bytes()
-        ).hexdigest(),
+        governed_dependency_lock_sha256=hashlib.sha256(dependency_path.read_bytes()).hexdigest(),
     )
     return DashboardSettings(
         dashboard_config_path=dashboard_config_path,
-        dashboard_config_sha256=hashlib.sha256(
-            dashboard_config_path.read_bytes()
-        ).hexdigest(),
+        dashboard_config_sha256=hashlib.sha256(dashboard_config_path.read_bytes()).hexdigest(),
         project_root=tmp_path.resolve(),
         state_dir=(tmp_path / ".twen/dashboard").resolve(),
         profiles=(profile,),
@@ -730,7 +726,7 @@ def test_controller_defaults_to_persistent_gpu_journal(tmp_path: Path) -> None:
     assert controller.gpu_monitor.journal_path == settings.state_dir / "gpu-telemetry.jsonl"
 
 
-def test_real_dashboard_config_fail_closes_v4_after_chinese_quality_failure() -> None:
+def test_real_dashboard_config_remains_a_blocked_template() -> None:
     project_root = Path(__file__).resolve().parents[1]
     settings = load_dashboard_settings(project_root / "configs/web/dashboard.json")
     assert settings.project_root == project_root.resolve()
@@ -744,6 +740,9 @@ def test_real_dashboard_config_fail_closes_v4_after_chinese_quality_failure() ->
     _, v2, v3, v4, calibration = settings.profiles
     launchable = [profile for profile in settings.profiles if profile.launch_enabled]
     assert launchable == []
+    assert calibration.label == (
+        "Base Dense v4 13M (blocked: use authenticated admission snapshot)"
+    )
     assert v2.resume == v3.resume == v4.resume == calibration.resume == "none"
     assert v2.fork_from == v3.fork_from
     assert (
@@ -777,6 +776,66 @@ def test_real_dashboard_config_fail_closes_v4_after_chinese_quality_failure() ->
     assert settings.state_dir.is_relative_to(settings.project_root)
 
 
+def test_authenticated_calibration_dashboard_snapshot_is_launchable() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    admission_root = project_root / "locks/base-dense-v4-13m-calibration-admission-pass-002"
+    dashboard_path = admission_root / "dashboard.json"
+    settings = load_dashboard_settings(dashboard_path)
+    launchable = [profile for profile in settings.profiles if profile.launch_enabled]
+    assert [profile.profile_id for profile in launchable] == [
+        "base-dense-v4-13m-low-lr-calibration"
+    ]
+    assert launchable[0].start_confirmation == ("START base-dense-v4-13m-low-lr-calibration")
+
+    manifest_path = admission_root / "MANIFEST.json"
+    complete_path = admission_root / "COMPLETE"
+    admission_path = admission_root / "admission.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    complete = json.loads(complete_path.read_text(encoding="utf-8"))
+    recorded = json.loads(admission_path.read_text(encoding="utf-8"))
+    unsigned_manifest = {
+        key: value for key, value in manifest.items() if key != "bundle_fingerprint"
+    }
+    assert (
+        manifest["bundle_fingerprint"]
+        == hashlib.sha256(
+            json.dumps(
+                unsigned_manifest,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+    )
+    assert complete["manifest_sha256"] == hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    assert (
+        manifest["files"]["admission.json"]["sha256"]
+        == hashlib.sha256(admission_path.read_bytes()).hexdigest()
+    )
+    assert (
+        manifest["files"]["dashboard.json"]["sha256"]
+        == hashlib.sha256(dashboard_path.read_bytes()).hexdigest()
+    )
+    assert recorded["acknowledgement"] == (
+        "ACCEPT V4 WIKIPEDIA LICENSE "
+        "fbc16551a1d7c0b9020852be97f751af2759442bd4d22bade707cd50a4fa3762"
+    )
+    assert recorded["authorizes_calibration_launch"] is True
+    assert recorded["authorizes_formal_training"] is False
+    assert recorded["training_started"] is False
+    raw_dashboard = json.loads(dashboard_path.read_text(encoding="utf-8"))
+    raw_profile = next(
+        profile
+        for profile in raw_dashboard["profiles"]
+        if profile["id"] == "base-dense-v4-13m-low-lr-calibration"
+    )
+    inline = raw_profile["calibration_admission"]
+    assert inline["admission_sha256"] == hashlib.sha256(admission_path.read_bytes()).hexdigest()
+    assert inline["admission_fingerprint"] == recorded["admission_fingerprint"]
+    assert inline["authorizes_formal_training"] is False
+    assert inline["training_started"] is False
+
+
 def test_governed_dashboard_binds_blocked_pending_formal_config(
     tmp_path: Path,
 ) -> None:
@@ -797,28 +856,21 @@ def test_governed_dashboard_binds_blocked_pending_formal_config(
                         "id": "base-dense-v4-250m-pilot",
                         "label": "Base dense v4 formal (blocked)",
                         "config": str(config_path.relative_to(project_root)),
-                        "config_sha256": hashlib.sha256(
-                            config_path.read_bytes()
-                        ).hexdigest(),
+                        "config_sha256": hashlib.sha256(config_path.read_bytes()).hexdigest(),
                         "resume": "none",
                         "fork_from": None,
                         "launch_enabled": False,
                         "launch_kind": "governed_v4",
-                        "governed_controller": str(
-                            controller_path.relative_to(project_root)
-                        ),
+                        "governed_controller": str(controller_path.relative_to(project_root)),
                         "governed_controller_sha256": hashlib.sha256(
                             controller_path.read_bytes()
                         ).hexdigest(),
-                        "governed_readiness": str(
-                            readiness_path.relative_to(project_root)
-                        ),
+                        "governed_readiness": str(readiness_path.relative_to(project_root)),
                         "governed_readiness_sha256": hashlib.sha256(
                             readiness_path.read_bytes()
                         ).hexdigest(),
                         "governed_state": (
-                            "runs/.base-dense-v4-250m-pilot.governed/"
-                            "controller-state.json"
+                            "runs/.base-dense-v4-250m-pilot.governed/controller-state.json"
                         ),
                         "governed_plan_id": plan["plan_id"],
                     }
@@ -834,13 +886,14 @@ def test_governed_dashboard_binds_blocked_pending_formal_config(
     assert profile.launch_enabled is False
     assert profile.run_id == "base-dense-v4-250m-pilot"
     assert profile.stage == "dense-oracle"
-    assert profile.run_dir == (
-        project_root / "runs/base-dense-v4-250m-pilot"
-    ).resolve()
+    assert profile.run_dir == (project_root / "runs/base-dense-v4-250m-pilot").resolve()
     assert profile.governed_source_tree_sha256 == plan["source_tree"]["sha256"]  # type: ignore[index]
-    assert profile.governed_dependency_lock_name == Path(  # type: ignore[index]
-        plan["dependency_lock"]["path"]
-    ).name
+    assert (
+        profile.governed_dependency_lock_name
+        == Path(  # type: ignore[index]
+            plan["dependency_lock"]["path"]
+        ).name
+    )
     assert profile.governed_dependency_lock_sha256 == plan["dependency_lock"]["sha256"]  # type: ignore[index]
     assert plan["config"]["preflight_fingerprint"] is None  # type: ignore[index]
     assert plan["readiness_issues"]
@@ -1321,14 +1374,10 @@ def test_governed_launch_executes_only_sealed_pre_popen_bytes(
         captured["nested_stdout"] = nested.stdout
         captured["nested_stderr"] = nested.stderr
         captured["controller"] = Path(f"/proc/self/fd/{controller_fd}").read_bytes()
-        captured["source_archive"] = Path(
-            f"/proc/self/fd/{source_fd}"
-        ).read_bytes()
+        captured["source_archive"] = Path(f"/proc/self/fd/{source_fd}").read_bytes()
         with zipfile.ZipFile(f"/proc/self/fd/{source_fd}") as archive:
             captured["source"] = archive.read("twen/__init__.py")
-            captured["dependency"] = archive.read(
-                ".twen-governed-dependency/uv.lock"
-            )
+            captured["dependency"] = archive.read(".twen-governed-dependency/uv.lock")
         return SimpleNamespace(pid=5151)
 
     def process_identity(pid: int) -> _LinuxProcessIdentity:
@@ -1361,17 +1410,11 @@ def test_governed_launch_executes_only_sealed_pre_popen_bytes(
     assert captured["dependency"] == original_dependency
     assert captured["nested_returncode"] == 0, captured["nested_stderr"]
     assert captured["nested_stdout"] == "authenticated\n"
-    assert state["controller_snapshot_sha256"] == hashlib.sha256(
-        original_controller
-    ).hexdigest()
-    assert state["source_snapshot_sha256"] == hashlib.sha256(
-        captured["source_archive"]
-    ).hexdigest()
+    assert state["controller_snapshot_sha256"] == hashlib.sha256(original_controller).hexdigest()
+    assert state["source_snapshot_sha256"] == hashlib.sha256(captured["source_archive"]).hexdigest()
     assert state["source_tree_sha256"] == plan["source_tree"]["sha256"]
     assert state["dependency_lock_sha256"] == plan["dependency_lock"]["sha256"]
-    assert state["process_cmdline"][3] == (
-        f"/proc/self/fd/{captured['controller_fd']}"
-    )
+    assert state["process_cmdline"][3] == (f"/proc/self/fd/{captured['controller_fd']}")
     assert captured["stdin"] == captured["source_fd"]
     assert captured["pythonpath"] == "/proc/self/fd/0"
     assert state["source_snapshot_fd"] == 0
@@ -1599,9 +1642,7 @@ def test_governed_process_matcher_requires_exact_controller_contract(tmp_path: P
         malicious_payload = malicious_buffer.getvalue()
         malicious_state = {
             **state,
-            "source_snapshot_sha256": hashlib.sha256(
-                malicious_payload
-            ).hexdigest(),
+            "source_snapshot_sha256": hashlib.sha256(malicious_payload).hexdigest(),
         }
         with patch(
             "twen.web._sealed_process_fd_bytes",
@@ -1704,11 +1745,7 @@ def test_governed_source_archive_requires_exact_safe_inventory(
         payload = b"not a zip archive"
     else:
         buffer = io.BytesIO()
-        compression = (
-            zipfile.ZIP_STORED
-            if mutation == "stored"
-            else zipfile.ZIP_DEFLATED
-        )
+        compression = zipfile.ZIP_STORED if mutation == "stored" else zipfile.ZIP_DEFLATED
         with zipfile.ZipFile(buffer, mode="w", compression=compression) as archive:
             archive.writestr("twen/__init__.py", b"SAFE = True\n")
             if mutation == "duplicate":
@@ -2303,8 +2340,8 @@ def test_governed_rank0_authentication_binds_session_process_plan_and_lock(
     settings = _governed_settings(tmp_path)
     profile = settings.profiles[0]
     profile.run_dir.mkdir(parents=True)
-    plan, governed_state, session, active_command, identity, owner = (
-        _governed_rank0_identity(profile, tmp_path.resolve())
+    plan, governed_state, session, active_command, identity, owner = _governed_rank0_identity(
+        profile, tmp_path.resolve()
     )
 
     def read_identity(path: Path) -> dict[str, object] | None:
@@ -2335,10 +2372,7 @@ def test_governed_rank0_authentication_binds_session_process_plan_and_lock(
         patch("twen.web._read_linux_process_identity", return_value=identity),
         patch("twen.web._held_run_lock_owner", return_value=owner),
     ):
-        assert (
-            controller._verified_rank0_training_pid(profile, controller_state)
-            == 6161
-        )
+        assert controller._verified_rank0_training_pid(profile, controller_state) == 6161
 
 
 @pytest.mark.parametrize(
@@ -2363,8 +2397,8 @@ def test_governed_save_rejects_any_weak_or_mismatched_rank0_identity(
     settings = _governed_settings(tmp_path)
     profile = settings.profiles[0]
     profile.run_dir.mkdir(parents=True)
-    plan, governed_state, session, active_command, identity, owner = (
-        _governed_rank0_identity(profile, tmp_path.resolve())
+    plan, governed_state, session, active_command, identity, owner = _governed_rank0_identity(
+        profile, tmp_path.resolve()
     )
     expected_active_command = list(active_command)
     if mismatch == "missing_rank":

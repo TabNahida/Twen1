@@ -828,10 +828,11 @@ activation、原生 MTP、分块词表 loss、反向重算和 CUDA workspace。
 scheduler、RNG、data cursor、metrics 与全 rank runtime 哈希逐字节一致。最终审计位于
 `artifacts/configuration/v4-optimizer-ab/summary.json`，结论为 `accepted=true`；
 16M smoke 已改为 monitor-only。中文数据治理切换为固定版本的中文 Wikipedia 后，
-Dashboard 当前所有训练 profile 均为 `launch_enabled=false`；最终数据身份、语义审阅
-和 formal baseline 已闭合，13M low-LR calibration 仍需 Wikipedia 许可确认与显式启动
-授权。250M formal 继续保持 blocked，不能循环当前 16M 或复用其 checkpoint/数据来冒充
-正式训练容量。
+最终数据身份、语义审阅和 formal baseline 已闭合。用户的精确 Wikipedia 许可确认已由
+`locks/base-dense-v4-13m-calibration-admission-pass-002/` 原子记录；被认证的
+Dashboard 快照只开放 13M low-LR calibration，并仍要求独立输入
+`START base-dense-v4-13m-low-lr-calibration`。250M formal 继续保持 blocked，不能循环
+当前 16M 或复用其 checkpoint/数据来冒充正式训练容量。
 
 250M 合同为 225M primary + 25M cooldown、physical B1/GA64、NTP `1.0` +
 native frozen MTP `0.1`、Muon Adapter/Lora `3e-5`、AdamW scale `3e-6`、
@@ -845,7 +846,8 @@ cursor 数值。13M calibration 有意读取最终 formal primary manifest 来�
 checkpoint 和数据 cursor 均不得进入正式 release。
 当前正式 config 仍有 `PENDING_*`，closure readiness/capacity 均
 `launch_enabled=false`。正式 train/validation union 不相交、中文语义质量与 v3
-baseline bundle 已通过；13M calibration 与 Wikipedia 许可门仍为 pending。
+baseline bundle 已通过；不可变 closure 中的许可门保持 pending 原始状态，独立
+calibration admission 已记录许可 ACK，但 13M calibration 尚未启动。
 
 外部 governed controller 已实现 13M/26M/.../250M 暂停点：它会在第一个达到或越过
 阈值的完整 optimizer batch 后保存 milestone、暂停并运行认证 validation，同时执行
@@ -1066,20 +1068,25 @@ loss、NTP/MTP/KD/anchor/hidden、吞吐、显存、LR、gradient norm 与 check
 显示自身 NLL/acceptance。实时 GPU 只绑定当前 active task，已完成任务不会借用其他任务的遥测；
 报告文件不再进入 Dashboard。当前按要求监听
 `0.0.0.0:8765`，非 loopback bind 强制使用 mode-0600 文件中的 HTTP Basic 凭据；服务
-不导入 PyTorch、不占 GPU，也不会自动启动训练。启动/保存/优雅停止只接受
-`configs/web/dashboard.json` 中固定且启动后 SHA 不变的 profile；start 还需要页面二次输入确认，
-stop 会在核验 rank-zero hostname/PID/cmdline/config 身份后发送 SIGTERM，让引擎先 checkpoint。
+不导入 PyTorch、不占 GPU，也不会自动启动训练。模板
+`configs/web/dashboard.json` 保持全关闭；systemd 的 `ExecStartPre` 每次先认证 admission
+bundle，再从 bundle 内固定且启动后 SHA 不变的 `dashboard.json` 提供 profile。start
+还需要页面二次输入确认，stop 会在核验 rank-zero hostname/PID/cmdline/config 身份后
+发送 SIGTERM，让引擎先 checkpoint。
 
 当前 v1/v2/v3 与 v4 16M smoke 均为 completed monitor-only。v4 13M low-LR
 calibration 已绑定新的 formal-primary r2 prepared identity，固定 config SHA 为
-`15ce9dbf68643b6abbcbc687a698f2994e2200587c442974903b07613a43109d`，但在
-Wikipedia 许可确认与 calibration 启动授权前仍保持 `launch_enabled=false`；
-250M formal 也没有可启动 Web profile。
+`15ce9dbf68643b6abbcbc687a698f2994e2200587c442974903b07613a43109d`。
+Wikipedia ACK admission fingerprint 为
+`d09396bb25269f81e810dab102b97c91184708723ae85e3e3bbd784fccd5ee7c`；
+模板 `configs/web/dashboard.json` 继续 fail-closed，systemd 使用 admission bundle 内
+经过 MANIFEST/COMPLETE 认证的 `dashboard.json`，其中只有 calibration profile 为
+`launch_enabled=true`。许可 ACK 本身没有启动训练，250M formal 仍没有可启动 Web profile。
 前台只读验收命令：
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m twen web serve \
-  --dashboard-config configs/web/dashboard.json \
+  --dashboard-config locks/base-dense-v4-13m-calibration-admission-pass-002/dashboard.json \
   --host 0.0.0.0 --port 8765 \
   --auth-file .twen/dashboard/http-auth.json
 ```
