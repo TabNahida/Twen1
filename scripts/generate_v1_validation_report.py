@@ -2475,6 +2475,7 @@ FLA_TILELANG=0 bash scripts/with_cuda_toolchain.sh .venv/bin/python -m twen eval
   --config {run_dir / "resolved_config.yaml"} \\
   --checkpoint {checkpoint_path} \\
   --prepared-manifest {prepared_path} \\
+  --prepared-manifest-sha256 {validation["prepared_manifest"]["sha256"]} \\
   --output {evaluation_dir} \\
   --role candidate --role shared --role teacher --batch-size 1 --device cuda:0
 ```
@@ -2812,6 +2813,7 @@ FLA_TILELANG=0 bash scripts/with_cuda_toolchain.sh .venv/bin/python -m twen eval
   --config {run_dir / "resolved_config.yaml"} \\
   --checkpoint {checkpoint_path} \\
   --prepared-manifest {prepared_path} \\
+  --prepared-manifest-sha256 {validation["prepared_manifest"]["sha256"]} \\
   --output {evaluation_dir} \\
   --role candidate --role shared --role teacher --batch-size 1 --device cuda:0
 ```

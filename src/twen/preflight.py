@@ -8,6 +8,7 @@ import json
 import os
 import secrets
 import socket
+import stat
 import struct
 import time
 from collections.abc import Mapping
@@ -901,8 +902,125 @@ def _validate_inference_kd_shard_manifests(
 
     from .data.teacher_kd import (
         KD_MANIFEST_FILENAME,
+        KD_TENSORS_FILENAME,
         validate_kd_shard,
     )
+
+    def regular_file_identity(path: Path, label: str) -> tuple[int, ...]:
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(
+            os,
+            "O_NOFOLLOW",
+            0,
+        )
+        try:
+            descriptor = os.open(path, flags)
+        except OSError as error:
+            raise TrainingPreflightError(
+                f"cannot open KD shard {label}: {path}"
+            ) from error
+        try:
+            metadata = os.fstat(descriptor)
+        finally:
+            os.close(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size < 1:
+            raise TrainingPreflightError(
+                f"KD shard {label} is not a non-empty regular file: {path}"
+            )
+        identity = (
+            metadata.st_dev,
+            metadata.st_ino,
+            metadata.st_mode,
+            metadata.st_size,
+            metadata.st_mtime_ns,
+            metadata.st_ctime_ns,
+        )
+        try:
+            path_metadata = path.lstat()
+        except OSError as error:
+            raise TrainingPreflightError(
+                f"cannot restat KD shard {label}: {path}"
+            ) from error
+        path_identity = (
+            path_metadata.st_dev,
+            path_metadata.st_ino,
+            path_metadata.st_mode,
+            path_metadata.st_size,
+            path_metadata.st_mtime_ns,
+            path_metadata.st_ctime_ns,
+        )
+        if path_identity != identity:
+            raise TrainingPreflightError(
+                f"KD shard {label} changed while authenticating: {path}"
+            )
+        return identity
+
+    def stable_regular_file_bytes(
+        path: Path,
+        label: str,
+    ) -> tuple[bytes, tuple[int, ...]]:
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(
+            os,
+            "O_NOFOLLOW",
+            0,
+        )
+        try:
+            descriptor = os.open(path, flags)
+        except OSError as error:
+            raise TrainingPreflightError(
+                f"cannot open KD shard {label}: {path}"
+            ) from error
+        try:
+            before = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(before.st_mode)
+                or before.st_size < 1
+                or before.st_size > 16 * 1024 * 1024
+            ):
+                raise TrainingPreflightError(
+                    f"KD shard {label} is not a bounded non-empty regular file: {path}"
+                )
+            remaining = before.st_size
+            payload = bytearray()
+            while remaining:
+                chunk = os.read(descriptor, min(1024 * 1024, remaining))
+                if not chunk:
+                    raise TrainingPreflightError(
+                        f"KD shard {label} ended early: {path}"
+                    )
+                payload.extend(chunk)
+                remaining -= len(chunk)
+            if os.read(descriptor, 1):
+                raise TrainingPreflightError(
+                    f"KD shard {label} grew while authenticating: {path}"
+                )
+            after = os.fstat(descriptor)
+        finally:
+            os.close(descriptor)
+        before_identity = (
+            before.st_dev,
+            before.st_ino,
+            before.st_mode,
+            before.st_size,
+            before.st_mtime_ns,
+            before.st_ctime_ns,
+        )
+        after_identity = (
+            after.st_dev,
+            after.st_ino,
+            after.st_mode,
+            after.st_size,
+            after.st_mtime_ns,
+            after.st_ctime_ns,
+        )
+        if before_identity != after_identity:
+            raise TrainingPreflightError(
+                f"KD shard {label} changed while authenticating: {path}"
+            )
+        if regular_file_identity(path, label) != before_identity:
+            raise TrainingPreflightError(
+                f"KD shard {label} was replaced while authenticating: {path}"
+            )
+        return bytes(payload), before_identity
 
     root = corpus_manifest.parent.resolve()
     validated: list[object] = []
@@ -914,19 +1032,112 @@ def _validate_inference_kd_shard_manifests(
             raise TrainingPreflightError(
                 f"KD shard escapes corpus root: {entry.path}"
             ) from error
+        complete_path = shard / "COMPLETE"
         local_manifest = shard / KD_MANIFEST_FILENAME
-        if sha256_file(local_manifest) != entry.manifest_sha256:
+        tensor_path = shard / KD_TENSORS_FILENAME
+        complete_raw, complete_identity = stable_regular_file_bytes(
+            complete_path,
+            f"{entry.path} COMPLETE",
+        )
+        local_raw, local_identity = stable_regular_file_bytes(
+            local_manifest,
+            f"{entry.path} manifest",
+        )
+        tensor_identity = regular_file_identity(
+            tensor_path,
+            f"{entry.path} tensor",
+        )
+        local_sha256 = hashlib.sha256(local_raw).hexdigest()
+        if local_sha256 != entry.manifest_sha256:
             raise TrainingPreflightError(
                 f"KD shard manifest hash mismatch: {entry.path}"
+            )
+        try:
+            complete = json.loads(complete_raw)
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise TrainingPreflightError(
+                f"KD shard COMPLETE is invalid JSON: {entry.path}"
+            ) from error
+        outputs = complete.get("outputs") if isinstance(complete, Mapping) else None
+        if (
+            not isinstance(complete, Mapping)
+            or complete.get("schema_version") != 1
+            or complete.get("shard_id") != shard.name
+            or not isinstance(outputs, list)
+            or len(outputs) != 2
+            or not all(
+                isinstance(output, Mapping)
+                and set(output) == {"path", "size", "sha256"}
+                and isinstance(output.get("path"), str)
+                and bool(output.get("path"))
+                and not isinstance(output.get("size"), bool)
+                and isinstance(output.get("size"), int)
+                and output["size"] > 0
+                and isinstance(output.get("sha256"), str)
+                and len(output["sha256"]) == 64
+                and all(
+                    character in "0123456789abcdef"
+                    for character in output["sha256"]
+                )
+                for output in outputs
+            )
+        ):
+            raise TrainingPreflightError(
+                f"KD shard COMPLETE inventory is invalid: {entry.path}"
+            )
+        outputs_by_path = {str(output["path"]): output for output in outputs}
+        if set(outputs_by_path) != {KD_MANIFEST_FILENAME, KD_TENSORS_FILENAME}:
+            raise TrainingPreflightError(
+                f"KD shard COMPLETE inventory is invalid: {entry.path}"
+            )
+        manifest_output = outputs_by_path[KD_MANIFEST_FILENAME]
+        tensor_output = outputs_by_path[KD_TENSORS_FILENAME]
+        if (
+            manifest_output.get("size") != local_identity[3]
+            or manifest_output.get("sha256") != local_sha256
+            or manifest_output.get("sha256") != entry.manifest_sha256
+        ):
+            raise TrainingPreflightError(
+                f"KD shard COMPLETE manifest identity mismatch: {entry.path}"
+            )
+        if (
+            tensor_output.get("size") != tensor_identity[3]
+            or tensor_output.get("sha256") != entry.tensors_sha256
+        ):
+            raise TrainingPreflightError(
+                f"KD shard COMPLETE tensor identity mismatch: {entry.path}"
             )
         shard_manifest = validate_kd_shard(
             shard,
             expected_temperature=expected_temperature,
             verify_checksum=False,
         )
-        if sha256_file(local_manifest) != entry.manifest_sha256:
+        complete_after, complete_identity_after = stable_regular_file_bytes(
+            complete_path,
+            f"{entry.path} COMPLETE",
+        )
+        local_after, local_identity_after = stable_regular_file_bytes(
+            local_manifest,
+            f"{entry.path} manifest",
+        )
+        tensor_identity_after = regular_file_identity(
+            tensor_path,
+            f"{entry.path} tensor",
+        )
+        if (
+            complete_after != complete_raw
+            or complete_identity_after != complete_identity
+        ):
+            raise TrainingPreflightError(
+                f"KD shard COMPLETE changed during validation: {entry.path}"
+            )
+        if local_after != local_raw or local_identity_after != local_identity:
             raise TrainingPreflightError(
                 f"KD shard manifest changed during validation: {entry.path}"
+            )
+        if tensor_identity_after != tensor_identity:
+            raise TrainingPreflightError(
+                f"KD shard tensor changed during validation: {entry.path}"
             )
         expected_identity = (
             corpus.teacher_model_id,

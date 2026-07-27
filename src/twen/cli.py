@@ -898,6 +898,7 @@ def _cmd_evaluate_nll(args: argparse.Namespace) -> int:
             config_path=args.config,
             checkpoint_path=args.checkpoint,
             prepared_manifest_path=args.prepared_manifest,
+            prepared_manifest_sha256=args.prepared_manifest_sha256,
             output_dir=args.output,
             roles=args.role,
             batch_size=args.batch_size,
@@ -1468,6 +1469,12 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate_nll.add_argument("--config", required=True)
     evaluate_nll.add_argument("--checkpoint", default="auto")
     evaluate_nll.add_argument("--prepared-manifest", required=True)
+    evaluate_nll.add_argument(
+        "--prepared-manifest-sha256",
+        required=True,
+        type=_sha256_argument,
+        help="externally pinned SHA256 of the exact prepared validation manifest",
+    )
     evaluate_nll.add_argument("--output", required=True)
     evaluate_nll.add_argument(
         "--role",

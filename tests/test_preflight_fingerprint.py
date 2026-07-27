@@ -67,9 +67,12 @@ def test_inference_kd_metadata_authentication_skips_only_tensor_checksum(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     corpus_manifest = tmp_path / "manifest.json"
+    _write(corpus_manifest, b'{"kind":"teacher-kd-corpus"}\n')
     shard = tmp_path / "shard-000"
     local_manifest = shard / "kd_manifest.json"
     local_sha = _write(local_manifest, b'{"kind":"teacher-kd-shard"}\n')
+    tensor = shard / "kd_tensors.safetensors"
+    _write(tensor, b"tensor-payload-is-deliberately-not-hashed")
     entry = SimpleNamespace(
         path=shard.name,
         manifest_sha256=local_sha,
@@ -82,6 +85,28 @@ def test_inference_kd_metadata_authentication_skips_only_tensor_checksum(
         sequence_count=2,
         token_count=5,
         tensors_sha256="2" * 64,
+    )
+    _write(
+        shard / "COMPLETE",
+        json.dumps(
+            {
+                "schema_version": 1,
+                "shard_id": shard.name,
+                "outputs": [
+                    {
+                        "path": local_manifest.name,
+                        "size": local_manifest.stat().st_size,
+                        "sha256": local_sha,
+                    },
+                    {
+                        "path": tensor.name,
+                        "size": tensor.stat().st_size,
+                        "sha256": entry.tensors_sha256,
+                    },
+                ],
+            },
+            sort_keys=True,
+        ).encode(),
     )
     corpus = SimpleNamespace(
         teacher_model_id="Qwen/test",
@@ -139,6 +164,180 @@ def test_inference_kd_metadata_authentication_skips_only_tensor_checksum(
             expected_temperature=2.0,
         )
     assert calls == [(shard.resolve(), 2.0, False)]
+
+
+def test_inference_kd_metadata_rejects_complete_and_tensor_toctou(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    corpus_manifest = tmp_path / "manifest.json"
+    _write(corpus_manifest, b'{"kind":"teacher-kd-corpus"}\n')
+    shard = tmp_path / "shard-000"
+    local_manifest = shard / "kd_manifest.json"
+    local_sha = _write(local_manifest, b'{"kind":"teacher-kd-shard"}\n')
+    tensor = shard / "kd_tensors.safetensors"
+    _write(tensor, b"tensor-payload-is-deliberately-not-hashed")
+    entry = SimpleNamespace(
+        path=shard.name,
+        manifest_sha256=local_sha,
+        source_shard_id="source-000",
+        source_tensors_sha256="1" * 64,
+        global_sample_start=0,
+        global_sample_end=2,
+        global_token_start=0,
+        global_token_end=5,
+        sequence_count=2,
+        token_count=5,
+        tensors_sha256="2" * 64,
+    )
+    corpus = SimpleNamespace(
+        teacher_model_id="Qwen/test",
+        teacher_revision="a" * 40,
+        teacher_model_sha256="3" * 64,
+        generator_source_sha256="4" * 64,
+        tokenizer_sha256="5" * 64,
+        dataset_fingerprint="dataset",
+        shards=(entry,),
+    )
+    shard_manifest = SimpleNamespace(
+        teacher_model_id=corpus.teacher_model_id,
+        teacher_revision=corpus.teacher_revision,
+        teacher_model_sha256=corpus.teacher_model_sha256,
+        generator_source_sha256=corpus.generator_source_sha256,
+        tokenizer_sha256=corpus.tokenizer_sha256,
+        dataset_fingerprint=corpus.dataset_fingerprint,
+        source_shard_id=entry.source_shard_id,
+        source_tensors_sha256=entry.source_tensors_sha256,
+        global_sample_start=entry.global_sample_start,
+        global_sample_end=entry.global_sample_end,
+        global_token_start=entry.global_token_start,
+        global_token_end=entry.global_token_end,
+        sequence_count=entry.sequence_count,
+        token_count=entry.token_count,
+        tensors_sha256=entry.tensors_sha256,
+    )
+    complete_path = shard / "COMPLETE"
+
+    def write_complete() -> bytes:
+        payload = json.dumps(
+            {
+                "schema_version": 1,
+                "shard_id": shard.name,
+                "outputs": [
+                    {
+                        "path": local_manifest.name,
+                        "size": local_manifest.stat().st_size,
+                        "sha256": local_sha,
+                    },
+                    {
+                        "path": tensor.name,
+                        "size": tensor.stat().st_size,
+                        "sha256": entry.tensors_sha256,
+                    },
+                ],
+            },
+            sort_keys=True,
+        ).encode()
+        _write(complete_path, payload)
+        return payload
+
+    original_complete = write_complete()
+
+    def mutate_complete(*_args: object, **_kwargs: object) -> SimpleNamespace:
+        complete_path.write_bytes(original_complete + b" ")
+        return shard_manifest
+
+    monkeypatch.setattr(
+        "twen.data.teacher_kd.validate_kd_shard",
+        mutate_complete,
+    )
+    with pytest.raises(TrainingPreflightError, match="COMPLETE changed"):
+        _validate_inference_kd_shard_manifests(
+            corpus_manifest,
+            corpus,
+            expected_temperature=2.0,
+        )
+
+    write_complete()
+
+    def mutate_tensor(*_args: object, **_kwargs: object) -> SimpleNamespace:
+        tensor.write_bytes(tensor.read_bytes() + b"tamper")
+        return shard_manifest
+
+    monkeypatch.setattr(
+        "twen.data.teacher_kd.validate_kd_shard",
+        mutate_tensor,
+    )
+    with pytest.raises(TrainingPreflightError, match="tensor changed"):
+        _validate_inference_kd_shard_manifests(
+            corpus_manifest,
+            corpus,
+            expected_temperature=2.0,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    (
+        ("path", "unexpected.bin", "inventory is invalid"),
+        ("size", 1, "tensor identity mismatch"),
+        ("sha256", "9" * 64, "tensor identity mismatch"),
+    ),
+)
+def test_inference_kd_metadata_rejects_invalid_complete_tensor_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    value: object,
+    message: str,
+) -> None:
+    corpus_manifest = tmp_path / "manifest.json"
+    _write(corpus_manifest, b'{"kind":"teacher-kd-corpus"}\n')
+    shard = tmp_path / "shard-000"
+    local_manifest = shard / "kd_manifest.json"
+    local_sha = _write(local_manifest, b'{"kind":"teacher-kd-shard"}\n')
+    tensor = shard / "kd_tensors.safetensors"
+    _write(tensor, b"tensor-payload-is-deliberately-not-hashed")
+    entry = SimpleNamespace(
+        path=shard.name,
+        manifest_sha256=local_sha,
+        tensors_sha256="2" * 64,
+    )
+    tensor_output: dict[str, object] = {
+        "path": tensor.name,
+        "size": tensor.stat().st_size,
+        "sha256": entry.tensors_sha256,
+    }
+    tensor_output[field] = value
+    _write(
+        shard / "COMPLETE",
+        json.dumps(
+            {
+                "schema_version": 1,
+                "shard_id": shard.name,
+                "outputs": [
+                    {
+                        "path": local_manifest.name,
+                        "size": local_manifest.stat().st_size,
+                        "sha256": local_sha,
+                    },
+                    tensor_output,
+                ],
+            },
+            sort_keys=True,
+        ).encode(),
+    )
+    corpus = SimpleNamespace(shards=(entry,))
+    monkeypatch.setattr(
+        "twen.data.teacher_kd.validate_kd_shard",
+        lambda *_args, **_kwargs: None,
+    )
+    with pytest.raises(TrainingPreflightError, match=message):
+        _validate_inference_kd_shard_manifests(
+            corpus_manifest,
+            corpus,
+            expected_temperature=2.0,
+        )
 
 
 def _preflight_config(tmp_path: Path) -> TrainConfig:

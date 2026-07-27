@@ -606,6 +606,7 @@ def evaluate_nll(
     config_path: str,
     checkpoint_path: str,
     prepared_manifest_path: str,
+    prepared_manifest_sha256: str,
     output_dir: str,
     roles: Sequence[str] | None = None,
     batch_size: int = 1,
@@ -623,6 +624,7 @@ def evaluate_nll(
             config_path=config_path,
             checkpoint_path=checkpoint_path,
             prepared_manifest_path=prepared_manifest_path,
+            prepared_manifest_sha256=prepared_manifest_sha256,
             output_dir=output,
             roles=roles,
             batch_size=batch_size,
@@ -638,6 +640,7 @@ def _evaluate_nll_while_locked(
     config_path: str,
     checkpoint_path: str,
     prepared_manifest_path: str,
+    prepared_manifest_sha256: str,
     output_dir: Path,
     roles: Sequence[str] | None = None,
     batch_size: int = 1,
@@ -653,15 +656,27 @@ def _evaluate_nll_while_locked(
     if batch_size <= 0:
         raise ValueError("evaluation batch_size must be positive")
     config: TrainConfig = load_train_config(config_path)
-    report: PreflightReport = run_inference_preflight(config, world_size=1)
     prepared_path = Path(prepared_manifest_path).resolve()
+    if not isinstance(prepared_manifest_sha256, str):
+        raise ValueError("prepared manifest SHA256 must be a string")
+    pinned_prepared_manifest_sha = prepared_manifest_sha256.lower()
+    if len(pinned_prepared_manifest_sha) != 64 or any(
+        character not in "0123456789abcdef"
+        for character in pinned_prepared_manifest_sha
+    ):
+        raise ValueError("prepared manifest SHA256 must be a 64-digit hexadecimal value")
     prepared_manifest_sha = sha256_file(prepared_path)
+    if prepared_manifest_sha != pinned_prepared_manifest_sha:
+        raise ValueError(
+            "evaluation prepared manifest differs from --prepared-manifest-sha256"
+        )
     prepared = validate_prepared_corpus_for_inference(
         prepared_path,
-        expected_manifest_sha256=prepared_manifest_sha,
+        expected_manifest_sha256=pinned_prepared_manifest_sha,
     )
     if prepared.tokenizer_sha256 != config.sources.tokenizer.manifest_sha256:
         raise ValueError("evaluation corpus tokenizer differs from the run tokenizer")
+    report: PreflightReport = run_inference_preflight(config, world_size=1)
     evaluation_device_type = "cuda" if device.startswith("cuda") else "cpu"
     evaluation_dtype = "bfloat16" if config.runtime.bf16 else "float32"
     dense_baseline: dict[str, Any] | None = None
@@ -778,6 +793,8 @@ def _evaluate_nll_while_locked(
         "checkpoint_inference_lineage": checkpoint_lineage,
         "prepared_manifest": str(prepared_path),
         "prepared_manifest_sha256": prepared_manifest_sha,
+        "prepared_manifest_expected_sha256": pinned_prepared_manifest_sha,
+        "prepared_manifest_identity_source": "caller_pinned",
         "prepared_dataset_fingerprint": prepared.dataset_fingerprint,
         "prepared_generator_source_sha256": prepared.generator_source_sha256,
         "expert_initialization": config.architecture.expert_initialization,

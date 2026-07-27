@@ -782,6 +782,7 @@ bash scripts/with_cuda_toolchain.sh .venv/bin/python -m twen.cli evaluate nll \
   --config configs/base/<matching-dense-config>.yaml \
   --checkpoint auto \
   --prepared-manifest artifacts/data/base-validation/manifest.json \
+  --prepared-manifest-sha256 4d3877bfaf4e01551d41913e11d37db08c6097b513ac94ae4a63b8a640b68e7f \
   --output eval/<dense-run-id> \
   --batch-size 1 \
   --device cuda \
@@ -793,7 +794,8 @@ NLL cursor，每个 shard 写 `COMPLETE`，Ctrl-C 只会重放当前未提交 mi
 返回 75。恢复就是重跑同一命令。`manifest.json` 会直接给出
 `teacher_gap_closed_fraction` 和是否通过 10% 门槛。模型顺序加载、不同时驻留，当前单张
 RTX 5090 是目标执行路径；20,014,392 validation token 通常约 1–6 小时，最终以进度 ETA
-为准。输出只有统计和哈希，通常小于 100MB。
+为准。`--prepared-manifest-sha256` 必须来自冻结数据证据或已认证报告，不能在同一条评测
+命令中临时对待验证文件现算后自证。输出只有统计和哈希，通常小于 100MB。
 
 ### v4 governed smoke（GPU 门禁通过，已准入）
 
@@ -887,6 +889,7 @@ bash scripts/with_cuda_toolchain.sh .venv/bin/python -m twen.cli evaluate nll \
   --config configs/base/sparse.yaml \
   --checkpoint auto \
   --prepared-manifest artifacts/data/base-validation/manifest.json \
+  --prepared-manifest-sha256 4d3877bfaf4e01551d41913e11d37db08c6097b513ac94ae4a63b8a640b68e7f \
   --dense-baseline-manifest eval/base-dense-v1/manifest.json \
   --output eval/base-sparse-v1 \
   --batch-size 1 \

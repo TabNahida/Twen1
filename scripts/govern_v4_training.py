@@ -217,6 +217,8 @@ def _evaluation_command(
         str(checkpoint["path"]),
         "--prepared-manifest",
         str(prepared["path"]),
+        "--prepared-manifest-sha256",
+        str(prepared["sha256"]),
         "--output",
         str(output),
         "--role",

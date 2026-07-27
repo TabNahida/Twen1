@@ -49,6 +49,7 @@ class EvaluationCpuTest(unittest.TestCase):
                     config_path="unused",
                     checkpoint_path="unused",
                     prepared_manifest_path="unused",
+                    prepared_manifest_sha256="a" * 64,
                     output_dir=str(output),
                 )
             self.assertEqual(result, expected)
@@ -69,6 +70,7 @@ class EvaluationCpuTest(unittest.TestCase):
                     config_path="unused",
                     checkpoint_path="unused",
                     prepared_manifest_path="unused",
+                    prepared_manifest_sha256="a" * 64,
                     output_dir=str(output),
                 )
             with FileLock(output / ".eval.lock", timeout_seconds=0):
@@ -104,6 +106,7 @@ class EvaluationCpuTest(unittest.TestCase):
                     config_path="unused",
                     checkpoint_path="unused",
                     prepared_manifest_path="unused",
+                    prepared_manifest_sha256="a" * 64,
                     output_dir=str(output_link),
                 )
             self.assertTrue((first / "BOUND").is_file())
@@ -201,12 +204,49 @@ class EvaluationCpuTest(unittest.TestCase):
                     config_path="config.yaml",
                     checkpoint_path=str(checkpoint),
                     prepared_manifest_path=str(prepared_path),
+                    prepared_manifest_sha256=sha256_file(prepared_path),
                     output_dir=str(output),
                     roles=("candidate",),
                     device="cpu",
                 )
             self.assertEqual(events, ["build", "load"])
             self.assertEqual(result["roles"]["candidate"]["predicted_tokens"], 16)
+            plan = json.loads((output / "PLAN.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                plan["prepared_manifest_expected_sha256"],
+                sha256_file(prepared_path),
+            )
+            self.assertEqual(plan["prepared_manifest_identity_source"], "caller_pinned")
+
+    def test_evaluate_nll_rejects_a_manifest_that_differs_from_external_pin(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            prepared_path = root / "prepared.json"
+            prepared_path.write_text("{}\n", encoding="utf-8")
+            with (
+                patch("twen.evaluation.enforce_offline_environment"),
+                patch("twen.evaluation.load_train_config", return_value=object()),
+                patch(
+                    "twen.evaluation.run_inference_preflight",
+                    return_value=object(),
+                ),
+                patch(
+                    "twen.evaluation.validate_prepared_corpus_for_inference"
+                ) as validate,
+                self.assertRaisesRegex(
+                    ValueError,
+                    "differs from --prepared-manifest-sha256",
+                ),
+            ):
+                evaluate_nll(
+                    config_path="config.yaml",
+                    checkpoint_path="unused",
+                    prepared_manifest_path=str(prepared_path),
+                    prepared_manifest_sha256="0" * 64,
+                    output_dir=str(root / "evaluation"),
+                    device="cpu",
+                )
+            validate.assert_not_called()
 
     def test_inference_lineage_allows_recorded_source_tree_drift_only(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

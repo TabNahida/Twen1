@@ -106,6 +106,42 @@ class CliContractTest(unittest.TestCase):
         )
         self.assertEqual(args.logits_chunk_tokens, 64)
 
+    def test_nll_evaluation_requires_an_external_prepared_manifest_pin(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "evaluate",
+                "nll",
+                "--config",
+                "resolved.yaml",
+                "--prepared-manifest",
+                "validation/manifest.json",
+                "--prepared-manifest-sha256",
+                "a" * 64,
+                "--output",
+                "evaluation",
+            ]
+        )
+        self.assertEqual(args.prepared_manifest_sha256, "a" * 64)
+
+        with (
+            contextlib.redirect_stderr(io.StringIO()),
+            self.assertRaises(SystemExit) as raised,
+        ):
+            parser.parse_args(
+                [
+                    "evaluate",
+                    "nll",
+                    "--config",
+                    "resolved.yaml",
+                    "--prepared-manifest",
+                    "validation/manifest.json",
+                    "--output",
+                    "evaluation",
+                ]
+            )
+        self.assertEqual(raised.exception.code, 2)
+
     def test_materialize_cooldown_parser_defaults_to_real_materialization(self) -> None:
         args = build_parser().parse_args(
             [
