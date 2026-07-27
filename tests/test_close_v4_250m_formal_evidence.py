@@ -10,6 +10,8 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
+from twen.governed import build_governed_plan
+
 ROOT = Path(__file__).resolve().parents[1]
 CAPACITY_TEMPLATE = ROOT / "locks/base-data-sources-v4-250m.capacity-attestation.json"
 READINESS_TEMPLATE = ROOT / "locks/base-dense-v4-250m-pilot.readiness.json"
@@ -242,13 +244,30 @@ def test_closed_outputs_pass_data_and_formal_gates_but_never_authorize_launch(
     assert readiness["formal_validation_gate"]["passed"] is True
     assert readiness["formal_validation_gate"]["authorizes_training"] is False
     assert readiness["calibration_gate"]["passed"] is False
-    assert readiness["pause_evaluation_policy"]["controller_implemented"] is False
+    assert readiness["pause_evaluation_policy"]["controller_implemented"] is True
     assert readiness["launch_enabled"] is False
     assert readiness["authorizes_training"] is False
     assert readiness["launch_command_after_all_gates_pass"] is None
+    assert Path(str(readiness["project_root"])).resolve() == ROOT.resolve()
+    assert readiness["governed_controller"]["implemented"] is True
+    assert readiness["launch_command_capabilities"][
+        "automatically_pauses_at_policy_thresholds"
+    ] is True
+    assert readiness["launch_command_capabilities"][
+        "automatically_runs_checkpoint_validation"
+    ] is True
     assert any("13M low-LR calibration" in item for item in readiness["blockers"])
-    assert any("external governed pause" in item for item in readiness["blockers"])
+    assert not any("external governed pause" in item for item in readiness["blockers"])
     assert not any("formal train/validation" in item for item in readiness["blockers"])
+    nested_readiness = tmp_path / "bundle" / "readiness.json"
+    nested_readiness.parent.mkdir()
+    nested_readiness.write_text(json.dumps(readiness), encoding="utf-8")
+    governed_plan = build_governed_plan(nested_readiness)
+    assert Path(str(governed_plan["project_root"])).resolve() == ROOT.resolve()
+    assert not any(
+        "controller implementation" in str(item)
+        for item in governed_plan["readiness_issues"]
+    )
 
 
 def test_capacity_underfill_fails_before_any_output() -> None:

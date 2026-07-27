@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -8,6 +9,7 @@ import pytest
 
 from twen.source_identity import twen_source_tree_sha256
 from twen.training.engine import _checkpoint
+from twen.training.logging import JsonlMetricLogger
 
 
 def _write_tree(root: Path, files: tuple[tuple[str, bytes], ...]) -> None:
@@ -52,7 +54,7 @@ def test_repository_source_tree_identity_is_sha256() -> None:
     assert set(identity) <= set("0123456789abcdef")
 
 
-def test_checkpoint_metadata_records_source_tree_identity() -> None:
+def test_checkpoint_metadata_records_source_tree_identity(tmp_path: Path) -> None:
     captured: dict[str, object] = {}
 
     class Manager:
@@ -129,6 +131,11 @@ def test_checkpoint_metadata_records_source_tree_identity() -> None:
         ),
     )
     state = SimpleNamespace(global_step=3, committed_tokens=4096)
+    config_path = tmp_path / "formal.yaml"
+    config_path.write_text("run_id: fixture\n", encoding="utf-8")
+    metric_logger = JsonlMetricLogger(tmp_path / "metrics.jsonl")
+    for step, tokens in ((1, 1024), (2, 2048), (3, 4096)):
+        assert metric_logger.log(step, {"tokens": tokens, "loss": 2.0})
     completed = SimpleNamespace(stdout="commit\n")
     with (
         patch("twen.training.engine.subprocess.run", return_value=completed),
@@ -144,11 +151,21 @@ def test_checkpoint_metadata_records_source_tree_identity() -> None:
             report,  # type: ignore[arg-type]
             kind="periodic",
             boundary=None,
+            config_path=config_path,
+            metric_logger=metric_logger,
         )
 
     metadata = captured["extra_metadata"]
     assert isinstance(metadata, dict)
     assert metadata["source_tree_sha256"] == "s" * 64
+    assert metadata["config"] == {
+        "path": str(config_path.resolve()),
+        "sha256": hashlib.sha256(config_path.read_bytes()).hexdigest(),
+        "preflight_fingerprint": "c" * 64,
+    }
+    assert metadata["metrics_prefix"]["through_step"] == 3
+    assert metadata["metrics_prefix"]["committed_tokens"] == 4096
+    assert metadata["metrics_prefix"]["record_count"] == 3
     assert metadata["data_mode"] == "prepared-text"
     assert metadata["teacher_kd_manifest_sha256"] is None
     assert metadata["data_manifests"]["teacher_kd"] is None

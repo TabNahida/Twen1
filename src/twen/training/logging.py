@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -223,6 +224,93 @@ class JsonlMetricLogger:
             finally:
                 os.close(directory_fd)
             self._last_step = last
+
+    def snapshot_prefix(
+        self,
+        *,
+        through_step: int,
+        committed_tokens: int,
+    ) -> dict[str, Any]:
+        """Return the exact fsync'd byte-prefix identity for a checkpoint.
+
+        Checkpoint metadata is itself covered by the checkpoint manifest.  By
+        embedding the current metrics byte length and SHA256 there, a later
+        controller can authenticate the historical loss/gradient series even
+        after more JSONL rows have been appended.
+        """
+
+        if (
+            isinstance(through_step, bool)
+            or not isinstance(through_step, int)
+            or through_step < 0
+        ):
+            raise ValueError("through_step must be a non-negative integer")
+        if (
+            isinstance(committed_tokens, bool)
+            or not isinstance(committed_tokens, int)
+            or committed_tokens < 0
+        ):
+            raise ValueError("committed_tokens must be a non-negative integer")
+        with self._lock:
+            expected_last_step = through_step if through_step > 0 else -1
+            if self._last_step != expected_last_step:
+                raise RuntimeError(
+                    "metrics logger does not end at the checkpoint step: "
+                    f"{self._last_step} != {expected_last_step}"
+                )
+            payload = self.path.read_bytes() if self.path.is_file() else b""
+            if payload and not payload.endswith(b"\n"):
+                raise RuntimeError("metrics JSONL has a torn final record")
+            rows: list[dict[str, Any]] = []
+            for line_number, raw_line in enumerate(payload.splitlines(), start=1):
+                if not raw_line:
+                    raise RuntimeError(
+                        f"metrics JSONL contains a blank record at line {line_number}"
+                    )
+                try:
+                    row = json.loads(raw_line)
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise RuntimeError(
+                        f"metrics JSONL line {line_number} is invalid"
+                    ) from exc
+                if not isinstance(row, dict):
+                    raise RuntimeError(
+                        f"metrics JSONL line {line_number} is not an object"
+                    )
+                if (_serialize(row) + "\n").encode("utf-8") != raw_line + b"\n":
+                    raise RuntimeError(
+                        f"metrics JSONL line {line_number} is not canonical"
+                    )
+                rows.append(row)
+            steps = [row.get("step") for row in rows]
+            if steps != list(range(1, through_step + 1)):
+                raise RuntimeError(
+                    f"metrics JSONL is not the exact 1..{through_step} prefix"
+                )
+            if through_step:
+                last_tokens = rows[-1].get("tokens")
+                if (
+                    isinstance(last_tokens, bool)
+                    or not isinstance(last_tokens, int)
+                    or last_tokens != committed_tokens
+                ):
+                    raise RuntimeError(
+                        "metrics JSONL committed tokens do not match the checkpoint"
+                    )
+            elif committed_tokens != 0:
+                raise RuntimeError(
+                    "a zero-step metrics prefix cannot authenticate committed tokens"
+                )
+            return {
+                "kind": "twen_metrics_jsonl_prefix",
+                "schema_version": 1,
+                "relative_path": self.path.name,
+                "through_step": through_step,
+                "committed_tokens": committed_tokens,
+                "record_count": len(rows),
+                "prefix_size_bytes": len(payload),
+                "prefix_sha256": hashlib.sha256(payload).hexdigest(),
+            }
 
 
 class JsonlEventLogger:

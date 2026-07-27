@@ -34,6 +34,15 @@ def _positive_int(value: str) -> int:
     return parsed
 
 
+def _sha256_argument(value: str) -> str:
+    normalized = value.lower()
+    if len(normalized) != 64 or any(
+        character not in "0123456789abcdef" for character in normalized
+    ):
+        raise argparse.ArgumentTypeError("must be a 64-digit SHA256")
+    return normalized
+
+
 def _enable_expandable_segments_allocator() -> None:
     """Honor the runtime allocator contract without discarding user options.
 
@@ -690,10 +699,27 @@ def _cmd_checkpoint_request(args: argparse.Namespace) -> int:
 
 def _cmd_train(args: argparse.Namespace) -> int:
     from .io.offline import enforce_offline_environment
+    from .utils import sha256_file
 
     # Set offline flags before importing Transformers or the training engine.
     enforce_offline_environment()
+    config_path = Path(args.config).expanduser().resolve()
+    expected_config_sha = args.expected_config_sha256
+    if (
+        expected_config_sha is not None
+        and sha256_file(config_path) != expected_config_sha
+    ):
+        raise ConfigError(
+            "config SHA256 differs from --expected-config-sha256 before loading"
+        )
     config = load_train_config(args.config)
+    if (
+        expected_config_sha is not None
+        and sha256_file(config_path) != expected_config_sha
+    ):
+        raise ConfigError(
+            "config SHA256 changed while loading the governed configuration"
+        )
     if args.profile is not None:
         config.runtime.profile = bool(args.profile)
     if config.runtime.expandable_segments:
@@ -732,11 +758,13 @@ def _cmd_train(args: argparse.Namespace) -> int:
     return int(
         run_training(
             config,
+            config_path=args.config,
             resume=args.resume,
             fork_from=args.fork_from,
             dry_run=args.dry_run,
             graph_smoke=args.graph_smoke,
             progress=args.progress,
+            pause_at_tokens=args.pause_at_tokens,
         )
     )
 
@@ -1249,6 +1277,12 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--stage", required=True, choices=("dense-oracle", "sparse"))
     train.add_argument("--config", required=True)
     train.add_argument(
+        "--expected-config-sha256",
+        type=_sha256_argument,
+        default=None,
+        help="optional fail-closed identity for a governed config load",
+    )
+    train.add_argument(
         "--resume",
         default="auto",
         help="auto (default), none, or an explicit checkpoint directory",
@@ -1265,6 +1299,16 @@ def build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=None,
         help="override runtime.profile for a bounded PyTorch trace",
+    )
+    train.add_argument(
+        "--pause-at-tokens",
+        type=_positive_int,
+        default=None,
+        help=(
+            "after the first complete optimizer batch reaching this committed-token "
+            "threshold, save a retention-pinned milestone checkpoint and exit; "
+            "omitted by default"
+        ),
     )
     validation_mode = train.add_mutually_exclusive_group()
     validation_mode.add_argument(

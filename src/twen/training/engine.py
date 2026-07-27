@@ -8,6 +8,7 @@ import math
 import os
 import platform
 import subprocess
+import sys
 import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -1507,6 +1508,47 @@ def _optimizer_checkpoint_contract(config: TrainConfig) -> dict[str, Any]:
     return contract
 
 
+def _project_dependency_lock() -> tuple[Path, str]:
+    """Return the repository lock file that governs the running source tree."""
+
+    project_root = Path(__file__).resolve().parents[3]
+    lock_path = project_root / "uv.lock"
+    if not lock_path.is_file():
+        lock_path = project_root / "pyproject.toml"
+    if not lock_path.is_file():
+        raise RuntimeError("neither uv.lock nor pyproject.toml exists beside the source tree")
+    return lock_path.resolve(), sha256_file(lock_path)
+
+
+def _linux_process_start_time_ticks(pid: int | None = None) -> int:
+    """Read Linux ``/proc/<pid>/stat`` field 22 without splitting ``comm``."""
+
+    process_id = os.getpid() if pid is None else int(pid)
+    raw = Path(f"/proc/{process_id}/stat").read_text(encoding="utf-8")
+    close = raw.rfind(")")
+    if close < 0:
+        raise RuntimeError(f"/proc/{process_id}/stat has no command terminator")
+    fields_from_state = raw[close + 2 :].split()
+    # The sliced sequence begins at field 3 (state); starttime is field 22.
+    try:
+        value = int(fields_from_state[19])
+    except (IndexError, ValueError) as exc:
+        raise RuntimeError(f"/proc/{process_id}/stat has no valid starttime") from exc
+    if value < 0:
+        raise RuntimeError(f"/proc/{process_id}/stat has a negative starttime")
+    return value
+
+
+def _linux_process_cmdline(pid: int | None = None) -> list[str]:
+    process_id = os.getpid() if pid is None else int(pid)
+    payload = Path(f"/proc/{process_id}/cmdline").read_bytes()
+    return [
+        item.decode("utf-8", errors="surrogateescape")
+        for item in payload.split(b"\0")
+        if item
+    ]
+
+
 def _checkpoint(
     manager: CheckpointManager,
     stateful: Mapping[str, Any],
@@ -1517,8 +1559,11 @@ def _checkpoint(
     *,
     kind: str,
     boundary: Any | None,
+    config_path: Path | None = None,
     tag: str | None = None,
     reason: str | None = None,
+    governed_pause_at_tokens: int | None = None,
+    metric_logger: JsonlMetricLogger | None = None,
     event_logger: JsonlEventLogger | None = None,
 ) -> Path:
     import torch
@@ -1542,8 +1587,24 @@ def _checkpoint(
         )
     except (OSError, subprocess.SubprocessError):
         commit, dirty = "unknown", None
-    lock_path = Path("uv.lock") if Path("uv.lock").is_file() else Path("pyproject.toml")
-    dependency_hash = sha256_file(lock_path) if lock_path.is_file() else None
+    lock_path, dependency_hash = _project_dependency_lock()
+    checkpoint_config_path = (
+        config_path.expanduser().resolve() if config_path is not None else None
+    )
+    checkpoint_config_sha256 = (
+        sha256_file(checkpoint_config_path)
+        if checkpoint_config_path is not None and checkpoint_config_path.is_file()
+        else None
+    )
+    checkpoint_state = boundary.trainer_state if boundary is not None else state
+    metrics_prefix = (
+        metric_logger.snapshot_prefix(
+            through_step=checkpoint_state.global_step,
+            committed_tokens=checkpoint_state.committed_tokens,
+        )
+        if metric_logger is not None
+        else None
+    )
     fields = {
         "kind": kind,
         "tag": tag,
@@ -1568,11 +1629,26 @@ def _checkpoint(
                 tag=tag,
                 extra_metadata={
                     "reason": reason,
+                    **(
+                        {"governed_pause_at_tokens": governed_pause_at_tokens}
+                        if governed_pause_at_tokens is not None
+                        else {}
+                    ),
                     "git_commit": commit,
                     "git_dirty": dirty,
                     "source_tree_sha256": report.source_tree_sha256,
                     "dependency_lock": str(lock_path),
                     "dependency_lock_sha256": dependency_hash,
+                    "config": {
+                        "path": (
+                            str(checkpoint_config_path)
+                            if checkpoint_config_path is not None
+                            else None
+                        ),
+                        "sha256": checkpoint_config_sha256,
+                        "preflight_fingerprint": report.config_fingerprint,
+                    },
+                    "metrics_prefix": metrics_prefix,
                     "data_mode": _training_data_mode(config),
                     "source_mix": {
                         **_source_mix_log_contract(report),
@@ -1638,6 +1714,18 @@ def _checkpoint(
                                 "quality_cooldown_teacher_kd_manifest_sha256",
                                 None,
                             )
+                        ),
+                    },
+                    "phase_disjointness_attestation": {
+                        "path": getattr(
+                            config.data,
+                            "phase_disjointness_attestation_path",
+                            None,
+                        ),
+                        "sha256": getattr(
+                            config.data,
+                            "phase_disjointness_attestation_sha256",
+                            None,
                         ),
                     },
                     "mtp": {
@@ -2309,19 +2397,104 @@ def _run_graph_smoke(config: TrainConfig, report: PreflightReport) -> int:
         finalize_distributed(context, barrier=False)
 
 
+def _validate_pause_at_tokens(
+    pause_at_tokens: int | None,
+    *,
+    max_tokens: int,
+) -> int | None:
+    """Validate the optional runtime-only governed pause threshold."""
+
+    if pause_at_tokens is None:
+        return None
+    if isinstance(pause_at_tokens, bool) or not isinstance(pause_at_tokens, int):
+        raise ValueError("pause_at_tokens must be an integer")
+    if pause_at_tokens <= 0:
+        raise ValueError("pause_at_tokens must be positive")
+    if pause_at_tokens > max_tokens:
+        raise ValueError("pause_at_tokens cannot exceed optimizer.max_tokens")
+    return pause_at_tokens
+
+
+def _governed_pause_reached(
+    *,
+    previous_tokens: int,
+    committed_tokens: int,
+    pause_at_tokens: int | None,
+    max_tokens: int,
+) -> bool:
+    """Return true only for the first committed batch crossing an interim threshold."""
+
+    return bool(
+        pause_at_tokens is not None
+        and pause_at_tokens < max_tokens
+        and previous_tokens < pause_at_tokens <= committed_tokens
+    )
+
+
+def _save_governed_pause_checkpoint(
+    manager: CheckpointManager,
+    stateful: Mapping[str, Any],
+    state: TrainerState,
+    cursor: TrainingDataCursor,
+    config: TrainConfig,
+    report: PreflightReport,
+    *,
+    pause_at_tokens: int,
+    config_path: Path | None = None,
+    metric_logger: JsonlMetricLogger | None,
+    event_logger: JsonlEventLogger | None,
+) -> Path:
+    """Persist the committed threshold as a retention-pinned milestone."""
+
+    return _checkpoint(
+        manager,
+        stateful,
+        state,
+        cursor,
+        config,
+        report,
+        # CheckpointManager intentionally retains every milestone. Governed
+        # validation points must remain reproducible even after later pauses;
+        # ordinary signal/STOP interrupts keep their independent keep=1
+        # recovery policy.
+        kind="milestone",
+        boundary=None,
+        config_path=config_path,
+        tag=f"governed-{pause_at_tokens:012d}",
+        reason="governed-token-threshold",
+        governed_pause_at_tokens=pause_at_tokens,
+        metric_logger=metric_logger,
+        event_logger=event_logger,
+    )
+
+
 def run_training(
     config: TrainConfig,
     *,
+    config_path: str | Path | None = None,
     resume: str = "auto",
     fork_from: str | None = None,
     dry_run: bool = False,
     graph_smoke: bool = False,
     progress: str = "auto",
+    pause_at_tokens: int | None = None,
 ) -> int:
     """Run one explicitly requested stage. This function is never called implicitly."""
 
     if dry_run and graph_smoke:
         raise ValueError("dry_run and graph_smoke are mutually exclusive")
+    if pause_at_tokens is not None:
+        pause_at_tokens = _validate_pause_at_tokens(
+            pause_at_tokens,
+            max_tokens=config.optimizer.max_tokens,
+        )
+    if graph_smoke and pause_at_tokens is not None:
+        raise ValueError("pause_at_tokens is not applicable to graph_smoke")
+    bound_config_path = (
+        Path(config_path).expanduser().resolve() if config_path is not None else None
+    )
+    if bound_config_path is not None and not bound_config_path.is_file():
+        raise ValueError(f"config_path does not exist: {bound_config_path}")
 
     report = run_coordinated_training_preflight(config)
     current_source_tree = twen_source_tree_sha256()
@@ -2377,6 +2550,7 @@ def run_training(
         manager.acquire_run_lock()
         if event_logger is not None:
             source_mix_contract = _source_mix_log_contract(report)
+            dependency_lock_path, dependency_lock_sha256 = _project_dependency_lock()
             session_file = RankZeroSessionFile(
                 run_dir / "rank0-session.json",
                 session_id=event_logger.session_id,
@@ -2386,6 +2560,22 @@ def run_training(
                     "rank": context.rank,
                     "world_size": context.world_size,
                     "hostname": platform.node(),
+                    "process_start_time_ticks": _linux_process_start_time_ticks(),
+                    "process_cmdline": _linux_process_cmdline(),
+                    "argv": list(sys.argv),
+                    "cwd": str(Path.cwd().resolve()),
+                    "config_path": (
+                        str(bound_config_path) if bound_config_path is not None else None
+                    ),
+                    "config_sha256": (
+                        sha256_file(bound_config_path)
+                        if bound_config_path is not None
+                        else None
+                    ),
+                    "config_fingerprint": report.config_fingerprint,
+                    "source_tree_sha256": report.source_tree_sha256,
+                    "dependency_lock": str(dependency_lock_path),
+                    "dependency_lock_sha256": dependency_lock_sha256,
                     "source_mix": source_mix_contract,
                     "allow_corpus_reuse": config.data.allow_corpus_reuse,
                 },
@@ -2420,6 +2610,7 @@ def run_training(
                     "source_mix": source_mix_contract,
                     **_data_governance_log_fields(report),
                     "progress_mode": progress,
+                    "pause_at_tokens": pause_at_tokens,
                     "profile_enabled": config.runtime.profile,
                     "profile_step_unit": PROFILE_STEP_UNIT,
                     "profile_wait_steps": config.runtime.profile_wait_steps,
@@ -2794,6 +2985,15 @@ def run_training(
                     )
                 session_status = "already_complete"
                 return 0
+            if (
+                pause_at_tokens is not None
+                and pause_at_tokens < config.optimizer.max_tokens
+                and state.committed_tokens >= pause_at_tokens
+            ):
+                raise RuntimeError(
+                    "resumed checkpoint has already reached --pause-at-tokens; "
+                    "the controller must advance to the next threshold"
+                )
             scheduler.step_tokens(state.committed_tokens)
             train_start_fields = {
                 "run_id": config.run_id,
@@ -2830,8 +3030,10 @@ def run_training(
                         report,
                         kind="interrupt",
                         boundary=None,
+                        config_path=bound_config_path,
                         tag=f"request-{request_sequence:06d}",
                         reason=reason or ("remote-stop" if stop_requested else "remote-checkpoint"),
+                        metric_logger=metric_logger,
                         event_logger=event_logger,
                     )
                     last_checkpoint_time = time.monotonic()
@@ -3219,9 +3421,11 @@ def run_training(
                             report,
                             kind="interrupt",
                             boundary=boundary,
+                            config_path=bound_config_path,
                             tag=f"request-{request_sequence:06d}",
                             reason=reason
                             or ("remote-stop" if stop_requested else "remote-checkpoint"),
+                            metric_logger=metric_logger,
                             event_logger=event_logger,
                         )
                         last_checkpoint_time = time.monotonic()
@@ -3480,11 +3684,17 @@ def run_training(
                 memory_metrics = _cuda_memory_metrics(context.device)
                 if metric_logger is not None:
                     metric_logger.log(state.global_step, averaged)
+                governed_pause_reached = _governed_pause_reached(
+                    previous_tokens=boundary.trainer_state.committed_tokens,
+                    committed_tokens=state.committed_tokens,
+                    pause_at_tokens=pause_at_tokens,
+                    max_tokens=config.optimizer.max_tokens,
+                )
                 due_step = state.global_step % config.checkpoint.every_steps == 0
                 due_time = (
                     time.monotonic() - last_checkpoint_time >= config.checkpoint.every_minutes * 60
                 )
-                if due_step or due_time:
+                if (due_step or due_time) and not governed_pause_reached:
                     _checkpoint(
                         manager,
                         stateful,
@@ -3494,6 +3704,8 @@ def run_training(
                         report,
                         kind="periodic",
                         boundary=None,
+                        config_path=bound_config_path,
+                        metric_logger=metric_logger,
                         event_logger=event_logger,
                     )
                     last_checkpoint_time = time.monotonic()
@@ -3575,6 +3787,31 @@ def run_training(
                             **telemetry_record,
                         },
                     )
+                if governed_pause_reached:
+                    assert pause_at_tokens is not None
+                    pause_path = _save_governed_pause_checkpoint(
+                        manager,
+                        stateful,
+                        state,
+                        cursor,
+                        config,
+                        report,
+                        pause_at_tokens=pause_at_tokens,
+                        config_path=bound_config_path,
+                        metric_logger=metric_logger,
+                        event_logger=event_logger,
+                    )
+                    pause_fields = {
+                        "checkpoint": str(pause_path),
+                        "threshold_tokens": pause_at_tokens,
+                        "step": state.global_step,
+                        "tokens": state.committed_tokens,
+                    }
+                    if event_logger is not None:
+                        event_logger.log("governed_pause", pause_fields)
+                    _rank_zero_print(context, {"event": "governed_pause", **pause_fields})
+                    session_status = "paused"
+                    return 0
 
             final_path = _checkpoint(
                 manager,
@@ -3585,7 +3822,9 @@ def run_training(
                 report,
                 kind="milestone",
                 boundary=None,
+                config_path=bound_config_path,
                 tag="complete",
+                metric_logger=metric_logger,
                 event_logger=event_logger,
             )
             if event_logger is not None:

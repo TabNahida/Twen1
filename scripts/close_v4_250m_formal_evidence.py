@@ -825,7 +825,6 @@ def _remaining_blockers(readiness: Mapping[str, Any]) -> list[str]:
     retained_fragments = (
         "PENDING sentinels",
         "13M low-LR calibration",
-        "external governed pause",
         "final launch config",
         "Chinese semantic conversion noise",
     )
@@ -911,12 +910,31 @@ def _closed_readiness(
         )
     ):
         raise ClosureError("formal train/validation union gates did not close")
+    pause = result.get("pause_evaluation_policy")
+    capabilities = result.get("launch_command_capabilities")
+    if not isinstance(pause, dict) or not isinstance(capabilities, dict):
+        raise ClosureError("readiness controller capability contracts are invalid")
+    pause.update(
+        {
+            "controller_implemented": True,
+            "current_launch_command_auto_pauses": False,
+            "current_launch_command_runs_validation": False,
+        }
+    )
+    capabilities.update(
+        {
+            "starts_training_when_explicitly_invoked": False,
+            "automatically_pauses_at_policy_thresholds": True,
+            "automatically_runs_checkpoint_validation": True,
+            "automatically_enforces_post_launch_hard_stops": True,
+        }
+    )
     result.update(
         {
             "status": (
-                "blocked_pending_calibration_controller_manual_review_"
-                "and_final_authorization"
+                "blocked_pending_calibration_manual_review_and_final_authorization"
             ),
+            "project_root": str(ROOT.resolve()),
             "required_capacity_attestation": str(capacity_path.resolve()),
             "capacity_attestation": copy.deepcopy(capacity_identity),
             "blockers": _remaining_blockers(result),
@@ -924,18 +942,25 @@ def _closed_readiness(
             "authorizes_training": False,
             "training_started": False,
             "launch_command_after_all_gates_pass": None,
-            "launch_command_status": "pending_final_config_authorization_and_controller",
+            "launch_command_status": (
+                "pending_final_config_calibration_manual_review_and_authorization"
+            ),
+            "governed_controller": {
+                "path": str((ROOT / "scripts/govern_v4_training.py").resolve()),
+                "sha256": sha256_file(ROOT / "scripts/govern_v4_training.py"),
+                "twen_source_tree_sha256": twen_source_tree_sha256(),
+                "implemented": True,
+            },
             "closure": copy.deepcopy(closure_identity),
         }
     )
     calibration = result["calibration_gate"]
-    pause = result["pause_evaluation_policy"]
     if (
         calibration.get("passed") is not False
         or calibration.get("authorizes_training") is not False
-        or pause.get("controller_implemented") is not False
+        or pause.get("controller_implemented") is not True
     ):
-        raise ClosureError("closure attempted to bypass calibration/controller gates")
+        raise ClosureError("closure attempted to bypass calibration gates")
     unsigned = dict(result)
     result["readiness_fingerprint"] = _canonical_sha256(unsigned)
     return result

@@ -55,6 +55,18 @@ class JsonlMetricLoggerTest(unittest.TestCase):
             records = [json.loads(line) for line in path.read_text().splitlines()]
             self.assertEqual([item["step"] for item in records], [1, 2])
 
+    def test_zero_step_checkpoint_authenticates_an_empty_metrics_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            logger = JsonlMetricLogger(Path(directory) / "metrics.jsonl")
+            binding = logger.snapshot_prefix(through_step=0, committed_tokens=0)
+            self.assertEqual(binding["record_count"], 0)
+            self.assertEqual(binding["prefix_size_bytes"], 0)
+            self.assertEqual(
+                binding["prefix_sha256"],
+                "e3b0c44298fc1c149afbf4c8996fb924"
+                "27ae41e4649b934ca495991b7852b855",
+            )
+
 
 class StructuredTrainingLogTest(unittest.TestCase):
     def test_event_log_has_session_and_utc_timestamp(self) -> None:
