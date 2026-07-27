@@ -39,7 +39,7 @@ REQUIRED_FINITE_METRICS = (
 )
 
 FORMAL_V4_PRIMARY_SOURCE_MIX = {
-    "chinese_fineweb2_cmn_hani": 2_400,
+    "chinese_wikipedia_zh_20231101": 2_400,
     "code_github_clean_allowlisted": 900,
     "code_stackv2_edu_permissive": 400,
     "english_fineweb_edu_dedup": 2_500,
@@ -51,7 +51,7 @@ FORMAL_V4_PRIMARY_SOURCE_MIX = {
 }
 
 FORMAL_V4_COOLDOWN_SOURCE_MIX = {
-    "chinese_fineweb2_cmn_hani": 2_500,
+    "chinese_wikipedia_zh_20231101": 2_500,
     "code_github_clean_allowlisted": 500,
     "education_libretexts_permissive": 400,
     "math_finemath_4plus": 2_200,
@@ -223,13 +223,91 @@ FORMAL_V4_DYNAMIC_CONFIG_IDENTITY_FIELDS = (
     "phase_disjointness_attestation_sha256",
 )
 FORMAL_V4_NORMALIZED_CONFIG_SHA256 = (
-    "c7ea43f5f97ea042fcf676cdeafaf17a4e7a64b1db9079937da57086dc94d81e"
+    "3902ecfbe05a73c0079fa88ddd3336c064c785b059f9bf30316f40b927ea7c81"
 )
 FORMAL_V4_DISJOINTNESS_ALGORITHMS = {
     "stable_id_exact": "source-scoped-authenticated-stable-id-intersection-v1",
     "normalized_text_exact": "unicode-nfkc-whitespace-sha256-intersection-v1",
     "near_duplicate": "lexical-5gram-one-permutation-minhash-lsh-v1",
 }
+FORMAL_V4_CHINESE_SEMANTIC_SOURCE_ID = "chinese_wikipedia_zh_20231101"
+FORMAL_V4_CHINESE_SEMANTIC_REQUIRED_BUNDLE = {
+    "manifest_kind": "twen_v4_chinese_semantic_noise_bundle",
+    "complete_kind": "twen_v4_chinese_semantic_noise_complete",
+    "attestation_kind": "twen_v4_chinese_semantic_noise_attestation",
+}
+FORMAL_V4_CHINESE_SEMANTIC_REQUIRED_GATES = {
+    "all_selected_shards_authenticated": True,
+    "complete_streaming_scan": True,
+    "control_samples_per_phase_gte": 32,
+    "high_precision_conversion_documents_eq": 0,
+    "malformed_punctuation_documents_eq": 0,
+    "manual_review_passed": True,
+    "reviewed_at_timezone_aware_iso8601_required": True,
+    "reviewer_placeholder_forbidden": True,
+    "risk_samples_per_phase_gte": 32,
+}
+FORMAL_V4_CHINESE_SEMANTIC_SCANNER_POLICY = {
+    "conversion_markers": [
+        "da_nian_ye_substitution",
+        "engine_substitution",
+        "brand_command_substitution",
+        "view_character_expansion",
+        "cannot_substitution",
+        "appeared_substitution",
+    ],
+    "high_precision_conversion_documents_eq": 0,
+    "malformed_punctuation_documents_eq": 0,
+    "manual_unacceptable_samples_eq": 0,
+    "risk_samples_per_phase_gte": 32,
+    "control_samples_per_phase_gte": 32,
+    "reviewer_placeholder_forbidden": True,
+    "reviewed_at_timezone_aware_iso8601_required": True,
+}
+FORMAL_V4_CHINESE_SEMANTIC_AUDIT_GATES = {
+    "all_selected_shards_authenticated": True,
+    "complete_streaming_scan": True,
+    "high_precision_conversion_documents": 0,
+    "high_precision_conversion_passed": True,
+    "malformed_punctuation_documents": 0,
+    "malformed_punctuation_passed": True,
+    "manual_review_passed": True,
+}
+FORMAL_V4_WIKIPEDIA_LICENSE_CONTRACT = {
+    "source_id": FORMAL_V4_CHINESE_SEMANTIC_SOURCE_ID,
+    "repo_id": "wikimedia/wikipedia",
+    "revision": "b04c8d1ceb2f5cd4588862100d08de323dccfbaa",
+    "declared_license": "CC-BY-SA-3.0 AND GFDL",
+    "scope": "formal-v4-250m-primary-and-cooldown-only",
+    "attribution_fields": ["id", "url", "title"],
+    "obligations": [
+        "retain the generated attribution manifests with the training evidence",
+        "document the CC-BY-SA-3.0/GFDL source in model and data reports",
+        "perform a separate final review of model/distribution compliance",
+    ],
+}
+FORMAL_V4_WIKIPEDIA_LICENSE_FINGERPRINT = (
+    "fbc16551a1d7c0b9020852be97f751af2759442bd4d22bade707cd50a4fa3762"
+)
+FORMAL_V4_RELEASE_KIND = "twen_v4_250m_formal_release"
+FORMAL_V4_RELEASE_BUNDLE_KIND = "twen_v4_250m_formal_release_bundle"
+FORMAL_V4_RELEASE_COMPLETE_KIND = "twen_v4_250m_formal_release_complete"
+FORMAL_V4_RELEASE_CONFIG_NAME = "dense-v4-250m-pilot.yaml"
+FORMAL_V4_RELEASE_READINESS_NAME = "readiness.json"
+FORMAL_V4_RELEASE_MANIFEST_NAME = "MANIFEST.json"
+FORMAL_V4_RELEASE_COMPLETE_NAME = "COMPLETE"
+FORMAL_V4_CLOSURE_BUNDLE_KIND = (
+    "twen_v4_250m_formal_evidence_closure_bundle"
+)
+FORMAL_V4_CLOSURE_COMPLETE_KIND = (
+    "twen_v4_250m_formal_evidence_closure_complete"
+)
+FORMAL_V4_CALIBRATION_ATTESTATION_KIND = (
+    "twen_v4_13m_calibration_release_attestation"
+)
+FORMAL_V4_CALIBRATION_COMPLETE_KIND = (
+    "twen_v4_13m_calibration_release_attestation_complete"
+)
 
 
 class GovernedControllerError(RuntimeError):
@@ -254,6 +332,35 @@ def _canonical_sha256(value: Any) -> str:
         separators=(",", ":"),
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _load_authenticated_script(
+    path: Path,
+    *,
+    module_name: str,
+    label: str,
+) -> ModuleType:
+    resolved = path.resolve()
+    if not resolved.is_file():
+        raise GovernedControllerError(f"{label} does not exist: {resolved}")
+    source_before = resolved.read_bytes()
+    spec = importlib.util.spec_from_file_location(module_name, resolved)
+    if spec is None or spec.loader is None:
+        raise GovernedControllerError(f"cannot load {label}: {resolved}")
+    module = importlib.util.module_from_spec(spec)
+    previous = sys.modules.get(module_name)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        if previous is None:
+            sys.modules.pop(module_name, None)
+        else:
+            sys.modules[module_name] = previous
+        raise
+    if resolved.read_bytes() != source_before:
+        raise GovernedControllerError(f"{label} changed while loading: {resolved}")
+    return module
 
 
 def _sha256_string(value: Any, *, label: str) -> str:
@@ -401,6 +508,1394 @@ def _optional_binding(
     if not path.is_file():
         return {"path": str(path), "sha256": None}, f"{label} does not exist: {path}"
     return {"path": str(path), "sha256": sha256_file(path)}, None
+
+
+def _authenticated_file_identity(
+    value: Any,
+    *,
+    expected_path: Path,
+    label: str,
+) -> dict[str, Any]:
+    identity = _mapping(value, label=label)
+    path = Path(str(identity.get("path"))).expanduser().resolve()
+    expected = expected_path.expanduser().resolve()
+    size = _integer(identity.get("size"), label=f"{label}.size")
+    digest = _sha256_string(identity.get("sha256"), label=f"{label}.sha256")
+    if (
+        path != expected
+        or not path.is_file()
+        or path.stat().st_size != size
+        or sha256_file(path) != digest
+    ):
+        raise GovernedControllerError(f"{label} identity differs")
+    return {
+        "path": str(path),
+        "size": size,
+        "sha256": digest,
+    }
+
+
+def _require_exact_keys(
+    value: Mapping[str, Any],
+    expected: set[str],
+    *,
+    label: str,
+) -> None:
+    if set(value) != expected:
+        raise GovernedControllerError(
+            f"{label} key inventory differs: expected {sorted(expected)}, "
+            f"got {sorted(str(key) for key in value)}"
+        )
+
+
+def _current_file_identity(path: Path, *, label: str) -> dict[str, Any]:
+    resolved = path.expanduser().resolve()
+    if not resolved.is_file() or resolved.is_symlink():
+        raise GovernedControllerError(f"{label} is missing or is a symlink: {resolved}")
+    return {
+        "path": str(resolved),
+        "size": resolved.stat().st_size,
+        "sha256": sha256_file(resolved),
+    }
+
+
+def _relative_file_identity(
+    root: Path,
+    relative: str,
+    value: Any,
+    *,
+    label: str,
+) -> dict[str, Any]:
+    identity = _mapping(value, label=label)
+    _require_exact_keys(identity, {"path", "size", "sha256"}, label=label)
+    if identity.get("path") != relative:
+        raise GovernedControllerError(f"{label}.path differs")
+    path = (root / relative).resolve()
+    if root.resolve() not in path.parents:
+        raise GovernedControllerError(f"{label}.path escapes its bundle")
+    actual = _current_file_identity(path, label=label)
+    if (
+        identity.get("size") != actual["size"]
+        or _sha256_string(identity.get("sha256"), label=f"{label}.sha256")
+        != actual["sha256"]
+    ):
+        raise GovernedControllerError(f"{label} identity differs")
+    return actual
+
+
+def _strict_directory_files(
+    root: Path,
+    *,
+    expected_files: set[str],
+    label: str,
+) -> None:
+    resolved = root.expanduser().resolve()
+    if not resolved.is_dir() or resolved.is_symlink():
+        raise GovernedControllerError(f"{label} is missing or is a symlink: {resolved}")
+    entries = list(resolved.rglob("*"))
+    if any(path.is_symlink() for path in entries):
+        raise GovernedControllerError(f"{label} contains a symlink")
+    observed_files = {
+        path.relative_to(resolved).as_posix()
+        for path in entries
+        if path.is_file()
+    }
+    if observed_files != expected_files:
+        raise GovernedControllerError(
+            f"{label} file inventory differs: expected {sorted(expected_files)}, "
+            f"got {sorted(observed_files)}"
+        )
+    expected_directories = {
+        parent.as_posix()
+        for relative in expected_files
+        for parent in Path(relative).parents
+        if parent.as_posix() != "."
+    }
+    observed_directories = {
+        path.relative_to(resolved).as_posix()
+        for path in entries
+        if path.is_dir()
+    }
+    if observed_directories != expected_directories:
+        raise GovernedControllerError(f"{label} directory inventory differs")
+
+
+def _validate_readiness_fingerprint(
+    readiness: Mapping[str, Any],
+    *,
+    required: bool,
+) -> str | None:
+    raw = readiness.get("readiness_fingerprint")
+    if raw is None and not required:
+        return None
+    fingerprint = _sha256_string(raw, label="readiness.readiness_fingerprint")
+    unsigned = {
+        key: value
+        for key, value in readiness.items()
+        if key != "readiness_fingerprint"
+    }
+    if _canonical_sha256(unsigned) != fingerprint:
+        raise GovernedControllerError("readiness fingerprint is invalid")
+    return fingerprint
+
+
+def _authenticate_closure_release_binding(
+    value: Any,
+    *,
+    project_root: Path,
+) -> dict[str, Any]:
+    binding = _mapping(value, label="release contract formal_closure")
+    _require_exact_keys(
+        binding,
+        {
+            "path",
+            "manifest_sha256",
+            "complete_sha256",
+            "bundle_fingerprint",
+        },
+        label="release contract formal_closure",
+    )
+    root = _project_path(
+        project_root,
+        binding.get("path"),
+        label="release contract formal_closure.path",
+    )
+    expected_files = {
+        "capacity-attestation.json",
+        "readiness.json",
+        FORMAL_V4_RELEASE_MANIFEST_NAME,
+        FORMAL_V4_RELEASE_COMPLETE_NAME,
+    }
+    _strict_directory_files(
+        root,
+        expected_files=expected_files,
+        label="formal closure bundle",
+    )
+    manifest_path = root / FORMAL_V4_RELEASE_MANIFEST_NAME
+    complete_path = root / FORMAL_V4_RELEASE_COMPLETE_NAME
+    manifest = _read_json(manifest_path, label="formal closure MANIFEST")
+    complete = _read_json(complete_path, label="formal closure COMPLETE")
+    manifest_unsigned = {
+        key: item
+        for key, item in manifest.items()
+        if key != "bundle_fingerprint"
+    }
+    bundle_fingerprint = _sha256_string(
+        manifest.get("bundle_fingerprint"),
+        label="formal closure bundle_fingerprint",
+    )
+    if (
+        manifest.get("schema_version") != SCHEMA_VERSION
+        or manifest.get("kind") != FORMAL_V4_CLOSURE_BUNDLE_KIND
+        or manifest.get("launch_enabled") is not False
+        or manifest.get("authorizes_training") is not False
+        or manifest.get("training_started") is not False
+        or _canonical_sha256(manifest_unsigned) != bundle_fingerprint
+    ):
+        raise GovernedControllerError("formal closure MANIFEST contract differs")
+    if (
+        complete.get("schema_version") != SCHEMA_VERSION
+        or complete.get("kind") != FORMAL_V4_CLOSURE_COMPLETE_KIND
+        or complete.get("manifest") != FORMAL_V4_RELEASE_MANIFEST_NAME
+        or complete.get("manifest_sha256") != sha256_file(manifest_path)
+        or complete.get("bundle_fingerprint") != bundle_fingerprint
+        or complete.get("launch_enabled") is not False
+        or complete.get("authorizes_training") is not False
+        or complete.get("training_started") is not False
+    ):
+        raise GovernedControllerError(
+            "formal closure COMPLETE does not authenticate MANIFEST"
+        )
+    manifest_sha = sha256_file(manifest_path)
+    complete_sha = sha256_file(complete_path)
+    if (
+        _sha256_string(
+            binding.get("manifest_sha256"),
+            label="release contract formal_closure.manifest_sha256",
+        )
+        != manifest_sha
+        or _sha256_string(
+            binding.get("complete_sha256"),
+            label="release contract formal_closure.complete_sha256",
+        )
+        != complete_sha
+        or binding.get("bundle_fingerprint") != bundle_fingerprint
+    ):
+        raise GovernedControllerError("release formal_closure identity differs")
+    files = _mapping(manifest.get("files"), label="formal closure MANIFEST.files")
+    if set(files) != {"capacity-attestation.json", "readiness.json"}:
+        raise GovernedControllerError("formal closure payload inventory differs")
+    payloads = {
+        relative: _relative_file_identity(
+            root,
+            relative,
+            files[relative],
+            label=f"formal closure MANIFEST.files.{relative}",
+        )
+        for relative in ("capacity-attestation.json", "readiness.json")
+    }
+    return {
+        "path": str(root),
+        "manifest": _current_file_identity(
+            manifest_path,
+            label="formal closure MANIFEST",
+        ),
+        "complete": _current_file_identity(
+            complete_path,
+            label="formal closure COMPLETE",
+        ),
+        "bundle_fingerprint": bundle_fingerprint,
+        "payloads": payloads,
+        "closed_readiness": _read_json(
+            root / "readiness.json",
+            label="formal closure readiness",
+        ),
+    }
+
+
+def _authenticate_release_report_bundle(
+    value: Any,
+    *,
+    project_root: Path,
+    label: str,
+) -> dict[str, Any]:
+    binding = _mapping(value, label=label)
+    _require_exact_keys(
+        binding,
+        {
+            "path",
+            "manifest_sha256",
+            "complete_sha256",
+            "manifest_kind",
+            "complete_kind",
+        },
+        label=label,
+    )
+    root = _project_path(project_root, binding.get("path"), label=f"{label}.path")
+    manifest_path = root / FORMAL_V4_RELEASE_MANIFEST_NAME
+    complete_path = root / FORMAL_V4_RELEASE_COMPLETE_NAME
+    manifest = _read_json(manifest_path, label=f"{label} MANIFEST")
+    files = _mapping(manifest.get("files"), label=f"{label} MANIFEST.files")
+    if not files or not all(isinstance(relative, str) for relative in files):
+        raise GovernedControllerError(f"{label} payload inventory is invalid")
+    expected_files = set(files) | {
+        FORMAL_V4_RELEASE_MANIFEST_NAME,
+        FORMAL_V4_RELEASE_COMPLETE_NAME,
+    }
+    _strict_directory_files(root, expected_files=expected_files, label=label)
+    manifest_sha = sha256_file(manifest_path)
+    complete_sha = sha256_file(complete_path)
+    if (
+        manifest.get("schema_version") != SCHEMA_VERSION
+        or manifest.get("kind") != binding.get("manifest_kind")
+        or _sha256_string(
+            binding.get("manifest_sha256"),
+            label=f"{label}.manifest_sha256",
+        )
+        != manifest_sha
+        or _sha256_string(
+            binding.get("complete_sha256"),
+            label=f"{label}.complete_sha256",
+        )
+        != complete_sha
+    ):
+        raise GovernedControllerError(f"{label} MANIFEST/COMPLETE identity differs")
+    complete_payload = complete_path.read_bytes()
+    try:
+        complete_json = json.loads(complete_payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        try:
+            marker = complete_payload.decode("ascii", errors="strict").strip()
+        except UnicodeDecodeError as exc:
+            raise GovernedControllerError(f"{label} COMPLETE is invalid") from exc
+        if binding.get("complete_kind") is not None or marker != manifest_sha:
+            raise GovernedControllerError(
+                f"{label} COMPLETE does not authenticate MANIFEST"
+            ) from None
+    else:
+        complete = _mapping(complete_json, label=f"{label} COMPLETE")
+        if (
+            complete.get("manifest_sha256") != manifest_sha
+            or (
+                complete.get("manifest") is not None
+                and complete.get("manifest") != FORMAL_V4_RELEASE_MANIFEST_NAME
+            )
+            or (
+                binding.get("complete_kind") is not None
+                and complete.get("kind") != binding.get("complete_kind")
+            )
+        ):
+            raise GovernedControllerError(
+                f"{label} COMPLETE does not authenticate MANIFEST"
+            )
+    for relative, raw_identity in files.items():
+        _relative_file_identity(
+            root,
+            str(relative),
+            raw_identity,
+            label=f"{label} MANIFEST.files.{relative}",
+        )
+    return {
+        "path": str(root),
+        "manifest_sha256": manifest_sha,
+        "complete_sha256": complete_sha,
+        "manifest_kind": binding.get("manifest_kind"),
+        "complete_kind": binding.get("complete_kind"),
+    }
+
+
+def _authenticate_calibration_release_binding(
+    value: Any,
+    *,
+    project_root: Path,
+    closure: Mapping[str, Any],
+) -> dict[str, Any]:
+    binding = _mapping(value, label="release contract calibration_attestation")
+    required_keys = {
+        "path",
+        "size",
+        "sha256",
+        "complete",
+        "attestation_fingerprint",
+        "calibration_config",
+        "evidence",
+        "candidate_checkpoints",
+        "final_checkpoint",
+        "evaluation",
+    }
+    _require_exact_keys(
+        binding,
+        required_keys,
+        label="release contract calibration_attestation",
+    )
+    attestation_path = _project_path(
+        project_root,
+        binding.get("path"),
+        label="release contract calibration_attestation.path",
+    )
+    attestation_identity = _authenticated_file_identity(
+        {
+            "path": str(attestation_path),
+            "size": binding.get("size"),
+            "sha256": binding.get("sha256"),
+        },
+        expected_path=attestation_path,
+        label="release calibration attestation",
+    )
+    complete_path = attestation_path.with_name(FORMAL_V4_RELEASE_COMPLETE_NAME)
+    complete_identity = _authenticated_file_identity(
+        binding.get("complete"),
+        expected_path=complete_path,
+        label="release calibration COMPLETE",
+    )
+    attestation = _read_json(
+        attestation_path,
+        label="release calibration attestation",
+    )
+    complete = _read_json(complete_path, label="release calibration COMPLETE")
+    attestation_unsigned = {
+        key: item
+        for key, item in attestation.items()
+        if key != "attestation_fingerprint"
+    }
+    attestation_fingerprint = _sha256_string(
+        attestation.get("attestation_fingerprint"),
+        label="release calibration attestation_fingerprint",
+    )
+    if (
+        attestation.get("schema_version") != SCHEMA_VERSION
+        or attestation.get("kind") != FORMAL_V4_CALIBRATION_ATTESTATION_KIND
+        or attestation.get("status")
+        != "passed_authenticated_quality_gate_but_does_not_authorize_formal_training"
+        or attestation.get("passed") is not True
+        or attestation.get("authorizes_training") is not False
+        or attestation.get("training_started") is not False
+        or _canonical_sha256(attestation_unsigned) != attestation_fingerprint
+        or binding.get("attestation_fingerprint") != attestation_fingerprint
+    ):
+        raise GovernedControllerError("release calibration attestation differs")
+    if (
+        complete.get("schema_version") != SCHEMA_VERSION
+        or complete.get("kind") != FORMAL_V4_CALIBRATION_COMPLETE_KIND
+        or complete.get("attestation") != attestation_path.name
+        or complete.get("attestation_sha256") != attestation_identity["sha256"]
+        or complete.get("attestation_fingerprint") != attestation_fingerprint
+        or complete.get("passed") is not True
+        or complete.get("authorizes_training") is not False
+        or complete.get("training_started") is not False
+    ):
+        raise GovernedControllerError(
+            "release calibration COMPLETE does not authenticate attestation"
+        )
+    attestor = _mapping(
+        attestation.get("attestor"),
+        label="release calibration attestor",
+    )
+    attestor_path = (project_root / "scripts/attest_v4_13m_calibration_release.py").resolve()
+    if (
+        _project_path(
+            project_root,
+            attestor.get("path"),
+            label="release calibration attestor.path",
+        )
+        != attestor_path
+        or not attestor_path.is_file()
+        or attestor.get("sha256") != sha256_file(attestor_path)
+    ):
+        raise GovernedControllerError("release calibration attestor identity differs")
+    formal_closure_binding = {
+        "path": closure["path"],
+        "manifest_sha256": closure["manifest"]["sha256"],
+        "complete_sha256": closure["complete"]["sha256"],
+        "bundle_fingerprint": closure["bundle_fingerprint"],
+    }
+    if _canonical_sha256(attestation.get("formal_closure")) != _canonical_sha256(
+        formal_closure_binding
+    ):
+        raise GovernedControllerError(
+            "release calibration attestation binds another formal closure"
+        )
+    closed_calibration_gate = _mapping(
+        closure["closed_readiness"].get("calibration_gate"),
+        label="closed readiness calibration_gate",
+    )
+    if (
+        attestation.get("calibration_gate_contract_fingerprint")
+        != _canonical_sha256(closed_calibration_gate)
+    ):
+        raise GovernedControllerError(
+            "release calibration attestation binds another calibration gate"
+        )
+    config_binding = _mapping(
+        binding.get("calibration_config"),
+        label="release calibration config",
+    )
+    config_path = _project_path(
+        project_root,
+        config_binding.get("path"),
+        label="release calibration config.path",
+    )
+    config_identity = _authenticated_file_identity(
+        config_binding,
+        expected_path=config_path,
+        label="release calibration config",
+    )
+    if _canonical_sha256(attestation.get("calibration_config")) != _canonical_sha256(
+        config_identity
+    ):
+        raise GovernedControllerError(
+            "release calibration config differs from attestation"
+        )
+    evidence = _mapping(
+        binding.get("evidence"),
+        label="release calibration evidence",
+    )
+    attested_evidence = _mapping(
+        attestation.get("evidence"),
+        label="release calibration attested evidence",
+    )
+    if set(evidence) != set(attested_evidence) or set(evidence) != {
+        "training_report_bundle",
+        "checkpoint_validation_bundle",
+        "checkpoint_drift_audit_bundle",
+    }:
+        raise GovernedControllerError(
+            "release calibration evidence inventory differs"
+        )
+    authenticated_evidence: dict[str, Any] = {}
+    for name in sorted(evidence):
+        if _canonical_sha256(evidence[name]) != _canonical_sha256(
+            attested_evidence[name]
+        ):
+            raise GovernedControllerError(
+                f"release calibration evidence differs from attestation: {name}"
+            )
+        authenticated_evidence[name] = _authenticate_release_report_bundle(
+            evidence[name],
+            project_root=project_root,
+            label=f"release calibration evidence.{name}",
+        )
+    raw_candidates = binding.get("candidate_checkpoints")
+    attested_candidates = attestation.get("candidate_checkpoints")
+    if (
+        not isinstance(raw_candidates, list)
+        or not raw_candidates
+        or not isinstance(attested_candidates, list)
+        or len(raw_candidates) != len(attested_candidates)
+    ):
+        raise GovernedControllerError(
+            "release calibration candidate checkpoint inventory differs"
+        )
+    candidates: list[dict[str, Any]] = []
+    for index, (row, attested) in enumerate(
+        zip(raw_candidates, attested_candidates, strict=True)
+    ):
+        public = _mapping(
+            row,
+            label=f"release calibration candidate_checkpoints[{index}]",
+        )
+        source = _mapping(
+            attested,
+            label=f"release calibration attested candidate_checkpoints[{index}]",
+        )
+        for field in ("path", "manifest_sha256", "complete_sha256"):
+            if public.get(field) != source.get(field):
+                raise GovernedControllerError(
+                    "release calibration candidate checkpoint differs from "
+                    f"attestation: {index}"
+                )
+        checkpoint_path = _project_path(
+            project_root,
+            public.get("path"),
+            label=f"release calibration candidate_checkpoints[{index}].path",
+        )
+        authenticated = authenticate_checkpoint(checkpoint_path)
+        metadata = _mapping(
+            authenticated.get("metadata"),
+            label=f"release calibration candidate_checkpoints[{index}].metadata",
+        )
+        if (
+            authenticated.get("manifest_sha256")
+            != _sha256_string(
+                public.get("manifest_sha256"),
+                label=(
+                    "release calibration "
+                    f"candidate_checkpoints[{index}].manifest_sha256"
+                ),
+            )
+            or authenticated.get("complete_sha256")
+            != _sha256_string(
+                public.get("complete_sha256"),
+                label=(
+                    "release calibration "
+                    f"candidate_checkpoints[{index}].complete_sha256"
+                ),
+            )
+            or any(
+                public.get(field) != metadata.get(field)
+                for field in ("global_step", "committed_tokens", "kind", "tag")
+            )
+        ):
+            raise GovernedControllerError(
+                f"release calibration candidate checkpoint identity differs: {index}"
+            )
+        candidates.append(
+            {
+                key: public.get(key)
+                for key in (
+                    "path",
+                    "manifest_sha256",
+                    "complete_sha256",
+                    "global_step",
+                    "committed_tokens",
+                    "kind",
+                    "tag",
+                )
+            }
+        )
+    final_checkpoint = _mapping(
+        binding.get("final_checkpoint"),
+        label="release calibration final_checkpoint",
+    )
+    if (
+        _canonical_sha256(final_checkpoint) != _canonical_sha256(candidates[-1])
+        or _canonical_sha256(attestation.get("final_checkpoint"))
+        != _canonical_sha256(attested_candidates[-1])
+    ):
+        raise GovernedControllerError(
+            "release calibration final checkpoint is not the last candidate"
+        )
+    evaluation = _mapping(
+        binding.get("evaluation"),
+        label="release calibration evaluation",
+    )
+    if evaluation.get("passed") is not True:
+        raise GovernedControllerError("release calibration evaluation did not pass")
+    return {
+        "attestation": attestation_identity,
+        "complete": complete_identity,
+        "attestation_fingerprint": attestation_fingerprint,
+        "attestor": {
+            "path": str(attestor_path),
+            "sha256": sha256_file(attestor_path),
+        },
+        "calibration_config": config_identity,
+        "evidence": authenticated_evidence,
+        "candidate_checkpoints": candidates,
+        "final_checkpoint": dict(final_checkpoint),
+        "evaluation": dict(evaluation),
+    }
+
+
+def _authenticate_formal_release_bundle(
+    readiness_path: Path,
+    *,
+    project_root: Path,
+) -> dict[str, Any]:
+    readiness_file = readiness_path.expanduser().resolve()
+    root = readiness_file.parent
+    expected_files = {
+        FORMAL_V4_RELEASE_CONFIG_NAME,
+        FORMAL_V4_RELEASE_READINESS_NAME,
+        FORMAL_V4_RELEASE_MANIFEST_NAME,
+        FORMAL_V4_RELEASE_COMPLETE_NAME,
+    }
+    _strict_directory_files(
+        root,
+        expected_files=expected_files,
+        label="formal release bundle",
+    )
+    if readiness_file != root / FORMAL_V4_RELEASE_READINESS_NAME:
+        raise GovernedControllerError(
+            "launch-enabled readiness is not the formal release readiness"
+        )
+    config_path = root / FORMAL_V4_RELEASE_CONFIG_NAME
+    manifest_path = root / FORMAL_V4_RELEASE_MANIFEST_NAME
+    complete_path = root / FORMAL_V4_RELEASE_COMPLETE_NAME
+    readiness = _read_json(readiness_file, label="formal release readiness")
+    readiness_fingerprint = _validate_readiness_fingerprint(
+        readiness,
+        required=True,
+    )
+    manifest = _read_json(manifest_path, label="formal release MANIFEST")
+    complete = _read_json(complete_path, label="formal release COMPLETE")
+    _require_exact_keys(
+        manifest,
+        {
+            "schema_version",
+            "kind",
+            "release_fingerprint",
+            "release_contract",
+            "acknowledgements",
+            "files",
+            "launch_enabled",
+            "authorizes_training",
+            "training_started",
+            "web_profile_changed",
+            "bundle_fingerprint",
+        },
+        label="formal release MANIFEST",
+    )
+    manifest_unsigned = {
+        key: item
+        for key, item in manifest.items()
+        if key != "bundle_fingerprint"
+    }
+    bundle_fingerprint = _sha256_string(
+        manifest.get("bundle_fingerprint"),
+        label="formal release bundle_fingerprint",
+    )
+    if (
+        manifest.get("schema_version") != SCHEMA_VERSION
+        or manifest.get("kind") != FORMAL_V4_RELEASE_BUNDLE_KIND
+        or manifest.get("launch_enabled") is not True
+        or manifest.get("authorizes_training") is not True
+        or manifest.get("training_started") is not False
+        or manifest.get("web_profile_changed") is not False
+        or _canonical_sha256(manifest_unsigned) != bundle_fingerprint
+    ):
+        raise GovernedControllerError("formal release MANIFEST contract differs")
+    _require_exact_keys(
+        complete,
+        {
+            "schema_version",
+            "kind",
+            "manifest",
+            "manifest_sha256",
+            "bundle_fingerprint",
+            "release_fingerprint",
+            "launch_enabled",
+            "authorizes_training",
+            "training_started",
+            "web_profile_changed",
+        },
+        label="formal release COMPLETE",
+    )
+    if (
+        complete.get("schema_version") != SCHEMA_VERSION
+        or complete.get("kind") != FORMAL_V4_RELEASE_COMPLETE_KIND
+        or complete.get("manifest") != FORMAL_V4_RELEASE_MANIFEST_NAME
+        or complete.get("manifest_sha256") != sha256_file(manifest_path)
+        or complete.get("bundle_fingerprint") != bundle_fingerprint
+        or complete.get("release_fingerprint") != manifest.get("release_fingerprint")
+        or complete.get("launch_enabled") is not True
+        or complete.get("authorizes_training") is not True
+        or complete.get("training_started") is not False
+        or complete.get("web_profile_changed") is not False
+    ):
+        raise GovernedControllerError(
+            "formal release COMPLETE does not authenticate MANIFEST"
+        )
+    files = _mapping(manifest.get("files"), label="formal release MANIFEST.files")
+    if set(files) != {
+        FORMAL_V4_RELEASE_CONFIG_NAME,
+        FORMAL_V4_RELEASE_READINESS_NAME,
+    }:
+        raise GovernedControllerError("formal release payload inventory differs")
+    config_identity = _relative_file_identity(
+        root,
+        FORMAL_V4_RELEASE_CONFIG_NAME,
+        files[FORMAL_V4_RELEASE_CONFIG_NAME],
+        label="formal release config",
+    )
+    readiness_identity = _relative_file_identity(
+        root,
+        FORMAL_V4_RELEASE_READINESS_NAME,
+        files[FORMAL_V4_RELEASE_READINESS_NAME],
+        label="formal release readiness",
+    )
+    contract = _mapping(
+        manifest.get("release_contract"),
+        label="formal release contract",
+    )
+    _require_exact_keys(
+        contract,
+        {
+            "schema_version",
+            "kind",
+            "project_root",
+            "output",
+            "publisher",
+            "source_tree",
+            "dependency_lock",
+            "formal_closure",
+            "capacity_attestation",
+            "closed_readiness",
+            "calibration_attestation",
+            "gates",
+            "wikipedia_license",
+            "final_config",
+            "launch_enabled_after_publish",
+            "authorizes_training_after_publish",
+            "training_started",
+            "web_profile_changed",
+        },
+        label="formal release contract",
+    )
+    release_fingerprint = _sha256_string(
+        manifest.get("release_fingerprint"),
+        label="formal release release_fingerprint",
+    )
+    if (
+        contract.get("schema_version") != SCHEMA_VERSION
+        or contract.get("kind") != FORMAL_V4_RELEASE_KIND
+        or _canonical_sha256(contract) != release_fingerprint
+        or contract.get("project_root") != str(project_root.resolve())
+        or contract.get("launch_enabled_after_publish") is not True
+        or contract.get("authorizes_training_after_publish") is not True
+        or contract.get("training_started") is not False
+        or contract.get("web_profile_changed") is not False
+    ):
+        raise GovernedControllerError("formal release contract/fingerprint differs")
+    output = _mapping(contract.get("output"), label="formal release contract.output")
+    _require_exact_keys(
+        output,
+        {
+            "path",
+            "config_path",
+            "readiness_path",
+            "manifest_path",
+            "complete_path",
+        },
+        label="formal release contract.output",
+    )
+    expected_output = {
+        "path": str(root),
+        "config_path": str(config_path),
+        "readiness_path": str(readiness_file),
+        "manifest_path": str(manifest_path),
+        "complete_path": str(complete_path),
+    }
+    if dict(output) != expected_output:
+        raise GovernedControllerError("formal release output paths differ")
+    publisher = _mapping(
+        contract.get("publisher"),
+        label="formal release publisher",
+    )
+    _require_exact_keys(publisher, {"path", "sha256"}, label="formal release publisher")
+    publisher_path = (project_root / "scripts/publish_v4_250m_release.py").resolve()
+    if (
+        _project_path(
+            project_root,
+            publisher.get("path"),
+            label="formal release publisher.path",
+        )
+        != publisher_path
+        or not publisher_path.is_file()
+        or publisher.get("sha256") != sha256_file(publisher_path)
+    ):
+        raise GovernedControllerError("formal release publisher identity differs")
+    source_tree = _mapping(
+        contract.get("source_tree"),
+        label="formal release source_tree",
+    )
+    _require_exact_keys(
+        source_tree,
+        {"path", "sha256"},
+        label="formal release source_tree",
+    )
+    source_tree_path = (project_root / "src/twen").resolve()
+    if (
+        _project_path(
+            project_root,
+            source_tree.get("path"),
+            label="formal release source_tree.path",
+        )
+        != source_tree_path
+        or source_tree.get("sha256") != twen_source_tree_sha256(source_tree_path)
+    ):
+        raise GovernedControllerError("formal release source-tree identity differs")
+    dependency_path = project_root / "uv.lock"
+    if not dependency_path.is_file():
+        dependency_path = project_root / "pyproject.toml"
+    dependency = _authenticated_file_identity(
+        contract.get("dependency_lock"),
+        expected_path=dependency_path,
+        label="formal release dependency_lock",
+    )
+    closure = _authenticate_closure_release_binding(
+        contract.get("formal_closure"),
+        project_root=project_root,
+    )
+    capacity_binding = _authenticated_file_identity(
+        contract.get("capacity_attestation"),
+        expected_path=Path(closure["payloads"]["capacity-attestation.json"]["path"]),
+        label="formal release capacity_attestation",
+    )
+    closed_readiness_binding = _authenticated_file_identity(
+        contract.get("closed_readiness"),
+        expected_path=Path(closure["payloads"]["readiness.json"]["path"]),
+        label="formal release closed_readiness",
+    )
+    calibration = _authenticate_calibration_release_binding(
+        contract.get("calibration_attestation"),
+        project_root=project_root,
+        closure=closure,
+    )
+    final_config = _mapping(
+        contract.get("final_config"),
+        label="formal release final_config",
+    )
+    _require_exact_keys(
+        final_config,
+        {"sha256", "normalized_semantic_sha256"},
+        label="formal release final_config",
+    )
+    if (
+        final_config.get("sha256") != config_identity["sha256"]
+        or final_config.get("normalized_semantic_sha256")
+        != FORMAL_V4_NORMALIZED_CONFIG_SHA256
+    ):
+        raise GovernedControllerError("formal release final config identity differs")
+    acknowledgements = _mapping(
+        manifest.get("acknowledgements"),
+        label="formal release acknowledgements",
+    )
+    _require_exact_keys(
+        acknowledgements,
+        {"formal_release", "wikipedia_license"},
+        label="formal release acknowledgements",
+    )
+    wikipedia = _mapping(
+        contract.get("wikipedia_license"),
+        label="formal release wikipedia_license",
+    )
+    _require_exact_keys(
+        wikipedia,
+        {"contract", "contract_fingerprint", "required_acknowledgement"},
+        label="formal release wikipedia_license",
+    )
+    expected_wikipedia_ack = (
+        f"ACCEPT V4 WIKIPEDIA LICENSE {FORMAL_V4_WIKIPEDIA_LICENSE_FINGERPRINT}"
+    )
+    expected_formal_ack = f"AUTHORIZE V4 {release_fingerprint}"
+    if (
+        _canonical_sha256(wikipedia.get("contract"))
+        != _canonical_sha256(FORMAL_V4_WIKIPEDIA_LICENSE_CONTRACT)
+        or wikipedia.get("contract_fingerprint")
+        != FORMAL_V4_WIKIPEDIA_LICENSE_FINGERPRINT
+        or wikipedia.get("required_acknowledgement") != expected_wikipedia_ack
+        or acknowledgements.get("formal_release") != expected_formal_ack
+        or acknowledgements.get("wikipedia_license") != expected_wikipedia_ack
+    ):
+        raise GovernedControllerError(
+            "formal release acknowledgement contract differs"
+        )
+    release = _mapping(readiness.get("release"), label="readiness.release")
+    _require_exact_keys(
+        release,
+        {
+            "kind",
+            "release_fingerprint",
+            "publisher",
+            "formal_release_acknowledgement",
+            "wikipedia_license_acknowledgement",
+            "web_profile_changed",
+            "training_started",
+        },
+        label="readiness.release",
+    )
+    readiness_config = _mapping(
+        readiness.get("config_identity"),
+        label="readiness.config_identity",
+    )
+    if (
+        release.get("kind") != FORMAL_V4_RELEASE_KIND
+        or release.get("release_fingerprint") != release_fingerprint
+        or _canonical_sha256(release.get("publisher")) != _canonical_sha256(publisher)
+        or release.get("formal_release_acknowledgement") != expected_formal_ack
+        or release.get("wikipedia_license_acknowledgement")
+        != expected_wikipedia_ack
+        or release.get("web_profile_changed") is not False
+        or release.get("training_started") is not False
+        or readiness.get("config_path") != str(config_path)
+        or readiness.get("config_sha256") != config_identity["sha256"]
+        or readiness_config.get("path") != str(config_path)
+        or readiness_config.get("size") != config_identity["size"]
+        or readiness_config.get("sha256") != config_identity["sha256"]
+        or readiness_config.get("normalized_semantic_sha256")
+        != FORMAL_V4_NORMALIZED_CONFIG_SHA256
+        or readiness.get("status") != "authorized_for_governed_v4_250m_launch"
+        or readiness.get("blockers") != []
+        or readiness.get("launch_enabled") is not True
+        or readiness.get("authorizes_training") is not True
+        or readiness.get("training_started") is not False
+    ):
+        raise GovernedControllerError(
+            "formal release readiness authorization differs"
+        )
+    return {
+        "root": str(root),
+        "manifest": _current_file_identity(
+            manifest_path,
+            label="formal release MANIFEST",
+        ),
+        "complete": _current_file_identity(
+            complete_path,
+            label="formal release COMPLETE",
+        ),
+        "config": config_identity,
+        "readiness": readiness_identity,
+        "readiness_fingerprint": readiness_fingerprint,
+        "release_fingerprint": release_fingerprint,
+        "bundle_fingerprint": bundle_fingerprint,
+        "publisher": {
+            "path": str(publisher_path),
+            "sha256": sha256_file(publisher_path),
+        },
+        "source_tree": {
+            "path": str(source_tree_path),
+            "sha256": source_tree.get("sha256"),
+        },
+        "dependency_lock": dependency,
+        "formal_closure": {
+            key: item
+            for key, item in closure.items()
+            if key != "closed_readiness"
+        },
+        "capacity_attestation": capacity_binding,
+        "closed_readiness": closed_readiness_binding,
+        "calibration": calibration,
+        "acknowledgements": dict(acknowledgements),
+    }
+
+
+def _release_gate_bindings(
+    readiness: Mapping[str, Any],
+    project_root: Path,
+) -> tuple[dict[str, Any], list[str]]:
+    """Authenticate source-bound semantic and license release gates."""
+
+    values: dict[str, Any] = {}
+    issues: list[str] = []
+    try:
+        license_gate = _mapping(
+            readiness.get("wikipedia_license_gate"),
+            label="wikipedia_license_gate",
+        )
+        contract = _require_exact_contract(
+            license_gate.get("contract"),
+            FORMAL_V4_WIKIPEDIA_LICENSE_CONTRACT,
+            label="wikipedia_license_gate.contract",
+        )
+        fingerprint = _sha256_string(
+            license_gate.get("contract_fingerprint"),
+            label="wikipedia_license_gate.contract_fingerprint",
+        )
+        expected_acknowledgement = (
+            f"ACCEPT V4 WIKIPEDIA LICENSE {FORMAL_V4_WIKIPEDIA_LICENSE_FINGERPRINT}"
+        )
+        if (
+            _canonical_sha256(contract)
+            != FORMAL_V4_WIKIPEDIA_LICENSE_FINGERPRINT
+            or fingerprint != FORMAL_V4_WIKIPEDIA_LICENSE_FINGERPRINT
+            or license_gate.get("required") is not True
+            or license_gate.get("required_acknowledgement")
+            != expected_acknowledgement
+        ):
+            raise GovernedControllerError(
+                "Wikipedia license gate differs from the source-bound policy"
+            )
+        accepted = (
+            license_gate.get("status")
+            == "accepted_explicit_user_acknowledgement"
+            and license_gate.get("observed_acknowledgement")
+            == expected_acknowledgement
+            and license_gate.get("passed") is True
+            and license_gate.get("authorizes_training") is True
+        )
+        if not accepted:
+            issues.append(
+                "wikipedia_license_gate does not contain the exact accepted acknowledgement"
+            )
+        values["wikipedia_license"] = {
+            "contract": contract,
+            "contract_fingerprint": fingerprint,
+            "required_acknowledgement": expected_acknowledgement,
+            "observed_acknowledgement": license_gate.get(
+                "observed_acknowledgement"
+            ),
+            "passed": license_gate.get("passed") is True,
+            "authorizes_training": (
+                license_gate.get("authorizes_training") is True
+            ),
+        }
+    except GovernedControllerError as exc:
+        issues.append(str(exc))
+
+    try:
+        semantic_gate = _mapping(
+            readiness.get("chinese_semantic_quality_gate"),
+            label="chinese_semantic_quality_gate",
+        )
+        if (
+            semantic_gate.get("required") is not True
+            or semantic_gate.get("source_id")
+            != FORMAL_V4_CHINESE_SEMANTIC_SOURCE_ID
+            or _canonical_sha256(semantic_gate.get("required_bundle"))
+            != _canonical_sha256(FORMAL_V4_CHINESE_SEMANTIC_REQUIRED_BUNDLE)
+            or _canonical_sha256(semantic_gate.get("required_gates"))
+            != _canonical_sha256(FORMAL_V4_CHINESE_SEMANTIC_REQUIRED_GATES)
+        ):
+            raise GovernedControllerError(
+                "Chinese semantic quality gate differs from the source-bound policy"
+            )
+        accepted = (
+            semantic_gate.get("status")
+            == "passed_authenticated_chinese_semantic_quality_audit"
+            and semantic_gate.get("passed") is True
+            and semantic_gate.get("authorizes_training") is True
+        )
+        observed = semantic_gate.get("observed")
+        if not accepted or not isinstance(observed, Mapping):
+            issues.append(
+                "chinese_semantic_quality_gate does not authorize training"
+            )
+        else:
+            root = _project_path(
+                project_root,
+                observed.get("root"),
+                label="chinese_semantic_quality_gate.observed.root",
+            )
+            manifest_identity = _authenticated_file_identity(
+                observed.get("manifest"),
+                expected_path=root / "MANIFEST.json",
+                label="chinese_semantic_quality_gate.observed.manifest",
+            )
+            complete_identity = _authenticated_file_identity(
+                observed.get("complete"),
+                expected_path=root / "COMPLETE",
+                label="chinese_semantic_quality_gate.observed.complete",
+            )
+            attestation_identity = _authenticated_file_identity(
+                observed.get("attestation"),
+                expected_path=root / "attestation.json",
+                label="chinese_semantic_quality_gate.observed.attestation",
+            )
+            manifest = _read_json(
+                Path(manifest_identity["path"]),
+                label="Chinese semantic MANIFEST",
+            )
+            complete = _read_json(
+                Path(complete_identity["path"]),
+                label="Chinese semantic COMPLETE",
+            )
+            attestation = _read_json(
+                Path(attestation_identity["path"]),
+                label="Chinese semantic attestation",
+            )
+            files = _mapping(
+                manifest.get("files"),
+                label="Chinese semantic MANIFEST files",
+            )
+            required_files = {
+                "attestation.json",
+                "manual-review-template.json",
+                "samples.jsonl",
+            }
+            if set(files) != required_files:
+                raise GovernedControllerError(
+                    "Chinese semantic MANIFEST file inventory differs"
+                )
+            for relative, raw_identity in files.items():
+                identity = _mapping(
+                    raw_identity,
+                    label=f"Chinese semantic MANIFEST files.{relative}",
+                )
+                payload_path = (root / relative).resolve()
+                payload_size = _integer(
+                    identity.get("size"),
+                    label=f"Chinese semantic MANIFEST files.{relative}.size",
+                )
+                payload_sha = _sha256_string(
+                    identity.get("sha256"),
+                    label=f"Chinese semantic MANIFEST files.{relative}.sha256",
+                )
+                if (
+                    root.resolve() not in payload_path.parents
+                    or not payload_path.is_file()
+                    or payload_path.stat().st_size != payload_size
+                    or sha256_file(payload_path) != payload_sha
+                ):
+                    raise GovernedControllerError(
+                        f"Chinese semantic payload identity differs: {relative}"
+                    )
+            attestation_unsigned = {
+                key: value
+                for key, value in attestation.items()
+                if key != "attestation_fingerprint"
+            }
+            attestation_fingerprint = _sha256_string(
+                attestation.get("attestation_fingerprint"),
+                label="Chinese semantic attestation fingerprint",
+            )
+            scanner = _mapping(
+                attestation.get("scanner"),
+                label="Chinese semantic scanner",
+            )
+            scanner_path = _project_path(
+                project_root,
+                scanner.get("path"),
+                label="Chinese semantic scanner path",
+            )
+            expected_scanner = (
+                project_root / "scripts/audit_v4_chinese_semantic_noise.py"
+            ).resolve()
+            if (
+                manifest.get("schema_version") != SCHEMA_VERSION
+                or manifest.get("kind")
+                != FORMAL_V4_CHINESE_SEMANTIC_REQUIRED_BUNDLE["manifest_kind"]
+                or manifest.get("passed") is not True
+                or manifest.get("authorizes_training") is not False
+                or complete.get("schema_version") != SCHEMA_VERSION
+                or complete.get("kind")
+                != FORMAL_V4_CHINESE_SEMANTIC_REQUIRED_BUNDLE["complete_kind"]
+                or complete.get("manifest") != "MANIFEST.json"
+                or complete.get("manifest_sha256")
+                != manifest_identity["sha256"]
+                or complete.get("passed") is not True
+                or complete.get("authorizes_training") is not False
+                or attestation.get("schema_version") != SCHEMA_VERSION
+                or attestation.get("kind")
+                != FORMAL_V4_CHINESE_SEMANTIC_REQUIRED_BUNDLE[
+                    "attestation_kind"
+                ]
+                or attestation.get("source_id")
+                != FORMAL_V4_CHINESE_SEMANTIC_SOURCE_ID
+                or attestation.get("passed") is not True
+                or attestation.get("authorizes_training") is not False
+                or attestation.get("status")
+                != "passed_quality_gate_but_does_not_authorize_training"
+                or _canonical_sha256(attestation_unsigned)
+                != attestation_fingerprint
+                or manifest.get("attestation_fingerprint")
+                != attestation_fingerprint
+                or observed.get("attestation_fingerprint")
+                != attestation_fingerprint
+                or _canonical_sha256(attestation.get("gates"))
+                != _canonical_sha256(
+                    FORMAL_V4_CHINESE_SEMANTIC_AUDIT_GATES
+                )
+                or scanner_path != expected_scanner
+                or not scanner_path.is_file()
+                or scanner.get("sha256") != sha256_file(scanner_path)
+                or _canonical_sha256(scanner.get("policy"))
+                != _canonical_sha256(
+                    FORMAL_V4_CHINESE_SEMANTIC_SCANNER_POLICY
+                )
+            ):
+                raise GovernedControllerError(
+                    "Chinese semantic audit bundle differs from the "
+                    "source-bound release contract"
+                )
+            samples = _mapping(
+                attestation.get("samples"),
+                label="Chinese semantic samples",
+            )
+            risk_sample_size = _integer(
+                samples.get("risk_samples_per_phase"),
+                label="Chinese semantic risk sample quota",
+                minimum=FORMAL_V4_CHINESE_SEMANTIC_REQUIRED_GATES[
+                    "risk_samples_per_phase_gte"
+                ],
+            )
+            control_sample_size = _integer(
+                samples.get("control_samples_per_phase"),
+                label="Chinese semantic control sample quota",
+                minimum=FORMAL_V4_CHINESE_SEMANTIC_REQUIRED_GATES[
+                    "control_samples_per_phase_gte"
+                ],
+            )
+            inputs = _mapping(
+                attestation.get("inputs"),
+                label="Chinese semantic inputs",
+            )
+            phase_statistics = _mapping(
+                attestation.get("phases"),
+                label="Chinese semantic phase statistics",
+            )
+            if set(inputs) != {"primary", "cooldown"} or set(
+                phase_statistics
+            ) != {"primary", "cooldown"}:
+                raise GovernedControllerError(
+                    "Chinese semantic phase inventory differs"
+                )
+            scanner_module = _load_authenticated_script(
+                scanner_path,
+                module_name="_twen_governed_chinese_semantic_scanner",
+                label="Chinese semantic scanner",
+            )
+            scanner_sha_before = sha256_file(scanner_path)
+            try:
+                recomputed = scanner_module.recompute_scan(
+                    primary_manifest=_project_path(
+                        project_root,
+                        _mapping(
+                            inputs["primary"],
+                            label="Chinese semantic primary input",
+                        ).get("path"),
+                        label="Chinese semantic primary manifest",
+                    ),
+                    cooldown_manifest=_project_path(
+                        project_root,
+                        _mapping(
+                            inputs["cooldown"],
+                            label="Chinese semantic cooldown input",
+                        ).get("path"),
+                        label="Chinese semantic cooldown manifest",
+                    ),
+                    source_id=FORMAL_V4_CHINESE_SEMANTIC_SOURCE_ID,
+                    risk_sample_size=risk_sample_size,
+                    control_sample_size=control_sample_size,
+                )
+            except (OSError, RuntimeError, ValueError) as exc:
+                raise GovernedControllerError(
+                    "Chinese semantic deterministic recomputation failed: "
+                    f"{exc}"
+                ) from exc
+            if (
+                sha256_file(scanner_path) != scanner_sha_before
+                or scanner_sha_before != scanner.get("sha256")
+            ):
+                raise GovernedControllerError(
+                    "Chinese semantic scanner changed during recomputation"
+                )
+            recomputed_samples = recomputed.get("samples")
+            recomputed_payload = recomputed.get("samples_payload")
+            samples_path = root / "samples.jsonl"
+            if (
+                _canonical_sha256(recomputed.get("inputs"))
+                != _canonical_sha256(inputs)
+                or _canonical_sha256(recomputed.get("phases"))
+                != _canonical_sha256(phase_statistics)
+                or not isinstance(recomputed_samples, list)
+                or not isinstance(recomputed_payload, bytes)
+                or samples.get("path") != "samples.jsonl"
+                or samples.get("size") != len(recomputed_payload)
+                or samples.get("sha256") != recomputed.get("samples_sha256")
+                or samples.get("count") != len(recomputed_samples)
+                or samples_path.read_bytes() != recomputed_payload
+            ):
+                raise GovernedControllerError(
+                    "Chinese semantic scan or samples differ from deterministic "
+                    "recomputation"
+                )
+            expected_template = scanner_module._manual_template(
+                samples_sha256=str(recomputed["samples_sha256"]),
+                samples=recomputed_samples,
+            )
+            actual_template = _read_json(
+                root / "manual-review-template.json",
+                label="Chinese semantic manual-review template",
+            )
+            if _canonical_sha256(actual_template) != _canonical_sha256(
+                expected_template
+            ):
+                raise GovernedControllerError(
+                    "Chinese semantic manual-review template differs from "
+                    "deterministic recomputation"
+                )
+            manual = _mapping(
+                attestation.get("manual_review"),
+                label="Chinese semantic manual review",
+            )
+            manual_path = _project_path(
+                project_root,
+                manual.get("path"),
+                label="Chinese semantic manual review path",
+            )
+            try:
+                recomputed_manual = scanner_module._load_manual_decisions(
+                    manual_path,
+                    sample_sha256=str(recomputed["samples_sha256"]),
+                    samples=recomputed_samples,
+                )
+            except (OSError, RuntimeError, ValueError) as exc:
+                raise GovernedControllerError(
+                    f"Chinese semantic manual review failed recomputation: {exc}"
+                ) from exc
+            recomputed_manual["status"] = (
+                "passed" if recomputed_manual.get("passed") is True else "failed"
+            )
+            if (
+                _canonical_sha256(recomputed_manual)
+                != _canonical_sha256(manual)
+                or recomputed_manual.get("passed") is not True
+                or not manual_path.is_file()
+                or manual.get("size") != manual_path.stat().st_size
+                or manual.get("sha256") != sha256_file(manual_path)
+                or manual.get("reviewed_samples") != samples.get("count")
+                or manual.get("unacceptable_samples") != 0
+                or manual.get("unacceptable_rate") != 0
+            ):
+                raise GovernedControllerError(
+                    "Chinese semantic manual review does not pass"
+                )
+            values["chinese_semantic_quality"] = {
+                "root": str(root),
+                "manifest": manifest_identity,
+                "complete": complete_identity,
+                "attestation": attestation_identity,
+                "attestation_fingerprint": attestation_fingerprint,
+                "scanner": {
+                    "path": str(scanner_path),
+                    "sha256": scanner.get("sha256"),
+                },
+                "inputs": {
+                    phase: dict(
+                        _mapping(
+                            recomputed["inputs"][phase],
+                            label=f"recomputed Chinese semantic {phase} input",
+                        )
+                    )
+                    for phase in ("primary", "cooldown")
+                },
+                "passed": True,
+                "authorizes_training": True,
+            }
+    except GovernedControllerError as exc:
+        issues.append(str(exc))
+    return values, issues
 
 
 def _authenticate_output_bundle(
@@ -815,6 +2310,31 @@ def _capacity_source_map_bindings(
                     f"closed capacity {phase} source mix differs from formal policy"
                 )
             source_mixes[phase] = dict(sorted(stage_mix.items()))
+            extracted = _mapping(
+                stage.get("extracted_identity"),
+                label=f"capacity.{phase}.extracted_identity",
+            )
+            extracted_manifest_path = _project_path(
+                project_root,
+                extracted.get("manifest_path"),
+                label=f"capacity.{phase}.extracted_manifest",
+            )
+            extracted_manifest_sha = _sha256_string(
+                extracted.get("manifest_sha256"),
+                label=f"capacity.{phase}.extracted_manifest_sha256",
+            )
+            extracted_corpus_fingerprint = _sha256_string(
+                extracted.get("corpus_fingerprint"),
+                label=f"capacity.{phase}.extracted_corpus_fingerprint",
+            )
+            if (
+                not extracted_manifest_path.is_file()
+                or sha256_file(extracted_manifest_path)
+                != extracted_manifest_sha
+            ):
+                raise GovernedControllerError(
+                    f"closed capacity {phase} extracted identity differs"
+                )
             prepared = _mapping(
                 stage.get("prepared_identity"),
                 label=f"capacity.{phase}.prepared_identity",
@@ -838,6 +2358,9 @@ def _capacity_source_map_bindings(
                     f"closed capacity {phase} prepared identity differs"
                 )
             phase_bindings[phase] = {
+                "extracted_manifest_path": str(extracted_manifest_path),
+                "extracted_manifest_sha256": extracted_manifest_sha,
+                "extracted_corpus_fingerprint": extracted_corpus_fingerprint,
                 "prepared_manifest_path": str(manifest_path),
                 "prepared_manifest_sha256": manifest_sha,
                 "prepared_dataset_fingerprint": _sha256_string(
@@ -994,12 +2517,38 @@ def _capacity_source_map_bindings(
 def build_governed_plan(readiness_path: str | Path) -> dict[str, Any]:
     """Authenticate a readiness lock and return its immutable controller plan."""
 
-    readiness_file = Path(readiness_path).expanduser().resolve()
+    raw_readiness_file = Path(readiness_path).expanduser()
+    if raw_readiness_file.is_symlink():
+        raise GovernedControllerError("readiness path must not be a symlink")
+    readiness_file = raw_readiness_file.resolve()
     readiness = _read_json(readiness_file, label="readiness")
     if readiness.get("kind") != "twen_v4_250m_pilot_readiness":
         raise GovernedControllerError("unsupported readiness kind")
     _integer(readiness.get("schema_version"), label="readiness.schema_version", minimum=1)
     project_root = _readiness_project_root(readiness_file, readiness)
+    launch_requested = (
+        readiness.get("launch_enabled") is True
+        or readiness.get("authorizes_training") is True
+    )
+    readiness_fingerprint = _validate_readiness_fingerprint(
+        readiness,
+        required=launch_requested,
+    )
+    release_bundle: dict[str, Any] | None = None
+    if launch_requested:
+        release_bundle = _authenticate_formal_release_bundle(
+            readiness_file,
+            project_root=project_root,
+        )
+        if (
+            release_bundle.get("readiness_fingerprint")
+            != readiness_fingerprint
+            or release_bundle.get("readiness", {}).get("sha256")
+            != sha256_file(readiness_file)
+        ):
+            raise GovernedControllerError(
+                "formal release readiness changed during plan construction"
+            )
 
     config_path = _project_path(
         project_root,
@@ -1066,6 +2615,8 @@ def build_governed_plan(readiness_path: str | Path) -> dict[str, Any]:
     ]
     if readiness.get("launch_enabled") is not True:
         issues.append("readiness launch_enabled is not true")
+    if readiness.get("authorizes_training") is not True:
+        issues.append("readiness authorizes_training is not true")
     for gate_name in ("calibration_gate", "formal_validation_gate"):
         gate = _mapping(readiness.get(gate_name), label=gate_name)
         if gate.get("passed") is not True or gate.get("authorizes_training") is not True:
@@ -1098,6 +2649,11 @@ def build_governed_plan(readiness_path: str | Path) -> dict[str, Any]:
                     "readiness governed controller source identity differs"
                 )
 
+    release_bindings, release_issues = _release_gate_bindings(
+        readiness,
+        project_root,
+    )
+    issues.extend(release_issues)
     formal_bindings, formal_issues = _formal_bindings(readiness, project_root)
     issues.extend(formal_issues)
     capacity_bindings, capacity_issues = _capacity_source_map_bindings(
@@ -1108,6 +2664,32 @@ def build_governed_plan(readiness_path: str | Path) -> dict[str, Any]:
     phase_source_maps = capacity_bindings.get("phases", {})
     if not isinstance(phase_source_maps, Mapping):
         phase_source_maps = {}
+    semantic_binding = release_bindings.get("chinese_semantic_quality")
+    semantic_inputs = (
+        semantic_binding.get("inputs")
+        if isinstance(semantic_binding, Mapping)
+        else None
+    )
+    if isinstance(semantic_inputs, Mapping):
+        for phase in ("primary", "cooldown"):
+            semantic_input = semantic_inputs.get(phase)
+            capacity_phase = phase_source_maps.get(phase)
+            if (
+                not isinstance(semantic_input, Mapping)
+                or not isinstance(capacity_phase, Mapping)
+                or Path(str(semantic_input.get("path"))).resolve()
+                != Path(
+                    str(capacity_phase.get("extracted_manifest_path"))
+                ).resolve()
+                or semantic_input.get("sha256")
+                != capacity_phase.get("extracted_manifest_sha256")
+                or semantic_input.get("corpus_fingerprint")
+                != capacity_phase.get("extracted_corpus_fingerprint")
+            ):
+                issues.append(
+                    f"Chinese semantic {phase} input differs from closed "
+                    "capacity extracted identity"
+                )
     formal_phase_identity = formal_bindings.get(
         "formal_phase_train_disjointness"
     )
@@ -1511,7 +3093,10 @@ def build_governed_plan(readiness_path: str | Path) -> dict[str, Any]:
             "reset_optimizer_scheduler_cursor": True,
             "forbidden_warm_starts": list(FORMAL_V4_FORBIDDEN_WARM_STARTS),
         },
-        "formal_evidence": formal_bindings,
+        "formal_evidence": {
+            **formal_bindings,
+            "release_gates": release_bindings,
+        },
         "controller_sources": [
             {"path": str(path), "sha256": sha256_file(path)}
             for path in controller_source_paths
@@ -1529,6 +3114,7 @@ def build_governed_plan(readiness_path: str | Path) -> dict[str, Any]:
             if dependency_lock.is_file()
             else None
         ),
+        "release_bundle": release_bundle,
         "pause_thresholds": list(thresholds),
         "gates": {
             "hard_stop": dict(hard_stop),
@@ -2129,6 +3715,33 @@ def verify_controller_sources(plan: Mapping[str, Any]) -> None:
                     raise GovernedControllerError(
                         f"config preflight identity changed after planning: {path}"
                     )
+
+    release_binding = plan.get("release_bundle")
+    if release_binding is not None:
+        expected_release = _mapping(
+            release_binding,
+            label="plan.release_bundle",
+        )
+        readiness_identity = _mapping(
+            plan.get("readiness"),
+            label="plan.readiness",
+        )
+        project_root = Path(str(plan.get("project_root"))).resolve()
+        try:
+            current_release = _authenticate_formal_release_bundle(
+                Path(str(readiness_identity.get("path"))),
+                project_root=project_root,
+            )
+        except (GovernedControllerError, OSError, ValueError) as exc:
+            raise GovernedControllerError(
+                f"formal release evidence changed after planning: {exc}"
+            ) from exc
+        if _canonical_sha256(current_release) != _canonical_sha256(
+            expected_release
+        ):
+            raise GovernedControllerError(
+                "formal release evidence changed after planning"
+            )
 
     source_tree = _mapping(plan.get("source_tree"), label="plan.source_tree")
     source_root = Path(str(source_tree.get("path"))).resolve()

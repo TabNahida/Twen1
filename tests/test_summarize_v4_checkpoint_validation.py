@@ -115,12 +115,26 @@ def _evaluation_fixture(
         "device": "cuda:0" if device_type == "cuda" else "cpu",
         "device_name": "fixture",
     }
+    checkpoint = root / "checkpoint"
+    _write_json(
+        checkpoint / "manifest.json",
+        {
+            "algorithm": "sha256",
+            "version": 1,
+            "files": {"fixture.bin": "0" * 64},
+        },
+    )
+    (checkpoint / "COMPLETE").write_text(
+        _sha256(checkpoint / "manifest.json") + "\n",
+        encoding="ascii",
+    )
     config_fingerprint = "1" * 64
     source_tree_sha256 = "3" * 64
     plan = {
         "schema_version": 1,
         "kind": "twen_nll_evaluation_plan",
-        "checkpoint": str(root / "checkpoint"),
+        "checkpoint": str(checkpoint),
+        "checkpoint_complete_sha256": _sha256(checkpoint / "COMPLETE"),
         "checkpoint_state": checkpoint_state,
         "prepared_manifest": str(prepared),
         "prepared_manifest_sha256": _sha256(prepared),
@@ -300,6 +314,15 @@ def test_authenticated_multi_candidate_bundle_uses_token_weighted_source_deltas(
     assert (output / "COMPLETE").read_text().strip() == _sha256(output / "MANIFEST.json")
     summary = json.loads((output / "summary.json").read_text(encoding="utf-8"))
     assert summary["selection"]["label"] == "step50"
+    assert summary["release_gate"]["candidate_global_steps"] == [40, 50]
+    assert summary["release_gate"]["best_aggregate_nll"] == pytest.approx(
+        181.0 / 60.0
+    )
+    assert summary["release_gate"]["final_aggregate_nll"] == pytest.approx(
+        181.0 / 60.0
+    )
+    assert summary["release_gate"]["chinese_source_nll"] is None
+    assert summary["release_gate"]["same_frozen_v3_validation_contract"] is False
     assert summary["baseline"]["overall"]["mean_nll"] == pytest.approx(190.0 / 60.0)
     assert summary["candidates"][0]["overall"][
         "nll_delta_candidate_minus_baseline"
@@ -321,10 +344,95 @@ def test_authenticated_multi_candidate_bundle_uses_token_weighted_source_deltas(
     assert "||" not in report
     assert "<svg" in (output / "charts/overall-nll-delta.svg").read_text(encoding="utf-8")
     assert result["selection"]["label"] == "step50"
+    bundle_manifest = json.loads(
+        (output / "MANIFEST.json").read_text(encoding="utf-8")
+    )
+    assert bundle_manifest["release_gate"] == summary["release_gate"]
     assert _sha256(prepared) == input_hashes["prepared"]
     assert _tree_hashes(baseline) == input_hashes["baseline"]
     assert _tree_hashes(step40) == input_hashes["step40"]
     assert _tree_hashes(step50) == input_hashes["step50"]
+
+
+def test_release_gate_uses_best_and_terminal_candidates_and_chinese_token_weighting(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prepared = _prepared_fixture(tmp_path)
+    prepared_value = json.loads(prepared.read_text(encoding="utf-8"))
+    for shard in prepared_value["shards"][:2]:
+        shard["source_path"] = (
+            "/fixture/extracted/chinese_fineweb2_cmn_hani/"
+            f"{shard['shard_id']}/validation.jsonl"
+        )
+    _write_json(prepared, prepared_value)
+    baseline = _evaluation_fixture(
+        tmp_path / "baseline",
+        prepared=prepared,
+        nll_sums=[20.0, 80.0, 90.0],
+        step=1912,
+    )
+    step40 = _evaluation_fixture(
+        tmp_path / "step40",
+        prepared=prepared,
+        nll_sums=[10.0, 60.0, 80.0],
+        step=40,
+    )
+    step50 = _evaluation_fixture(
+        tmp_path / "step50",
+        prepared=prepared,
+        nll_sums=[21.0, 76.0, 84.0],
+        step=50,
+    )
+    monkeypatch.setattr(
+        sweep,
+        "FROZEN_V3_VALIDATION_CONTRACT",
+        {
+            "prepared_manifest_sha256": _sha256(prepared),
+            "prepared_dataset_fingerprint": prepared_value[
+                "dataset_fingerprint"
+            ],
+            "baseline_run_id": "baseline",
+            "baseline_checkpoint_state": {
+                "global_step": 1912,
+                "committed_tokens": 191_200,
+                "kind": "milestone",
+                "tag": "step-1912",
+            },
+            "baseline_manifest_sha256": _sha256(baseline / "manifest.json"),
+            "baseline_complete_sha256": _sha256(baseline / "COMPLETE"),
+            "baseline_plan_sha256": _sha256(baseline / "PLAN.json"),
+        },
+    )
+
+    summary = sweep.build_summary(
+        prepared_manifest=prepared,
+        baseline_path=baseline,
+        baseline_label="v3-final",
+        candidate_paths=[("step50", step50), ("step40", step40)],
+    )
+    gate = summary["release_gate"]
+
+    assert gate["candidate_global_steps"] == [40, 50]
+    assert gate["best_aggregate_nll"] == pytest.approx(150.0 / 60.0)
+    assert gate["best_candidate"]["label"] == "step40"
+    assert gate["final_aggregate_nll"] == pytest.approx(181.0 / 60.0)
+    assert gate["final_candidate"]["label"] == "step50"
+    assert gate["chinese_source_nll"] == pytest.approx(97.0 / 30.0)
+    assert gate["chinese_source_aggregate"] == {
+        "sources": ["chinese_fineweb2_cmn_hani"],
+        "predicted_tokens": 30,
+        "nll_sum": pytest.approx(97.0),
+        "mean_nll": pytest.approx(97.0 / 30.0),
+    }
+    assert gate["same_frozen_v3_validation_contract"] is True
+    assert gate["source_binding"]["prepared_manifest_sha256"] == _sha256(
+        prepared
+    )
+    assert gate["source_binding"]["candidate_evaluation_manifest_sha256"] == {
+        "step40": _sha256(step40 / "manifest.json"),
+        "step50": _sha256(step50 / "manifest.json"),
+    }
 
 
 def test_single_candidate_cli_writes_complete_bundle(

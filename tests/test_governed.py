@@ -17,10 +17,15 @@ import yaml
 
 from twen.cli import build_parser
 from twen.governed import (
+    FORMAL_V4_WIKIPEDIA_LICENSE_FINGERPRINT,
     GovernedControllerError,
     _authenticate_checkpoint_execution_identity,
     _authenticate_checkpoint_source_maps,
+    _authenticate_closure_release_binding,
     _authenticate_generated_sweep,
+    _authenticate_release_report_bundle,
+    _load_authenticated_script,
+    _release_gate_bindings,
     authenticate_drift_evidence,
     authorize_run,
     build_governed_plan,
@@ -50,6 +55,33 @@ ROOT = Path(__file__).parents[1]
 READINESS = ROOT / "locks/base-dense-v4-250m-pilot.readiness.json"
 
 
+def _canonical_sha256(value: object) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _write_json(path: Path, value: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _file_identity(path: Path, *, relative: str | None = None) -> dict[str, object]:
+    return {
+        "path": relative if relative is not None else str(path.resolve()),
+        "size": path.stat().st_size,
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+    }
+
+
 def _load_controller_script() -> ModuleType:
     path = ROOT / "scripts/govern_v4_training.py"
     spec = importlib.util.spec_from_file_location("govern_v4_training_test", path)
@@ -57,6 +89,201 @@ def _load_controller_script() -> ModuleType:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _write_semantic_corpus(
+    root: Path,
+    *,
+    fingerprint_digit: str,
+    risk_documents: int = 0,
+) -> Path:
+    relative = Path(
+        "filtered/chinese_wikipedia_zh_20231101/chunk-000000/train.jsonl"
+    )
+    shard = root / relative
+    shard.parent.mkdir(parents=True)
+    texts = [
+        f"第 {index} 条风险复核正文"
+        "\\n第一段\\n第二段\\n第三段。"
+        for index in range(risk_documents)
+    ]
+    texts.extend(
+        (
+            f"第 {index} 条中文百科测试正文结构完整、语义连贯\uff0c"
+            "用于验证人工复审证据。"
+        )
+        for index in range(64)
+    )
+    shard.write_text(
+        "".join(
+            json.dumps(
+                {"text": text},
+                ensure_ascii=False,
+            )
+            + "\n"
+            for text in texts
+        ),
+        encoding="utf-8",
+    )
+    manifest = {
+        "schema_version": 1,
+        "kind": "twen_extracted_base_jsonl_corpus",
+        "corpus_fingerprint": fingerprint_digit * 64,
+        "format_audit": {
+            "complete": True,
+            "filtered_outputs": {
+                "train": [
+                    {
+                        "path": str(relative),
+                        "size": shard.stat().st_size,
+                        "sha256": hashlib.sha256(shard.read_bytes()).hexdigest(),
+                        "source_id": "chinese_wikipedia_zh_20231101",
+                    }
+                ],
+                "validation": [],
+            },
+        },
+    }
+    manifest_path = root / "corpus-manifest.json"
+    _write_json(manifest_path, manifest)
+    return manifest_path
+
+
+def _governed_semantic_bundle(
+    tmp_path: Path,
+) -> tuple[dict[str, object], Path]:
+    scanner = _load_authenticated_script(
+        ROOT / "scripts/audit_v4_chinese_semantic_noise.py",
+        module_name=f"_test_governed_semantic_scanner_{tmp_path.name}",
+        label="test Chinese semantic scanner",
+    )
+    primary = _write_semantic_corpus(
+        tmp_path / "primary",
+        fingerprint_digit="a",
+        risk_documents=7,
+    )
+    cooldown = _write_semantic_corpus(
+        tmp_path / "cooldown",
+        fingerprint_digit="b",
+    )
+    common = {
+        "primary_manifest": primary,
+        "cooldown_manifest": cooldown,
+        "source_id": "chinese_wikipedia_zh_20231101",
+        "risk_samples_per_phase": scanner.MIN_RISK_SAMPLES_PER_PHASE,
+        "control_samples_per_phase": scanner.MIN_CONTROL_SAMPLES_PER_PHASE,
+    }
+    pending = tmp_path / "semantic-pending"
+    scanner.run(
+        SimpleNamespace(
+            **common,
+            output=pending,
+            manual_decisions=None,
+        )
+    )
+    template = json.loads(
+        (pending / "manual-review-template.json").read_text(encoding="utf-8")
+    )
+    manual_path = tmp_path / "manual-decisions.json"
+    _write_json(
+        manual_path,
+        {
+            "schema_version": scanner.SCHEMA_VERSION,
+            "kind": scanner.DECISIONS_KIND,
+            "samples_sha256": template["samples_sha256"],
+            "reviewer": "fixture-reviewer",
+            "reviewed_at": "2026-07-27T00:00:00+00:00",
+            "decisions": [
+                {
+                    "sample_id": row["sample_id"],
+                    "verdict": "acceptable",
+                    "notes": "",
+                }
+                for row in template["decisions"]
+            ],
+        },
+    )
+    root = tmp_path / "semantic"
+    result = scanner.run(
+        SimpleNamespace(
+            **common,
+            output=root,
+            manual_decisions=manual_path,
+        )
+    )
+    assert result["passed"] is True
+    assert result["samples"]["count"] == 128
+    assert result["manual_review"]["reviewed_samples"] == 128
+    assert result["phases"]["primary"]["risk_population_documents"] == 7
+    assert result["phases"]["primary"]["sample_strata"] == {
+        "risk": 7,
+        "review_challenge": 25,
+        "control": 32,
+    }
+    assert result["phases"]["cooldown"]["risk_population_documents"] == 0
+    assert result["phases"]["cooldown"]["sample_strata"] == {
+        "risk": 0,
+        "review_challenge": 32,
+        "control": 32,
+    }
+    readiness = json.loads(READINESS.read_text(encoding="utf-8"))
+    gate = readiness["chinese_semantic_quality_gate"]
+    gate.update(
+        {
+            "status": "passed_authenticated_chinese_semantic_quality_audit",
+            "observed": {
+                "root": str(root.resolve()),
+                "manifest": _file_identity(root / "MANIFEST.json"),
+                "complete": _file_identity(root / "COMPLETE"),
+                "attestation": _file_identity(root / "attestation.json"),
+                "attestation_fingerprint": result[
+                    "attestation_fingerprint"
+                ],
+            },
+            "passed": True,
+            "authorizes_training": True,
+        }
+    )
+    return readiness, root
+
+
+def _resign_governed_semantic_bundle(
+    readiness: dict[str, object],
+    root: Path,
+) -> None:
+    attestation_path = root / "attestation.json"
+    attestation = json.loads(attestation_path.read_text(encoding="utf-8"))
+    attestation.pop("attestation_fingerprint", None)
+    attestation["attestation_fingerprint"] = _canonical_sha256(attestation)
+    _write_json(attestation_path, attestation)
+
+    manifest_path = root / "MANIFEST.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["attestation_fingerprint"] = attestation[
+        "attestation_fingerprint"
+    ]
+    manifest["files"]["attestation.json"] = {
+        key: value
+        for key, value in _file_identity(attestation_path).items()
+        if key != "path"
+    }
+    _write_json(manifest_path, manifest)
+
+    complete_path = root / "COMPLETE"
+    complete = json.loads(complete_path.read_text(encoding="utf-8"))
+    complete["manifest_sha256"] = hashlib.sha256(
+        manifest_path.read_bytes()
+    ).hexdigest()
+    _write_json(complete_path, complete)
+
+    gate = readiness["chinese_semantic_quality_gate"]  # type: ignore[index]
+    observed = gate["observed"]  # type: ignore[index]
+    observed["manifest"] = _file_identity(manifest_path)  # type: ignore[index]
+    observed["complete"] = _file_identity(complete_path)  # type: ignore[index]
+    observed["attestation"] = _file_identity(attestation_path)  # type: ignore[index]
+    observed["attestation_fingerprint"] = attestation[  # type: ignore[index]
+        "attestation_fingerprint"
+    ]
 
 
 def _plan() -> dict[str, object]:
@@ -586,6 +813,379 @@ def test_repository_readiness_builds_stable_blocked_plan() -> None:
     assert first["fork"]["reset_optimizer"] is True  # type: ignore[index]
     assert first["fork"]["reset_scheduler"] is True  # type: ignore[index]
     assert first["fork"]["reset_data_cursor"] is True  # type: ignore[index]
+
+
+def test_source_bound_release_gates_reject_license_contract_and_ack_tamper() -> None:
+    readiness = json.loads(READINESS.read_text(encoding="utf-8"))
+    license_gate = readiness["wikipedia_license_gate"]
+    license_gate["contract"]["revision"] = "0" * 40
+    _bindings, issues = _release_gate_bindings(readiness, ROOT)
+    assert any(
+        "wikipedia_license_gate.contract differs from the source-bound" in issue
+        for issue in issues
+    )
+
+    readiness = json.loads(READINESS.read_text(encoding="utf-8"))
+    license_gate = readiness["wikipedia_license_gate"]
+    license_gate.update(
+        {
+            "status": "accepted_explicit_user_acknowledgement",
+            "observed_acknowledgement": (
+                "ACCEPT V4 WIKIPEDIA LICENSE " + "0" * 64
+            ),
+            "passed": True,
+            "authorizes_training": True,
+        }
+    )
+    _bindings, issues = _release_gate_bindings(readiness, ROOT)
+    assert (
+        license_gate["required_acknowledgement"]
+        == "ACCEPT V4 WIKIPEDIA LICENSE "
+        + FORMAL_V4_WIKIPEDIA_LICENSE_FINGERPRINT
+    )
+    assert any("exact accepted acknowledgement" in issue for issue in issues)
+
+
+def test_source_bound_release_gate_rejects_semantic_source_tamper() -> None:
+    readiness = json.loads(READINESS.read_text(encoding="utf-8"))
+    readiness["chinese_semantic_quality_gate"]["source_id"] = (
+        "chinese_fineweb2_cmn_hani"
+    )
+    _bindings, issues = _release_gate_bindings(readiness, ROOT)
+    assert any(
+        "Chinese semantic quality gate differs from the source-bound" in issue
+        for issue in issues
+    )
+
+
+def test_source_bound_release_gate_accepts_current_semantic_policy_shape() -> None:
+    readiness = json.loads(READINESS.read_text(encoding="utf-8"))
+    _bindings, issues = _release_gate_bindings(readiness, ROOT)
+    assert not any(
+        "Chinese semantic quality gate differs from the source-bound" in issue
+        for issue in issues
+    )
+
+
+def test_source_bound_release_gate_recomputes_semantic_review(
+    tmp_path: Path,
+) -> None:
+    readiness, _root = _governed_semantic_bundle(tmp_path)
+    bindings, issues = _release_gate_bindings(readiness, ROOT)
+    assert "chinese_semantic_quality" in bindings
+    assert not any("Chinese semantic" in issue for issue in issues)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "quota",
+        "reviewer_placeholder",
+        "reviewed_at_placeholder",
+        "reviewed_at_naive",
+        "scanner_policy",
+        "phase_statistics",
+    ),
+)
+def test_source_bound_release_gate_rejects_resigned_semantic_forgery(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    readiness, root = _governed_semantic_bundle(tmp_path)
+    attestation_path = root / "attestation.json"
+    attestation = json.loads(attestation_path.read_text(encoding="utf-8"))
+    if mutation == "quota":
+        attestation["samples"]["risk_samples_per_phase"] = 1
+        attestation["samples"]["control_samples_per_phase"] = 1
+    elif mutation in {
+        "reviewer_placeholder",
+        "reviewed_at_placeholder",
+        "reviewed_at_naive",
+    }:
+        manual = attestation["manual_review"]
+        manual_path = Path(str(manual["path"]))
+        manual_payload = json.loads(manual_path.read_text(encoding="utf-8"))
+        if mutation == "reviewer_placeholder":
+            field = "reviewer"
+            value = "REPLACE_WITH_REVIEWER"
+        elif mutation == "reviewed_at_placeholder":
+            field = "reviewed_at"
+            value = "REPLACE_WITH_ISO_8601_TIMESTAMP"
+        else:
+            field = "reviewed_at"
+            value = "2026-07-27T00:00:00"
+        manual_payload[field] = value
+        _write_json(manual_path, manual_payload)
+        manual[field] = value
+        manual["size"] = manual_path.stat().st_size
+        manual["sha256"] = hashlib.sha256(manual_path.read_bytes()).hexdigest()
+    elif mutation == "scanner_policy":
+        attestation["scanner"]["policy"]["risk_samples_per_phase_gte"] = 1
+        attestation["scanner"]["policy"]["reviewer_placeholder_forbidden"] = (
+            False
+        )
+    else:
+        attestation["phases"]["primary"]["documents"] += 1
+    _write_json(attestation_path, attestation)
+    _resign_governed_semantic_bundle(readiness, root)
+
+    bindings, issues = _release_gate_bindings(readiness, ROOT)
+    assert "chinese_semantic_quality" not in bindings
+    assert any("Chinese semantic" in issue for issue in issues)
+
+
+@pytest.mark.parametrize("include_forged_release_record", (False, True))
+def test_launch_enabled_handwritten_readiness_requires_complete_release_bundle(
+    tmp_path: Path,
+    include_forged_release_record: bool,
+) -> None:
+    readiness = json.loads(READINESS.read_text(encoding="utf-8"))
+    readiness.update(
+        {
+            "project_root": str(ROOT.resolve()),
+            "status": "authorized_for_governed_v4_250m_launch",
+            "blockers": [],
+            "launch_enabled": True,
+            "authorizes_training": True,
+            "training_started": False,
+        }
+    )
+    readiness["calibration_gate"].update(
+        {
+            "status": "passed_authenticated_13m_low_lr_calibration",
+            "observed": {"passed": True},
+            "passed": True,
+            "authorizes_training": True,
+        }
+    )
+    readiness["formal_validation_gate"]["authorizes_training"] = True
+    readiness["chinese_semantic_quality_gate"]["authorizes_training"] = True
+    license_gate = readiness["wikipedia_license_gate"]
+    license_gate.update(
+        {
+            "status": "accepted_explicit_user_acknowledgement",
+            "observed_acknowledgement": license_gate[
+                "required_acknowledgement"
+            ],
+            "passed": True,
+            "authorizes_training": True,
+        }
+    )
+    if include_forged_release_record:
+        readiness["release"] = {
+            "kind": "twen_v4_250m_formal_release",
+            "release_fingerprint": "1" * 64,
+            "publisher": {
+                "path": str(
+                    (ROOT / "scripts/publish_v4_250m_release.py").resolve()
+                ),
+                "sha256": hashlib.sha256(
+                    (
+                        ROOT / "scripts/publish_v4_250m_release.py"
+                    ).read_bytes()
+                ).hexdigest(),
+            },
+            "formal_release_acknowledgement": "AUTHORIZE V4 " + "1" * 64,
+            "wikipedia_license_acknowledgement": license_gate[
+                "required_acknowledgement"
+            ],
+            "web_profile_changed": False,
+            "training_started": False,
+        }
+    readiness.pop("readiness_fingerprint", None)
+    readiness["readiness_fingerprint"] = _canonical_sha256(readiness)
+    release_root = tmp_path / "forged-release"
+    readiness_path = release_root / "readiness.json"
+    _write_json(readiness_path, readiness)
+
+    with pytest.raises(
+        GovernedControllerError,
+        match="formal release bundle file inventory differs",
+    ):
+        build_governed_plan(readiness_path)
+
+
+def test_launch_enabled_readiness_requires_valid_readiness_fingerprint(
+    tmp_path: Path,
+) -> None:
+    readiness = json.loads(READINESS.read_text(encoding="utf-8"))
+    readiness.update(
+        {
+            "project_root": str(ROOT.resolve()),
+            "launch_enabled": True,
+            "authorizes_training": True,
+            "readiness_fingerprint": "0" * 64,
+        }
+    )
+    readiness_path = tmp_path / "release/readiness.json"
+    _write_json(readiness_path, readiness)
+    with pytest.raises(GovernedControllerError, match="readiness fingerprint"):
+        build_governed_plan(readiness_path)
+
+
+def test_release_closure_binding_rejects_payload_drift(tmp_path: Path) -> None:
+    root = tmp_path / "closure"
+    capacity_path = root / "capacity-attestation.json"
+    readiness_path = root / "readiness.json"
+    _write_json(capacity_path, {"capacity": "authenticated"})
+    _write_json(readiness_path, {"calibration_gate": {"required": True}})
+    manifest: dict[str, object] = {
+        "schema_version": 1,
+        "kind": "twen_v4_250m_formal_evidence_closure_bundle",
+        "files": {
+            "capacity-attestation.json": _file_identity(
+                capacity_path,
+                relative="capacity-attestation.json",
+            ),
+            "readiness.json": _file_identity(
+                readiness_path,
+                relative="readiness.json",
+            ),
+        },
+        "launch_enabled": False,
+        "authorizes_training": False,
+        "training_started": False,
+    }
+    manifest["bundle_fingerprint"] = _canonical_sha256(manifest)
+    manifest_path = root / "MANIFEST.json"
+    _write_json(manifest_path, manifest)
+    complete_path = root / "COMPLETE"
+    _write_json(
+        complete_path,
+        {
+            "schema_version": 1,
+            "kind": "twen_v4_250m_formal_evidence_closure_complete",
+            "manifest": "MANIFEST.json",
+            "manifest_sha256": hashlib.sha256(
+                manifest_path.read_bytes()
+            ).hexdigest(),
+            "bundle_fingerprint": manifest["bundle_fingerprint"],
+            "launch_enabled": False,
+            "authorizes_training": False,
+            "training_started": False,
+        },
+    )
+    binding = {
+        "path": str(root),
+        "manifest_sha256": hashlib.sha256(
+            manifest_path.read_bytes()
+        ).hexdigest(),
+        "complete_sha256": hashlib.sha256(
+            complete_path.read_bytes()
+        ).hexdigest(),
+        "bundle_fingerprint": manifest["bundle_fingerprint"],
+    }
+    authenticated = _authenticate_closure_release_binding(
+        binding,
+        project_root=ROOT,
+    )
+    assert authenticated["payloads"]["capacity-attestation.json"]["sha256"] == (
+        hashlib.sha256(capacity_path.read_bytes()).hexdigest()
+    )
+
+    _write_json(capacity_path, {"capacity": "drifted"})
+    with pytest.raises(
+        GovernedControllerError,
+        match=(
+            r"formal closure MANIFEST\.files\.capacity-attestation\.json "
+            r"identity differs"
+        ),
+    ):
+        _authenticate_closure_release_binding(binding, project_root=ROOT)
+
+
+def test_release_report_binding_rejects_payload_drift(tmp_path: Path) -> None:
+    root = tmp_path / "report"
+    analysis_path = root / "analysis.json"
+    _write_json(analysis_path, {"release_gate": {"passed": True}})
+    manifest_path = root / "MANIFEST.json"
+    _write_json(
+        manifest_path,
+        {
+            "schema_version": 1,
+            "kind": "fixture_report_bundle",
+            "files": {
+                "analysis.json": _file_identity(
+                    analysis_path,
+                    relative="analysis.json",
+                )
+            },
+        },
+    )
+    complete_path = root / "COMPLETE"
+    complete_path.write_text(
+        hashlib.sha256(manifest_path.read_bytes()).hexdigest() + "\n",
+        encoding="ascii",
+    )
+    binding = {
+        "path": str(root),
+        "manifest_sha256": hashlib.sha256(
+            manifest_path.read_bytes()
+        ).hexdigest(),
+        "complete_sha256": hashlib.sha256(
+            complete_path.read_bytes()
+        ).hexdigest(),
+        "manifest_kind": "fixture_report_bundle",
+        "complete_kind": None,
+    }
+    assert (
+        _authenticate_release_report_bundle(
+            binding,
+            project_root=ROOT,
+            label="fixture report",
+        )["manifest_sha256"]
+        == binding["manifest_sha256"]
+    )
+
+    _write_json(analysis_path, {"release_gate": {"passed": False}})
+    with pytest.raises(
+        GovernedControllerError,
+        match=r"fixture report MANIFEST\.files\.analysis\.json identity differs",
+    ):
+        _authenticate_release_report_bundle(
+            binding,
+            project_root=ROOT,
+            label="fixture report",
+        )
+
+
+def test_controller_source_recheck_reauthenticates_release_bundle(
+    tmp_path: Path,
+) -> None:
+    plan = deepcopy(_plan())
+    evidence = tmp_path / "calibration-attestation.json"
+    _write_json(evidence, {"passed": True})
+    expected_release = {
+        "calibration": {
+            "attestation": _file_identity(evidence),
+        }
+    }
+    plan["release_bundle"] = expected_release
+    _refingerprint(plan)
+
+    def current_release(
+        _readiness_path: Path,
+        *,
+        project_root: Path,
+    ) -> dict[str, object]:
+        assert project_root == ROOT.resolve()
+        return {
+            "calibration": {
+                "attestation": _file_identity(evidence),
+            }
+        }
+
+    with patch(
+        "twen.governed._authenticate_formal_release_bundle",
+        side_effect=current_release,
+    ):
+        verify_controller_sources(plan)
+        _write_json(evidence, {"passed": False})
+        with pytest.raises(
+            GovernedControllerError,
+            match="formal release evidence changed after planning",
+        ):
+            verify_controller_sources(plan)
 
 
 def _write_semantically_tampered_readiness(

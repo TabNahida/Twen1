@@ -29,6 +29,30 @@ PREPARED_KINDS = frozenset({"twen_prepared_text"})
 EVALUATION_KIND = "twen_nll_evaluation"
 PLAN_KIND = "twen_nll_evaluation_plan"
 TARGET_ROLE = "candidate"
+FROZEN_V3_VALIDATION_CONTRACT = {
+    "prepared_manifest_sha256": (
+        "4d3877bfaf4e01551d41913e11d37db08c6097b513ac94ae4a63b8a640b68e7f"
+    ),
+    "prepared_dataset_fingerprint": (
+        "6839d5aefb3b5b8f960e7da1b54bd40c2882bcb915954e727f2480252d4cdc79"
+    ),
+    "baseline_run_id": "base-dense-v3-500m",
+    "baseline_checkpoint_state": {
+        "global_step": 1912,
+        "committed_tokens": 500_009_962,
+        "kind": "milestone",
+        "tag": "complete",
+    },
+    "baseline_manifest_sha256": (
+        "97b9f59d968fef1aa3a9a0234cac542391151645650969283cd449ac0056dd3f"
+    ),
+    "baseline_complete_sha256": (
+        "6d55deb1be53149338189ccc34fdebd180452145ccaedb645db3edd812407cad"
+    ),
+    "baseline_plan_sha256": (
+        "e2f903a91d01f5d550582b4bb7733cad333829693e8462d6a0e789ef6e49f2e7"
+    ),
+}
 COLORS = (
     "#2563eb",
     "#dc2626",
@@ -593,6 +617,39 @@ def _load_completed_evaluation(
     )
     if checkpoint_state.get("kind") not in {"periodic", "interrupt", "milestone"}:
         raise SweepError(f"{label} checkpoint kind is invalid")
+    raw_checkpoint = _nonempty_string(
+        plan.get("checkpoint"),
+        label=f"{label}.PLAN.checkpoint",
+    )
+    checkpoint = Path(raw_checkpoint).expanduser().resolve()
+    if (
+        not checkpoint.is_dir()
+        or checkpoint.is_symlink()
+        or not (checkpoint / "manifest.json").is_file()
+        or (checkpoint / "manifest.json").is_symlink()
+        or not (checkpoint / "COMPLETE").is_file()
+        or (checkpoint / "COMPLETE").is_symlink()
+    ):
+        raise SweepError(f"{label} checkpoint is incomplete: {checkpoint}")
+    checkpoint_manifest_sha256 = _sha256(checkpoint / "manifest.json")
+    checkpoint_complete_sha256 = _sha256(checkpoint / "COMPLETE")
+    try:
+        checkpoint_marker = (
+            checkpoint / "COMPLETE"
+        ).read_text(encoding="ascii").strip()
+    except (OSError, UnicodeDecodeError) as exc:
+        raise SweepError(f"cannot read {label} checkpoint COMPLETE: {exc}") from exc
+    if (
+        checkpoint_marker != checkpoint_manifest_sha256
+        or _sha256_string(
+            plan.get("checkpoint_complete_sha256"),
+            label=f"{label}.PLAN.checkpoint_complete_sha256",
+        )
+        != checkpoint_complete_sha256
+    ):
+        raise SweepError(
+            f"{label} PLAN does not bind an authenticated checkpoint"
+        )
     device_type = _nonempty_string(
         plan.get("device_type"),
         label=f"{label}.PLAN.device_type",
@@ -701,6 +758,11 @@ def _load_completed_evaluation(
             "kind": checkpoint_state.get("kind"),
             "tag": checkpoint_state.get("tag"),
         },
+        "checkpoint": {
+            "path": str(checkpoint),
+            "manifest_sha256": checkpoint_manifest_sha256,
+            "complete_sha256": checkpoint_complete_sha256,
+        },
         "run_id": manifest.get("run_id"),
         "harness": {
             "config_fingerprint": config_fingerprint,
@@ -753,6 +815,7 @@ def _public_evaluation(evaluation: Mapping[str, Any]) -> dict[str, Any]:
         "label": evaluation["label"],
         "run_id": evaluation["run_id"],
         "checkpoint_state": evaluation["checkpoint_state"],
+        "checkpoint": evaluation["checkpoint"],
         "evaluation": evaluation["identity"],
         "evaluation_harness": evaluation["harness"],
         "overall": {
@@ -834,6 +897,125 @@ def _same_comparison_contract(
             )
 
 
+def _chinese_source_aggregate(
+    candidate: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    rows = [
+        row
+        for row in candidate["sources"]
+        if str(row.get("source", "")).startswith("chinese_")
+    ]
+    if not rows:
+        return None
+    predicted_tokens = sum(
+        _integer(
+            row.get("predicted_tokens"),
+            label=f"release Chinese source {row.get('source')}.predicted_tokens",
+            minimum=1,
+        )
+        for row in rows
+    )
+    nll_sum = sum(
+        _finite(
+            row.get("nll_sum"),
+            label=f"release Chinese source {row.get('source')}.nll_sum",
+            minimum=0.0,
+        )
+        for row in rows
+    )
+    return {
+        "sources": sorted(str(row["source"]) for row in rows),
+        "predicted_tokens": predicted_tokens,
+        "nll_sum": nll_sum,
+        "mean_nll": nll_sum / predicted_tokens,
+    }
+
+
+def _release_gate_observation(
+    *,
+    prepared: Mapping[str, Any],
+    baseline: Mapping[str, Any],
+    candidates: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Aggregate attestor claims from fully authenticated evaluation payloads."""
+
+    frozen = FROZEN_V3_VALIDATION_CONTRACT
+    same_frozen_v3_validation_contract = (
+        prepared["sha256"] == frozen["prepared_manifest_sha256"]
+        and prepared["dataset_fingerprint"]
+        == frozen["prepared_dataset_fingerprint"]
+        and baseline["run_id"] == frozen["baseline_run_id"]
+        and baseline["checkpoint_state"] == frozen["baseline_checkpoint_state"]
+        and baseline["identity"]["manifest"]["sha256"]
+        == frozen["baseline_manifest_sha256"]
+        and baseline["identity"]["complete"]["sha256"]
+        == frozen["baseline_complete_sha256"]
+        and baseline["identity"]["plan"]["sha256"] == frozen["baseline_plan_sha256"]
+    )
+    ordered = sorted(
+        candidates,
+        key=lambda row: (
+            _integer(
+                row["checkpoint_state"].get("global_step"),
+                label=f"release candidate {row['label']}.global_step",
+                minimum=1,
+            ),
+            str(row["label"]),
+        ),
+    )
+    steps = [int(row["checkpoint_state"]["global_step"]) for row in ordered]
+    if len(set(steps)) != len(steps):
+        raise SweepError("release candidate checkpoint steps must be unique")
+    best = min(
+        candidates,
+        key=lambda row: (
+            _finite(
+                row["overall"].get("mean_nll"),
+                label=f"release candidate {row['label']}.mean_nll",
+                minimum=0.0,
+            ),
+            str(row["label"]),
+        ),
+    )
+    final = ordered[-1]
+    chinese = _chinese_source_aggregate(final)
+    return {
+        "best_aggregate_nll": float(best["overall"]["mean_nll"]),
+        "final_aggregate_nll": float(final["overall"]["mean_nll"]),
+        "chinese_source_nll": (
+            float(chinese["mean_nll"]) if chinese is not None else None
+        ),
+        "candidate_global_steps": steps,
+        "same_frozen_v3_validation_contract": same_frozen_v3_validation_contract,
+        "best_candidate": {
+            "label": best["label"],
+            "checkpoint_state": best["checkpoint_state"],
+            "evaluation_manifest_sha256": best["evaluation"]["manifest"]["sha256"],
+        },
+        "final_candidate": {
+            "label": final["label"],
+            "checkpoint_state": final["checkpoint_state"],
+            "evaluation_manifest_sha256": final["evaluation"]["manifest"]["sha256"],
+        },
+        "chinese_source_aggregate": chinese,
+        "source_binding": {
+            "prepared_manifest_sha256": prepared["sha256"],
+            "prepared_dataset_fingerprint": prepared["dataset_fingerprint"],
+            "comparison_contract_sha256": _canonical_sha256(
+                baseline["comparison_contract"]
+            ),
+            "baseline_evaluation_manifest_sha256": baseline["identity"]["manifest"][
+                "sha256"
+            ],
+            "candidate_evaluation_manifest_sha256": {
+                str(row["label"]): row["evaluation"]["manifest"]["sha256"]
+                for row in ordered
+            },
+            "frozen_v3_validation_contract": dict(frozen),
+        },
+    }
+
+
 def build_summary(
     *,
     prepared_manifest: Path,
@@ -896,6 +1078,11 @@ def build_summary(
             str(candidate["label"]): candidate["identity"] for candidate in candidates
         },
     }
+    release_gate = _release_gate_observation(
+        prepared=prepared,
+        baseline=baseline,
+        candidates=public_candidates,
+    )
     return {
         "schema_version": SCHEMA_VERSION,
         "kind": "twen_v4_checkpoint_frozen_validation_sweep",
@@ -909,6 +1096,7 @@ def build_summary(
         "baseline": public_baseline,
         "candidates": public_candidates,
         "ranking": ranking,
+        "release_gate": release_gate,
         "selection": {
             "criterion": "lowest authenticated candidate-role mean NLL",
             "label": ranking[0]["label"],
@@ -1261,11 +1449,22 @@ def write_bundle(
             ),
         )
         payloads = (summary_path, report_path, overall_chart, source_chart)
+        manifest_inputs = {
+            "prepared_manifest": summary["prepared_manifest"],
+            "baseline_evaluation": summary["baseline"]["evaluation"],
+            "candidate_evaluations": {
+                str(candidate["label"]): candidate["evaluation"]
+                for candidate in summary["candidates"]
+            },
+        }
         manifest = {
             "schema_version": SCHEMA_VERSION,
             "kind": "twen_v4_checkpoint_validation_sweep_bundle",
+            "bundle_producer": _identity(Path(__file__).resolve()),
             "inputs_sha256": summary["inputs_sha256"],
+            "inputs": manifest_inputs,
             "selection": summary["selection"],
+            "release_gate": summary["release_gate"],
             "files": {
                 path.relative_to(staging).as_posix(): _identity(
                     path,
