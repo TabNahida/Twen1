@@ -15,6 +15,7 @@ from twen.data.audits import (
     AUDIT_SCHEMA_VERSION,
     AUDIT_SOURCE_SHA256,
     DataAuditError,
+    _normalize_text,
 )
 from twen.data.prepared import _authenticate_extracted_prepare_inputs
 from twen.data.sources import validate_extracted_base_corpus
@@ -70,7 +71,9 @@ def _write_extracted(
                     "source_id": source_id,
                     "stable_id": _stable(stable_name),
                     "split": split,
-                    "text_sha256": hashlib.sha256(text.encode()).hexdigest(),
+                    "text_sha256": hashlib.sha256(
+                        _normalize_text(text, code=False).encode()
+                    ).hexdigest(),
                     "token_count_with_eos": tokens,
                     "source_license": "fixture-license",
                 }
@@ -427,6 +430,24 @@ def test_validation_inventory_is_byte_preserved(tmp_path: Path) -> None:
     output_validation = output.parent / output_value["validation_files"][0]["path"]
     assert output_validation.read_bytes() == before
     assert output_value["validation_files"] == cooldown_value["validation_files"]
+
+
+def test_document_matching_uses_the_audit_normalization_contract(
+    tmp_path: Path,
+) -> None:
+    normalized_variant = "  \N{FULLWIDTH LATIN CAPITAL LETTER A}   B \r\n C  "
+    pair = _fixture_pair(
+        tmp_path,
+        primary_train=[("overlap", "different primary text", 3)],
+        cooldown_train=[
+            ("overlap", normalized_variant, 5),
+            ("retained", "retained", 7),
+        ],
+    )
+    output = _materialize(pair, tmp_path / "output")
+    assert _texts(output, "train") == ["retained"]
+    attestation = phase_exclusion.validate_phase_exclusion_output(output)
+    assert attestation["metrics"]["excluded_cooldown_train_documents"] == 1
 
 
 def test_input_hash_and_toctou_drift_fail_closed(

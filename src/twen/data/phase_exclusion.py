@@ -22,7 +22,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ..utils import atomic_write_json, atomic_write_text, sha256_file
-from .audits import DataAuditError, validate_base_audit_attestation
+from .audits import DataAuditError, _normalize_text, validate_base_audit_attestation
 from .sources import validate_extracted_base_corpus
 
 PHASE_EXCLUSION_SCHEMA_VERSION = 1
@@ -372,6 +372,30 @@ def _source_owners(
     return result
 
 
+def _source_categories(value: Mapping[str, Any]) -> dict[str, str]:
+    raw_sources = value.get("sources")
+    if not isinstance(raw_sources, list) or not raw_sources:
+        raise DataAuditError("cooldown source inventory is invalid")
+    result: dict[str, str] = {}
+    for index, raw in enumerate(raw_sources):
+        if not isinstance(raw, Mapping):
+            raise DataAuditError(f"cooldown sources[{index}] is invalid")
+        source_id = raw.get("source_id")
+        category = raw.get("category")
+        if (
+            not isinstance(source_id, str)
+            or not source_id
+            or not isinstance(category, str)
+            or not category
+            or source_id in result
+        ):
+            raise DataAuditError(
+                f"cooldown sources[{index}] identity is invalid or duplicate"
+            )
+        result[source_id] = category
+    return result
+
+
 def _parse_document_text(raw: bytes, path: Path, line_number: int) -> str:
     try:
         value = json.loads(raw)
@@ -389,6 +413,7 @@ def _copy_and_match_documents(
     work: Path,
     role: str,
     owners: Mapping[str, str],
+    source_categories: Mapping[str, str],
     attribution: Mapping[tuple[str, str], deque[_Attribution]],
     decisions: Mapping[tuple[str, str], bool],
     excluded_locations: set[tuple[str, int]],
@@ -411,6 +436,10 @@ def _copy_and_match_documents(
         source_id = owners.get(relative)
         if source_id is None:
             raise DataAuditError(f"source_map has no owner for {role} file: {relative}")
+        category = source_categories.get(source_id)
+        if category is None:
+            raise DataAuditError(f"source inventory has no category for {source_id}")
+        code = category == "code" or "code" in source_id.casefold()
         source = _owned_regular_file(
             phase.manifest_path.parent,
             relative,
@@ -423,7 +452,8 @@ def _copy_and_match_documents(
                 if not raw_line.strip():
                     raise DataAuditError(f"blank corpus JSONL row at {source}:{line_number}")
                 text = _parse_document_text(raw_line, source, line_number)
-                text_sha = hashlib.sha256(text.encode("utf-8")).hexdigest()
+                normalized = _normalize_text(text, code=code)
+                text_sha = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
                 document_key = (source_id, text_sha)
                 queue = attribution.get(document_key)
                 if queue is None or not queue:
@@ -781,6 +811,7 @@ def materialize_phase_excluded_cooldown(
     )
     try:
         owners = _source_owners(cooldown.value)
+        source_categories = _source_categories(cooldown.value)
         excluded_locations: set[tuple[str, int]] = set()
         ledger_path = work / "phase-exclusion-ledger.jsonl"
         with ledger_path.open("w", encoding="utf-8") as ledger:
@@ -794,6 +825,7 @@ def materialize_phase_excluded_cooldown(
                 work=work,
                 role="train",
                 owners=owners["train"],
+                source_categories=source_categories,
                 attribution=cooldown_records,
                 decisions=decisions,
                 excluded_locations=excluded_locations,
@@ -809,6 +841,7 @@ def materialize_phase_excluded_cooldown(
                 work=work,
                 role="validation",
                 owners=owners["validation"],
+                source_categories=source_categories,
                 attribution=cooldown_records,
                 decisions=decisions,
                 excluded_locations=excluded_locations,
