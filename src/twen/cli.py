@@ -381,6 +381,43 @@ def _cmd_data_exclude_cooldown_phase(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_data_exclude_cooldown_phase_near(args: argparse.Namespace) -> int:
+    from .data.phase_near_exclusion import (
+        materialize_phase_near_excluded_cooldown,
+        validate_phase_near_exclusion_output,
+    )
+    from .utils import sha256_file
+
+    manifest = materialize_phase_near_excluded_cooldown(
+        primary_manifest=args.primary_manifest,
+        primary_audit=args.primary_audit,
+        primary_prepared=args.primary_prepared,
+        cooldown_manifest=args.cooldown_manifest,
+        cooldown_audit=args.cooldown_audit,
+        cooldown_prepared=args.cooldown_prepared,
+        phase_attestation=args.phase_attestation,
+        expected_phase_attestation_sha256=args.phase_attestation_sha256,
+        expected_near_matches=args.expected_near_matches,
+        output_root=args.output,
+    )
+    attestation = validate_phase_near_exclusion_output(manifest)
+    _print_json(
+        {
+            "ok": True,
+            "manifest": str(manifest),
+            "manifest_sha256": sha256_file(manifest),
+            "attestation": str(
+                manifest.parent / "phase-near-exclusion-attestation.json"
+            ),
+            "attestation_fingerprint": attestation["attestation_fingerprint"],
+            "metrics": attestation["metrics"],
+            "ready_for_training": False,
+            "next": "run data audit-base against the near-excluded manifest",
+        }
+    )
+    return 0
+
+
 def _cmd_data_materialize_cooldown(args: argparse.Namespace) -> int:
     from .data import materialize_quality_cooldown_view
 
@@ -1165,6 +1202,34 @@ def build_parser() -> argparse.ArgumentParser:
     exclude_cooldown_phase.add_argument("--cooldown-audit", required=True)
     exclude_cooldown_phase.add_argument("--output", required=True)
     exclude_cooldown_phase.set_defaults(func=_cmd_data_exclude_cooldown_phase)
+    exclude_cooldown_phase_near = data_sub.add_parser(
+        "exclude-cooldown-phase-near",
+        help=(
+            "remove every cooldown train path/line from an externally pinned, "
+            "exhaustive failed phase-disjointness attestation"
+        ),
+    )
+    exclude_cooldown_phase_near.add_argument("--primary-manifest", required=True)
+    exclude_cooldown_phase_near.add_argument("--primary-audit", required=True)
+    exclude_cooldown_phase_near.add_argument("--primary-prepared", required=True)
+    exclude_cooldown_phase_near.add_argument("--cooldown-manifest", required=True)
+    exclude_cooldown_phase_near.add_argument("--cooldown-audit", required=True)
+    exclude_cooldown_phase_near.add_argument("--cooldown-prepared", required=True)
+    exclude_cooldown_phase_near.add_argument("--phase-attestation", required=True)
+    exclude_cooldown_phase_near.add_argument(
+        "--phase-attestation-sha256",
+        required=True,
+        help="external lowercase SHA256 pin for the failed exhaustive attestation",
+    )
+    exclude_cooldown_phase_near.add_argument(
+        "--expected-near-matches",
+        required=True,
+        type=_positive_int,
+    )
+    exclude_cooldown_phase_near.add_argument("--output", required=True)
+    exclude_cooldown_phase_near.set_defaults(
+        func=_cmd_data_exclude_cooldown_phase_near
+    )
     generate_cooldown_policy = data_sub.add_parser(
         "generate-cooldown-policy",
         help="dry-plan or explicitly publish the deterministic Base-v2 50M quality policy",
