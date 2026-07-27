@@ -3964,9 +3964,17 @@ def _markdown(analysis: Mapping[str, Any], json_name: str) -> str:
         lines += [
             f"- source cursor wrap: `{consumption['source_wrap_detected']}`; "
             f"重复 {repeat_detail}。",
-            "- 这不影响 smoke 的数值/性能门, 但该 manifest 不能作为正式长训数据。"
-            "正式 profile 必须在启动前硬拒绝任何容量不足或第二 epoch。",
         ]
+        if consumption["source_wrap_detected"]:
+            lines.append(
+                "- 数据容量门未通过: 已发生 source wrap; 该 manifest 不能作为正式长训"
+                "数据。正式 profile 必须在启动前硬拒绝任何容量不足或第二 epoch。"
+            )
+        else:
+            lines.append(
+                "- 数据容量门通过: 本次预算内未发生 source wrap; 其他训练预算仍须由"
+                "各自冻结的 capacity attestation 独立授权。"
+            )
     if cooldown is not None:
         boundary = cooldown["boundary"]["metrics"]
         lines += [
@@ -4098,6 +4106,28 @@ def _markdown(analysis: Mapping[str, Any], json_name: str) -> str:
     v4_run = "v4" in str(run.get("run_id", "")).lower()
     if v4_run:
         clipping = analysis["clipping"]
+        release_gate = analysis.get("release_gate")
+        calibration_run = isinstance(release_gate, Mapping)
+        admission = consumption.get("admission")
+        data_admission_passed = (
+            isinstance(admission, Mapping)
+            and admission.get("manifest_covers_max_tokens") is True
+            and admission.get("completed_without_source_wrap") is True
+        )
+        validation_statement = (
+            "这是 calibration 训练证据; 是否放行 250M 仍由 step 40/50 frozen "
+            "held-out validation 与独立 drift gate 决定。"
+            if calibration_run
+            else "这是方向性 smoke 证据, 不能替代 frozen held-out validation。"
+        )
+        data_admission_statement = (
+            "- 数据 admission 通过: prepared manifest 覆盖本次预算, 且未发生 "
+            "source wrap; 正式 250M 仍必须使用其独立闭合的 primary/cooldown "
+            "capacity evidence。"
+            if data_admission_passed
+            else "- 数据 admission 未通过: prepared capacity 或无回绕证据不足; "
+            "在冻结足量 unique prepared text 前不应放行后续预算。"
+        )
         clipped = sum(
             phase["points"] * phase["gt_configured_fraction"]
             for phase in (
@@ -4110,7 +4140,11 @@ def _markdown(analysis: Mapping[str, Any], json_name: str) -> str:
         )
         conclusion = [
             "",
-            "## v4 smoke 结论与 250M gate",
+            (
+                "## v4 calibration 结论与 250M gate"
+                if calibration_run
+                else "## v4 smoke 结论与 250M gate"
+            ),
             "",
             f"- 数值门通过: 全部 required metrics finite, loss 公式精确, "
             f"超过 grad clip `{clipping['configured_threshold']}` 的 step 数为 "
@@ -4118,12 +4152,10 @@ def _markdown(analysis: Mapping[str, Any], json_name: str) -> str:
             f"- 首尾窗口 loss 变化 "
             f"`{windows['metrics']['loss']['percent_delta']:+.2f}%`, NTP 变化 "
             f"`{windows['metrics']['ntp']['percent_delta']:+.2f}%`; 只有 "
-            f"`{run['terminal_step']}` 个 optimizer steps, "
-            "这是方向性 smoke 证据, 不能替代 frozen held-out validation。",
+            f"`{run['terminal_step']}` 个 optimizer steps, {validation_statement}",
             f"- 性能门通过: active-wall `{ordinary['aggregate_active_wall_tokens_per_second']:.1f}` "
             f"tok/s, reserved headroom `{performance['memory']['reserved_headroom_gib']:.3f}` GiB。",
-            "- 数据 admission 未通过: 本次发生 source wrap; 在扩充并锁定足量 unique "
-            "prepared text、修复末 batch 预算策略之前, 不应从该 manifest 启动 250M。",
+            data_admission_statement,
             "- 纯文本 objective 已是 `1.0*NTP + 0.1*MTP`, 没有 teacher logits KD、"
             "anchor KL 或 hidden alignment。",
         ]

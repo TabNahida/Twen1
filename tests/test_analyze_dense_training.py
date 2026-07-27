@@ -1205,10 +1205,26 @@ def test_calibration_release_gate_is_derived_from_authenticated_sources(
     assert gate["source_binding"]["metrics_sha256"] == _sha256(run_dir / "metrics.jsonl")
     assert gate["source_binding"]["events_sha256"] == _sha256(run_dir / "events.jsonl")
 
+    analysis["run"]["run_id"] = "base-dense-v4-13m-low-lr-calibration"
+    analysis["data_consumption"]["source_wrap_detected"] = False
+    analysis["data_consumption"]["repeated_samples"] = 0
+    analysis["data_consumption"]["repeated_tokens"] = 0
+    analysis["data_consumption"]["repeated_sample_fraction"] = 0.0
+    analysis["data_consumption"]["repeated_token_fraction"] = 0.0
+    analysis["data_consumption"]["admission"] = {
+        "manifest_covers_max_tokens": True,
+        "completed_without_source_wrap": True,
+    }
     output = tmp_path / "calibration-analysis"
     analyzer.write_analysis(analysis, output=output, run_dir=run_dir)
     manifest = json.loads((output / "MANIFEST.json").read_text(encoding="utf-8"))
     assert manifest["release_gate"] == gate
+    report = (output / "REPORT.zh-CN.md").read_text(encoding="utf-8")
+    assert "## v4 calibration 结论与 250M gate" in report
+    assert "数据容量门通过" in report
+    assert "数据 admission 通过" in report
+    assert "本次发生 source wrap" not in report
+    assert "数据 admission 未通过" not in report
     expected_publisher_manifest = publisher._training_manifest_contract(
         analysis,
         producer=manifest["bundle_producer"],
