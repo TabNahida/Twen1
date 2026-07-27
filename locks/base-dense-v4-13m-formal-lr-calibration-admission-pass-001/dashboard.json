@@ -1,0 +1,69 @@
+{
+  "profiles": [
+    {
+      "config": "configs/base/dense-oracle.yaml",
+      "fork_from": null,
+      "id": "base-dense-v1",
+      "label": "Base Dense v1 (completed, monitor only)",
+      "launch_enabled": false,
+      "resume": "auto"
+    },
+    {
+      "config": "configs/base/dense-v2-500m.yaml",
+      "config_sha256": "ce8b171b1257d59e9ff5366dff768488ea53873c6d49268d40b7323ea066ea9b",
+      "fork_from": "runs/base-dense-v1/step-000000000383-milestone-complete",
+      "id": "base-dense-v2-500m",
+      "label": "Base Dense v2 500M (finalized fork)",
+      "launch_enabled": false,
+      "resume": "none"
+    },
+    {
+      "config": "configs/base/dense-v3-500m.yaml",
+      "config_sha256": "c44934dab4639befcc95aa1b505649a48d45c0c48b6a14ffcd0ec29bd1243de9",
+      "fork_from": "runs/base-dense-v1/step-000000000383-milestone-complete",
+      "id": "base-dense-v3-500m",
+      "label": "Base Dense v3 500M (completed, lower peak LR)",
+      "launch_enabled": false,
+      "resume": "none"
+    },
+    {
+      "config": "configs/base/dense-v4-16m-smoke.yaml",
+      "config_sha256": "4d13ded603d2cda979fba6d59cb67909287973b6d558dd35dc742538a0b4aa97",
+      "fork_from": "runs/base-dense-v3-500m/step-000000001912-milestone-complete",
+      "id": "base-dense-v4-16m-smoke",
+      "label": "Base Dense v4 16M (completed Muon/text smoke; monitor only)",
+      "launch_enabled": false,
+      "resume": "none"
+    },
+    {
+      "config": "configs/base/dense-v4-13m-low-lr-calibration.yaml",
+      "config_sha256": "15ce9dbf68643b6abbcbc687a698f2994e2200587c442974903b07613a43109d",
+      "fork_from": "runs/base-dense-v3-500m/step-000000001912-milestone-complete",
+      "id": "base-dense-v4-13m-low-lr-calibration",
+      "label": "Base Dense v4 13M (blocked: use authenticated admission snapshot)",
+      "launch_enabled": false,
+      "resume": "none"
+    },
+    {
+      "calibration_admission": {
+        "admission_fingerprint": "57fdb56a2a5f3811df5f8fe511d894b41ac359f7859365e7e52af1e3305cad5a",
+        "admission_sha256": "1554db001b9f0cf8ab106edb76dc2adb12951f80c954e7422367eb5f4a7078fa",
+        "authorizes_formal_training": false,
+        "path": "locks/base-dense-v4-13m-formal-lr-calibration-admission-pass-001",
+        "required_start_confirmation": "START base-dense-v4-13m-formal-lr-calibration",
+        "training_started": false
+      },
+      "config": "configs/base/dense-v4-13m-formal-lr-calibration.yaml",
+      "config_sha256": "13fdaea6c21b2e070246a6836be33718137ec1df7563232ba2d7a15dbf7536e9",
+      "fork_from": "runs/base-dense-v3-500m/step-000000001912-milestone-complete",
+      "id": "base-dense-v4-13m-formal-lr-calibration",
+      "label": "Base Dense v4 13M formal-LR calibration (license accepted; awaiting explicit START)",
+      "launch_enabled": true,
+      "launch_kind": "direct_train",
+      "resume": "none"
+    }
+  ],
+  "project_root": "../..",
+  "schema_version": 1,
+  "state_dir": ".twen/dashboard"
+}

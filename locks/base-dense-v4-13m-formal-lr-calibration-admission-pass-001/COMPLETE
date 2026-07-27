@@ -1,0 +1,12 @@
+{
+  "admission_fingerprint": "57fdb56a2a5f3811df5f8fe511d894b41ac359f7859365e7e52af1e3305cad5a",
+  "authorizes_calibration_launch": true,
+  "authorizes_formal_training": false,
+  "bundle_fingerprint": "cfef62b661fb172c202bb06e584ddb7fec6021a531032c595c7acee946eaaa98",
+  "dashboard_profile_change_authorized": true,
+  "kind": "twen_v4_13m_formal_lr_calibration_admission_complete",
+  "manifest": "MANIFEST.json",
+  "manifest_sha256": "0ebbe8f3510e479e77247da6d5c8cb1933444f7442ec9910d693fd43b5dbe35b",
+  "schema_version": 1,
+  "training_started": false
+}
