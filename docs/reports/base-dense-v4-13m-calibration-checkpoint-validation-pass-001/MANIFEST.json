@@ -1,0 +1,176 @@
+{
+  "bundle_producer": {
+    "path": "/media/data1/Project/AI/Twen1/scripts/summarize_v4_checkpoint_validation.py",
+    "sha256": "a78230ebec1523c2146a3bfb19896e01db808b00ef4d63fb641cb27cdc9ef217",
+    "size": 60667
+  },
+  "files": {
+    "REPORT.zh-CN.md": {
+      "path": "REPORT.zh-CN.md",
+      "sha256": "b65ca49a7138fc757bc79deb5e7bc2b77eb50dcefa3370502bdf43dd347fc380",
+      "size": 4823
+    },
+    "charts/overall-nll-delta.svg": {
+      "path": "charts/overall-nll-delta.svg",
+      "sha256": "ec22b369f2a2bfa9839adfb083e4a95bc6dc36d914acd1d7ff46b00ab7e87ba5",
+      "size": 2605
+    },
+    "charts/per-source-nll-delta.svg": {
+      "path": "charts/per-source-nll-delta.svg",
+      "sha256": "0f6f20e22e4aaa6573f74ddd86bc372778a6306416f3d996359a16a2afd37546",
+      "size": 4953
+    },
+    "summary.json": {
+      "path": "summary.json",
+      "sha256": "1d186d47c03310545529e960d6d8cb642152eeb22ee663a6ba54d4c4a8e3e2ae",
+      "size": 22553
+    }
+  },
+  "inputs": {
+    "baseline_evaluation": {
+      "complete": {
+        "path": "/media/data1/Project/AI/Twen1/artifacts/evaluations/base-dense-v3-500m-final-validation/COMPLETE",
+        "sha256": "6d55deb1be53149338189ccc34fdebd180452145ccaedb645db3edd812407cad",
+        "size": 65
+      },
+      "manifest": {
+        "path": "/media/data1/Project/AI/Twen1/artifacts/evaluations/base-dense-v3-500m-final-validation/manifest.json",
+        "sha256": "97b9f59d968fef1aa3a9a0234cac542391151645650969283cd449ac0056dd3f",
+        "size": 225416
+      },
+      "plan": {
+        "path": "/media/data1/Project/AI/Twen1/artifacts/evaluations/base-dense-v3-500m-final-validation/PLAN.json",
+        "sha256": "e2f903a91d01f5d550582b4bb7733cad333829693e8462d6a0e789ef6e49f2e7",
+        "size": 3550
+      },
+      "root": "/media/data1/Project/AI/Twen1/artifacts/evaluations/base-dense-v3-500m-final-validation"
+    },
+    "candidate_evaluations": {
+      "step40": {
+        "complete": {
+          "path": "/media/data1/Project/AI/Twen1/artifacts/evaluations/base-dense-v4-13m-calibration-step040-candidate/COMPLETE",
+          "sha256": "129ffd1bab5e2a9fd3f27088e25da18635df25fef4709eb53830e2fa72eaf67a",
+          "size": 65
+        },
+        "manifest": {
+          "path": "/media/data1/Project/AI/Twen1/artifacts/evaluations/base-dense-v4-13m-calibration-step040-candidate/manifest.json",
+          "sha256": "2f4ebbf57a122d4f059b586e961a0883e7636b73dbebd2cf16c673e3346409ea",
+          "size": 77387
+        },
+        "plan": {
+          "path": "/media/data1/Project/AI/Twen1/artifacts/evaluations/base-dense-v4-13m-calibration-step040-candidate/PLAN.json",
+          "sha256": "e38c6fef69cc12eeaa12c92c80ee70ea942b1747f10049a018ed46f82584ccdc",
+          "size": 3890
+        },
+        "root": "/media/data1/Project/AI/Twen1/artifacts/evaluations/base-dense-v4-13m-calibration-step040-candidate"
+      },
+      "step50": {
+        "complete": {
+          "path": "/media/data1/Project/AI/Twen1/artifacts/evaluations/base-dense-v4-13m-calibration-step050-candidate/COMPLETE",
+          "sha256": "dbb484f95ef0abec60fb03d83fba6e2ea4295ac68fb692aac2b76cc878ca5f5f",
+          "size": 65
+        },
+        "manifest": {
+          "path": "/media/data1/Project/AI/Twen1/artifacts/evaluations/base-dense-v4-13m-calibration-step050-candidate/manifest.json",
+          "sha256": "52b10f62b0b389fc7f862db1348ed846d892b5287740e5a38a9db98c83b1455a",
+          "size": 77395
+        },
+        "plan": {
+          "path": "/media/data1/Project/AI/Twen1/artifacts/evaluations/base-dense-v4-13m-calibration-step050-candidate/PLAN.json",
+          "sha256": "7adb9636740db5de2c5d5ddda6f9099e2a65be9924a3909c8f6b1380dd661429",
+          "size": 3907
+        },
+        "root": "/media/data1/Project/AI/Twen1/artifacts/evaluations/base-dense-v4-13m-calibration-step050-candidate"
+      }
+    },
+    "prepared_manifest": {
+      "dataset_fingerprint": "6839d5aefb3b5b8f960e7da1b54bd40c2882bcb915954e727f2480252d4cdc79",
+      "path": "/media/data1/Project/AI/Twen1/artifacts/data/base-validation/manifest.json",
+      "sequence_count": 4947,
+      "sha256": "4d3877bfaf4e01551d41913e11d37db08c6097b513ac94ae4a63b8a640b68e7f",
+      "shard_count": 120,
+      "sources": [
+        "chinese_fineweb2_cmn_hani",
+        "code_github_clean_allowlisted",
+        "english_fineweb_edu_dedup",
+        "math_finemath_4plus",
+        "science_cosmopedia_openstax",
+        "science_cosmopedia_stanford"
+      ],
+      "token_count": 20014392
+    }
+  },
+  "inputs_sha256": "b608a54a18a1016b8d942b0a3d7b3c48a50941e7878a7bf73b66c47ccc3daebb",
+  "kind": "twen_v4_checkpoint_validation_sweep_bundle",
+  "release_gate": {
+    "best_aggregate_nll": 2.3747316886353578,
+    "best_candidate": {
+      "checkpoint_state": {
+        "committed_tokens": 13051413,
+        "global_step": 50,
+        "kind": "milestone",
+        "tag": "complete"
+      },
+      "evaluation_manifest_sha256": "52b10f62b0b389fc7f862db1348ed846d892b5287740e5a38a9db98c83b1455a",
+      "label": "step50"
+    },
+    "candidate_global_steps": [
+      40,
+      50
+    ],
+    "chinese_source_aggregate": {
+      "mean_nll": 3.6591480012558204,
+      "nll_sum": 18295238.70300293,
+      "predicted_tokens": 4999863,
+      "sources": [
+        "chinese_fineweb2_cmn_hani"
+      ]
+    },
+    "chinese_source_nll": 3.6591480012558204,
+    "final_aggregate_nll": 2.3747316886353578,
+    "final_candidate": {
+      "checkpoint_state": {
+        "committed_tokens": 13051413,
+        "global_step": 50,
+        "kind": "milestone",
+        "tag": "complete"
+      },
+      "evaluation_manifest_sha256": "52b10f62b0b389fc7f862db1348ed846d892b5287740e5a38a9db98c83b1455a",
+      "label": "step50"
+    },
+    "same_frozen_v3_validation_contract": true,
+    "source_binding": {
+      "baseline_evaluation_manifest_sha256": "97b9f59d968fef1aa3a9a0234cac542391151645650969283cd449ac0056dd3f",
+      "candidate_evaluation_manifest_sha256": {
+        "step40": "2f4ebbf57a122d4f059b586e961a0883e7636b73dbebd2cf16c673e3346409ea",
+        "step50": "52b10f62b0b389fc7f862db1348ed846d892b5287740e5a38a9db98c83b1455a"
+      },
+      "comparison_contract_sha256": "1d29935580cae5cb0d3a4dc42b1be590c29610e42615c204f21e43cf954ada60",
+      "frozen_v3_validation_contract": {
+        "baseline_checkpoint_state": {
+          "committed_tokens": 500009962,
+          "global_step": 1912,
+          "kind": "milestone",
+          "tag": "complete"
+        },
+        "baseline_complete_sha256": "6d55deb1be53149338189ccc34fdebd180452145ccaedb645db3edd812407cad",
+        "baseline_manifest_sha256": "97b9f59d968fef1aa3a9a0234cac542391151645650969283cd449ac0056dd3f",
+        "baseline_plan_sha256": "e2f903a91d01f5d550582b4bb7733cad333829693e8462d6a0e789ef6e49f2e7",
+        "baseline_run_id": "base-dense-v3-500m",
+        "prepared_dataset_fingerprint": "6839d5aefb3b5b8f960e7da1b54bd40c2882bcb915954e727f2480252d4cdc79",
+        "prepared_manifest_sha256": "4d3877bfaf4e01551d41913e11d37db08c6097b513ac94ae4a63b8a640b68e7f"
+      },
+      "prepared_dataset_fingerprint": "6839d5aefb3b5b8f960e7da1b54bd40c2882bcb915954e727f2480252d4cdc79",
+      "prepared_manifest_sha256": "4d3877bfaf4e01551d41913e11d37db08c6097b513ac94ae4a63b8a640b68e7f"
+    }
+  },
+  "schema_version": 1,
+  "selection": {
+    "checkpoint_step": 50,
+    "committed_tokens": 13051413,
+    "criterion": "lowest authenticated candidate-role mean NLL",
+    "label": "step50",
+    "mean_nll": 2.3747316886353578,
+    "nll_delta_candidate_minus_baseline": -0.0019371145618527486
+  }
+}

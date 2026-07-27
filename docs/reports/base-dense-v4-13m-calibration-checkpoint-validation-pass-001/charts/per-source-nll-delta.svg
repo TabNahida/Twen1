@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="720" viewBox="0 0 1100 720" role="img">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>text{font-family:ui-sans-serif,system-ui,sans-serif;fill:#111827}.grid{stroke:#e5e7eb;stroke-width:1}.axis{stroke:#374151;stroke-width:1.4}.title{font-size:24px;font-weight:700}.tick{font-size:12px;fill:#4b5563}.label{font-size:14px;font-weight:600}.legend{font-size:13px}</style>
+<text class="title" x="120.0" y="38">Per-source candidate NLL delta vs baseline</text>
+<line class="grid" x1="120.0" y1="565.00" x2="1055.0" y2="565.00"/>
+<text class="tick" x="110.0" y="569.00" text-anchor="end">-0.00739</text>
+<line class="grid" x1="120.0" y1="485.00" x2="1055.0" y2="485.00"/>
+<text class="tick" x="110.0" y="489.00" text-anchor="end">-0.00548</text>
+<line class="grid" x1="120.0" y1="405.00" x2="1055.0" y2="405.00"/>
+<text class="tick" x="110.0" y="409.00" text-anchor="end">-0.00357</text>
+<line class="grid" x1="120.0" y1="325.00" x2="1055.0" y2="325.00"/>
+<text class="tick" x="110.0" y="329.00" text-anchor="end">-0.00166</text>
+<line class="grid" x1="120.0" y1="245.00" x2="1055.0" y2="245.00"/>
+<text class="tick" x="110.0" y="249.00" text-anchor="end">+0.00024</text>
+<line class="grid" x1="120.0" y1="165.00" x2="1055.0" y2="165.00"/>
+<text class="tick" x="110.0" y="169.00" text-anchor="end">+0.00215</text>
+<line class="grid" x1="120.0" y1="85.00" x2="1055.0" y2="85.00"/>
+<text class="tick" x="110.0" y="89.00" text-anchor="end">+0.00406</text>
+<line class="axis" x1="120.0" y1="85.0" x2="120.0" y2="565.0"/>
+<line x1="120.0" y1="255.23" x2="1055.0" y2="255.23" stroke="#111827" stroke-width="2"/>
+<text class="label" x="28" y="325.00" text-anchor="middle" transform="rotate(-90 28 325.00)">Token-weighted mean NLL delta</text>
+<rect x="146.30" y="140.51" width="47.12" height="114.72" fill="#2563eb" opacity="0.88"/>
+<text class="tick" x="169.87" y="133.51" text-anchor="middle">+0.00274</text>
+<rect x="202.40" y="131.45" width="47.12" height="123.78" fill="#dc2626" opacity="0.88"/>
+<text class="tick" x="225.97" y="124.45" text-anchor="middle">+0.00295</text>
+<text class="tick" x="197.92" y="592" text-anchor="end" transform="rotate(-28 197.92 592)">chinese_fineweb2_cmn_hani</text>
+<rect x="302.14" y="255.23" width="47.12" height="161.28" fill="#2563eb" opacity="0.88"/>
+<text class="tick" x="325.70" y="432.51" text-anchor="middle">-0.00385</text>
+<rect x="358.24" y="255.23" width="47.12" height="170.17" fill="#dc2626" opacity="0.88"/>
+<text class="tick" x="381.80" y="441.40" text-anchor="middle">-0.00406</text>
+<text class="tick" x="353.75" y="592" text-anchor="end" transform="rotate(-28 353.75 592)">code_github_clean_allowlisted</text>
+<rect x="457.97" y="255.23" width="47.12" height="116.08" fill="#2563eb" opacity="0.88"/>
+<text class="tick" x="481.53" y="387.31" text-anchor="middle">-0.00277</text>
+<rect x="514.07" y="255.23" width="47.12" height="120.52" fill="#dc2626" opacity="0.88"/>
+<text class="tick" x="537.63" y="391.75" text-anchor="middle">-0.00288</text>
+<text class="tick" x="509.58" y="592" text-anchor="end" transform="rotate(-28 509.58 592)">english_fineweb_edu_dedup</text>
+<rect x="613.80" y="255.23" width="47.12" height="132.14" fill="#2563eb" opacity="0.88"/>
+<text class="tick" x="637.37" y="403.37" text-anchor="middle">-0.00315</text>
+<rect x="669.90" y="255.23" width="47.12" height="138.53" fill="#dc2626" opacity="0.88"/>
+<text class="tick" x="693.47" y="409.76" text-anchor="middle">-0.00331</text>
+<text class="tick" x="665.42" y="592" text-anchor="end" transform="rotate(-28 665.42 592)">math_finemath_4plus</text>
+<rect x="769.64" y="255.23" width="47.12" height="196.67" fill="#2563eb" opacity="0.88"/>
+<text class="tick" x="793.20" y="467.90" text-anchor="middle">-0.00469</text>
+<rect x="825.74" y="255.23" width="47.12" height="208.80" fill="#dc2626" opacity="0.88"/>
+<text class="tick" x="849.30" y="480.03" text-anchor="middle">-0.00498</text>
+<text class="tick" x="821.25" y="592" text-anchor="end" transform="rotate(-28 821.25 592)">science_cosmopedia_openstax</text>
+<rect x="925.47" y="255.23" width="47.12" height="250.08" fill="#2563eb" opacity="0.88"/>
+<text class="tick" x="949.03" y="521.31" text-anchor="middle">-0.00597</text>
+<rect x="981.57" y="255.23" width="47.12" height="263.32" fill="#dc2626" opacity="0.88"/>
+<text class="tick" x="1005.13" y="534.55" text-anchor="middle">-0.00628</text>
+<text class="tick" x="977.08" y="592" text-anchor="end" transform="rotate(-28 977.08 592)">science_cosmopedia_stanford</text>
+<rect x="120.00" y="660" width="18" height="12" fill="#2563eb"/>
+<text class="legend" x="145.00" y="671">step40</text>
+<rect x="270.00" y="660" width="18" height="12" fill="#dc2626"/>
+<text class="legend" x="295.00" y="671">step50</text>
+<text class="tick" x="1055.0" y="704" text-anchor="end">Δ = candidate − baseline；负值更好</text>
+</svg>

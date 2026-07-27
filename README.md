@@ -829,10 +829,25 @@ scheduler、RNG、data cursor、metrics 与全 rank runtime 哈希逐字节一�
 `artifacts/configuration/v4-optimizer-ab/summary.json`，结论为 `accepted=true`；
 16M smoke 已改为 monitor-only。中文数据治理切换为固定版本的中文 Wikipedia 后，
 最终数据身份、语义审阅和 formal baseline 已闭合。用户的精确 Wikipedia 许可确认已由
-`locks/base-dense-v4-13m-calibration-admission-pass-002/` 原子记录；被认证的
-Dashboard 快照只开放 13M low-LR calibration，并仍要求独立输入
-`START base-dense-v4-13m-low-lr-calibration`。250M formal 继续保持 blocked，不能循环
-当前 16M 或复用其 checkpoint/数据来冒充正式训练容量。
+`locks/base-dense-v4-13m-calibration-admission-pass-002/` 原子记录。
+
+### v4 13M calibration（训练完成，中文质量门未通过）
+
+13M low-LR calibration 已从 v3 final model-only checkpoint 独立完成 50 个 optimizer
+step、13,051,413 token；全程没有 OOM、NaN、source wrap 或数据复用。稳态约
+8.15k tok/s，GPU 功耗均值约 553W、P95 约 600W，peak reserved 25.73 GiB。训练、drift
+与 frozen checkpoint validation 的认证报告分别位于
+[训练报告](docs/reports/base-dense-v4-13m-low-lr-calibration/REPORT.zh-CN.md)、
+[drift 报告](docs/reports/base-dense-v4-13m-calibration-drift/REPORT.zh-CN.md) 和
+[validation 报告](docs/reports/base-dense-v4-13m-calibration-checkpoint-validation-pass-001/REPORT.zh-CN.md)。
+
+step 40 与 step 50 均在同一份 v3 frozen validation（20,009,445 predicted token）上完成
+candidate-only 全量评测。step 50 aggregate NLL 为 `2.374731689`，相对 v3 的
+`2.376668803` 改善 `0.001937115`；除中文外的 5 个 source 全部改善。但冻结中文
+FineWeb2 NLL 为 `3.659148001`，高于 v3 硬上限 `3.656194313`，差
+`0.002953688`（`+0.08079%`）。生产 attestor 因此 fail-closed，未生成 calibration
+attestation、formal release 或 250M launch 权限。现有 Dashboard 继续保持 formal
+profile 关闭，不能循环 16M/13M checkpoint 或绕过该质量门。
 
 250M 合同为 225M primary + 25M cooldown、physical B1/GA64、NTP `1.0` +
 native frozen MTP `0.1`、Muon Adapter/Lora `3e-5`、AdamW scale `3e-6`、
@@ -847,7 +862,9 @@ checkpoint 和数据 cursor 均不得进入正式 release。
 当前正式 config 仍有 `PENDING_*`，closure readiness/capacity 均
 `launch_enabled=false`。正式 train/validation union 不相交、中文语义质量与 v3
 baseline bundle 已通过；不可变 closure 中的许可门保持 pending 原始状态，独立
-calibration admission 已记录许可 ACK，但 13M calibration 尚未启动。
+calibration admission 已记录许可 ACK。13M calibration 已完成，但其 checkpoint
+validation 的中文质量门失败；下一次 formal release 之前必须以新的合规 calibration
+证明该回归已消除，不能手工放宽阈值或把 aggregate 改善代替 per-source gate。
 
 外部 governed controller 已实现 13M/26M/.../250M 暂停点：它会在第一个达到或越过
 阈值的完整 optimizer batch 后保存 milestone、暂停并运行认证 validation，同时执行

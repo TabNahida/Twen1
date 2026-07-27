@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="700" viewBox="0 0 1320 700">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="660.0" y="38" text-anchor="middle" font-family="sans-serif" font-size="25" font-weight="600" fill="#0f172a">Training throughput</text>
+<line x1="104.0" y1="70.0" x2="132.0" y2="70.0" stroke="#2563eb" stroke-width="3"/>
+<text x="140.0" y="75.0" font-family="sans-serif" font-size="14" fill="#334155">compute</text>
+<line x1="484.0" y1="70.0" x2="512.0" y2="70.0" stroke="#f97316" stroke-width="3"/>
+<text x="520.0" y="75.0" font-family="sans-serif" font-size="14" fill="#334155">active wall</text>
+<line x1="104.0" y1="107.0" x2="104.0" y2="622.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="104.0" y="649.0" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#475569">0.260</text>
+<line x1="104.0" y1="622.0" x2="1284.0" y2="622.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="92.0" y="627.0" text-anchor="end" font-family="sans-serif" font-size="13" fill="#475569">0.000</text>
+<line x1="340.0" y1="107.0" x2="340.0" y2="622.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="340.0" y="649.0" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#475569">2.818</text>
+<line x1="104.0" y1="519.0" x2="1284.0" y2="519.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="92.0" y="524.0" text-anchor="end" font-family="sans-serif" font-size="13" fill="#475569">1.8k</text>
+<line x1="576.0" y1="107.0" x2="576.0" y2="622.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="576.0" y="649.0" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#475569">5.377</text>
+<line x1="104.0" y1="416.0" x2="1284.0" y2="416.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="92.0" y="421.0" text-anchor="end" font-family="sans-serif" font-size="13" fill="#475569">3.6k</text>
+<line x1="812.0" y1="107.0" x2="812.0" y2="622.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="812.0" y="649.0" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#475569">7.935</text>
+<line x1="104.0" y1="313.0" x2="1284.0" y2="313.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="92.0" y="318.0" text-anchor="end" font-family="sans-serif" font-size="13" fill="#475569">5.4k</text>
+<line x1="1048.0" y1="107.0" x2="1048.0" y2="622.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="1048.0" y="649.0" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#475569">10.5</text>
+<line x1="104.0" y1="210.0" x2="1284.0" y2="210.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="92.0" y="215.0" text-anchor="end" font-family="sans-serif" font-size="13" fill="#475569">7.2k</text>
+<line x1="1284.0" y1="107.0" x2="1284.0" y2="622.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="1284.0" y="649.0" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#475569">13.1</text>
+<line x1="104.0" y1="107.0" x2="1284.0" y2="107.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="92.0" y="112.0" text-anchor="end" font-family="sans-serif" font-size="13" fill="#475569">9.0k</text>
+<line x1="104.0" y1="622.0" x2="1284.0" y2="622.0" stroke="#334155" stroke-width="1.5"/>
+<line x1="104.0" y1="107.0" x2="104.0" y2="622.0" stroke="#334155" stroke-width="1.5"/>
+<text x="694.0" y="680.0" text-anchor="middle" font-family="sans-serif" font-size="15" fill="#334155">Committed tokens (millions)</text>
+<text x="24" y="364.5" text-anchor="middle" transform="rotate(-90 24 364.5)" font-family="sans-serif" font-size="15" fill="#334155">Tokens / second</text>
+<polyline points="104.00,265.37 127.88,162.24 152.06,145.15 176.24,145.35 200.42,145.68 224.61,146.94 248.35,158.32 272.23,154.86 296.41,148.24 320.59,148.41 344.47,154.92 368.56,150.45 392.75,150.11 416.93,148.72 441.09,150.93 465.27,149.12 489.23,154.84 512.75,164.98 536.93,149.63 561.11,149.70 585.29,148.97 609.26,153.50 633.45,149.05 657.63,149.18 681.81,150.99 705.80,154.45 729.69,156.80 753.87,150.10 778.05,150.29 802.24,150.16 826.42,148.23 850.56,152.68 874.66,153.48 898.85,149.74 922.75,156.55 946.82,153.33 970.96,153.23 995.14,151.74 1019.33,149.94 1043.51,150.34 1067.43,155.93 1091.61,148.72 1115.79,151.19 1139.70,156.33 1163.88,150.07 1188.06,150.23 1211.91,157.98 1236.10,150.39 1260.08,155.64 1284.00,157.54" fill="none" stroke="#2563eb" stroke-width="2.20" opacity="1.000"/>
+<polyline points="104.00,265.67 127.88,163.25 152.06,146.34 176.24,146.72 200.42,146.84 224.61,148.08 248.35,159.53 272.23,156.21 296.41,149.45 320.59,293.87 344.47,155.99 368.56,151.73 392.75,151.18 416.93,149.82 441.09,152.18 465.27,150.06 489.23,155.89 512.75,166.24 536.93,151.05 561.11,266.61 585.29,150.06 609.26,154.97 633.45,150.19 657.63,150.93 681.81,152.02 705.80,155.62 729.69,157.89 753.87,151.05 778.05,151.29 802.24,250.55 826.42,149.20 850.56,153.79 874.66,154.58 898.85,150.68 922.75,157.46 946.82,154.34 970.96,154.30 995.14,152.73 1019.33,151.29 1043.51,279.59 1067.43,156.93 1091.61,149.94 1115.79,152.15 1139.70,157.22 1163.88,151.05 1188.06,151.17 1211.91,158.94 1236.10,151.42 1260.08,156.45 1284.00,284.00" fill="none" stroke="#f97316" stroke-width="2.20" opacity="1.000"/>
+</svg>

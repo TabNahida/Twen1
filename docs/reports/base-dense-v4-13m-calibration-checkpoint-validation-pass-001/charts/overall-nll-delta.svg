@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="720" viewBox="0 0 1100 720" role="img">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>text{font-family:ui-sans-serif,system-ui,sans-serif;fill:#111827}.grid{stroke:#e5e7eb;stroke-width:1}.axis{stroke:#374151;stroke-width:1.4}.title{font-size:24px;font-weight:700}.tick{font-size:12px;fill:#4b5563}.label{font-size:14px;font-weight:600}.legend{font-size:13px}</style>
+<text class="title" x="120.0" y="38">Overall candidate NLL delta vs baseline</text>
+<line class="grid" x1="120.0" y1="565.00" x2="1055.0" y2="565.00"/>
+<text class="tick" x="110.0" y="569.00" text-anchor="end">-0.00217</text>
+<line class="grid" x1="120.0" y1="485.00" x2="1055.0" y2="485.00"/>
+<text class="tick" x="110.0" y="489.00" text-anchor="end">-0.00177</text>
+<line class="grid" x1="120.0" y1="405.00" x2="1055.0" y2="405.00"/>
+<text class="tick" x="110.0" y="409.00" text-anchor="end">-0.00137</text>
+<line class="grid" x1="120.0" y1="325.00" x2="1055.0" y2="325.00"/>
+<text class="tick" x="110.0" y="329.00" text-anchor="end">-0.00097</text>
+<line class="grid" x1="120.0" y1="245.00" x2="1055.0" y2="245.00"/>
+<text class="tick" x="110.0" y="249.00" text-anchor="end">-0.00057</text>
+<line class="grid" x1="120.0" y1="165.00" x2="1055.0" y2="165.00"/>
+<text class="tick" x="110.0" y="169.00" text-anchor="end">-0.00017</text>
+<line class="grid" x1="120.0" y1="85.00" x2="1055.0" y2="85.00"/>
+<text class="tick" x="110.0" y="89.00" text-anchor="end">+0.00023</text>
+<line class="axis" x1="120.0" y1="85.0" x2="120.0" y2="565.0"/>
+<line x1="120.0" y1="131.45" x2="1055.0" y2="131.45" stroke="#111827" stroke-width="2"/>
+<text class="label" x="28" y="325.00" text-anchor="middle" transform="rotate(-90 28 325.00)">Mean NLL delta</text>
+<rect x="212.38" y="131.45" width="282.74" height="373.50" fill="#2563eb" opacity="0.88"/>
+<text class="tick" x="353.75" y="520.95" text-anchor="middle">-0.00187</text>
+<text class="tick" x="353.75" y="592" text-anchor="end" transform="rotate(-28 353.75 592)">step40</text>
+<rect x="679.88" y="131.45" width="282.74" height="387.10" fill="#2563eb" opacity="0.88"/>
+<text class="tick" x="821.25" y="534.55" text-anchor="middle">-0.00194</text>
+<text class="tick" x="821.25" y="592" text-anchor="end" transform="rotate(-28 821.25 592)">step50</text>
+<rect x="120.00" y="660" width="18" height="12" fill="#2563eb"/>
+<text class="legend" x="145.00" y="671">overall Δ</text>
+<text class="tick" x="1055.0" y="704" text-anchor="end">Δ = candidate − baseline；负值更好</text>
+</svg>

@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="602" viewBox="0 0 1500 602">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="750.0" y="36" text-anchor="middle" font-family="sans-serif" font-size="25" font-weight="600" fill="#0f172a">Source token mix: target vs committed</text>
+<rect x="420" y="58" width="24" height="10" fill="#94a3b8"/>
+<text x="452" y="68" font-family="sans-serif" font-size="14" fill="#334155">target</text>
+<rect x="530" y="58" width="24" height="10" fill="#2563eb"/>
+<text x="562" y="68" font-family="sans-serif" font-size="14" fill="#334155">committed</text>
+<line x1="410.0" y1="93" x2="410.0" y2="537" stroke="#e2e8f0" stroke-width="1"/>
+<text x="410.0" y="574" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#475569">0.0%</text>
+<line x1="584.2" y1="93" x2="584.2" y2="537" stroke="#e2e8f0" stroke-width="1"/>
+<text x="584.2" y="574" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#475569">5.0%</text>
+<line x1="758.3" y1="93" x2="758.3" y2="537" stroke="#e2e8f0" stroke-width="1"/>
+<text x="758.3" y="574" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#475569">10.0%</text>
+<line x1="932.5" y1="93" x2="932.5" y2="537" stroke="#e2e8f0" stroke-width="1"/>
+<text x="932.5" y="574" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#475569">15.0%</text>
+<line x1="1106.7" y1="93" x2="1106.7" y2="537" stroke="#e2e8f0" stroke-width="1"/>
+<text x="1106.7" y="574" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#475569">20.0%</text>
+<line x1="1280.8" y1="93" x2="1280.8" y2="537" stroke="#e2e8f0" stroke-width="1"/>
+<text x="1280.8" y="574" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#475569">25.0%</text>
+<line x1="1455.0" y1="93" x2="1455.0" y2="537" stroke="#e2e8f0" stroke-width="1"/>
+<text x="1455.0" y="574" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#475569">30.0%</text>
+<text x="395" y="124" text-anchor="end" font-family="monospace" font-size="13" fill="#334155">chinese_wikipedia_zh_20231101</text>
+<rect x="410" y="108" width="836.00" height="12" rx="2" fill="#94a3b8"/>
+<rect x="410" y="126" width="835.29" height="12" rx="2" fill="#2563eb"/>
+<text x="395" y="172" text-anchor="end" font-family="monospace" font-size="13" fill="#334155">code_github_clean_allowlisted</text>
+<rect x="410" y="156" width="313.50" height="12" rx="2" fill="#94a3b8"/>
+<rect x="410" y="174" width="313.62" height="12" rx="2" fill="#2563eb"/>
+<text x="395" y="220" text-anchor="end" font-family="monospace" font-size="13" fill="#334155">code_stackv2_edu_permissive</text>
+<rect x="410" y="204" width="139.33" height="12" rx="2" fill="#94a3b8"/>
+<rect x="410" y="222" width="139.85" height="12" rx="2" fill="#2563eb"/>
+<text x="395" y="268" text-anchor="end" font-family="monospace" font-size="13" fill="#334155">english_fineweb_edu_dedup</text>
+<rect x="410" y="252" width="870.83" height="12" rx="2" fill="#94a3b8"/>
+<rect x="410" y="270" width="871.68" height="12" rx="2" fill="#2563eb"/>
+<text x="395" y="316" text-anchor="end" font-family="monospace" font-size="13" fill="#334155">math_finemath_4plus</text>
+<rect x="410" y="300" width="487.67" height="12" rx="2" fill="#94a3b8"/>
+<rect x="410" y="318" width="487.46" height="12" rx="2" fill="#2563eb"/>
+<text x="395" y="364" text-anchor="end" font-family="monospace" font-size="13" fill="#334155">multilingual_common_corpus_permissive</text>
+<rect x="410" y="348" width="174.17" height="12" rx="2" fill="#94a3b8"/>
+<rect x="410" y="366" width="174.27" height="12" rx="2" fill="#2563eb"/>
+<text x="395" y="412" text-anchor="end" font-family="monospace" font-size="13" fill="#334155">science_arxiv_open_permissive</text>
+<rect x="410" y="396" width="418.00" height="12" rx="2" fill="#94a3b8"/>
+<rect x="410" y="414" width="417.97" height="12" rx="2" fill="#2563eb"/>
+<text x="395" y="460" text-anchor="end" font-family="monospace" font-size="13" fill="#334155">science_cosmopedia_openstax</text>
+<rect x="410" y="444" width="139.33" height="12" rx="2" fill="#94a3b8"/>
+<rect x="410" y="462" width="139.05" height="12" rx="2" fill="#2563eb"/>
+<text x="395" y="508" text-anchor="end" font-family="monospace" font-size="13" fill="#334155">science_cosmopedia_stanford</text>
+<rect x="410" y="492" width="104.50" height="12" rx="2" fill="#94a3b8"/>
+<rect x="410" y="510" width="104.14" height="12" rx="2" fill="#2563eb"/>
+</svg>

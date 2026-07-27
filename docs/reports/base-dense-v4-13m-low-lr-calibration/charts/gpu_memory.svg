@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="700" viewBox="0 0 1320 700">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="660.0" y="38" text-anchor="middle" font-family="sans-serif" font-size="25" font-weight="600" fill="#0f172a">CUDA peak memory by optimizer step</text>
+<line x1="104.0" y1="70.0" x2="132.0" y2="70.0" stroke="#2563eb" stroke-width="3"/>
+<text x="140.0" y="75.0" font-family="sans-serif" font-size="14" fill="#334155">peak allocated</text>
+<line x1="484.0" y1="70.0" x2="512.0" y2="70.0" stroke="#f97316" stroke-width="3"/>
+<text x="520.0" y="75.0" font-family="sans-serif" font-size="14" fill="#334155">peak reserved</text>
+<line x1="104.0" y1="107.0" x2="104.0" y2="622.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="104.0" y="649.0" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#475569">0.260</text>
+<line x1="104.0" y1="622.0" x2="1284.0" y2="622.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="92.0" y="627.0" text-anchor="end" font-family="sans-serif" font-size="13" fill="#475569">0.000</text>
+<line x1="340.0" y1="107.0" x2="340.0" y2="622.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="340.0" y="649.0" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#475569">2.818</text>
+<line x1="104.0" y1="519.0" x2="1284.0" y2="519.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="92.0" y="524.0" text-anchor="end" font-family="sans-serif" font-size="13" fill="#475569">5.559</text>
+<line x1="576.0" y1="107.0" x2="576.0" y2="622.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="576.0" y="649.0" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#475569">5.377</text>
+<line x1="104.0" y1="416.0" x2="1284.0" y2="416.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="92.0" y="421.0" text-anchor="end" font-family="sans-serif" font-size="13" fill="#475569">11.1</text>
+<line x1="812.0" y1="107.0" x2="812.0" y2="622.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="812.0" y="649.0" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#475569">7.935</text>
+<line x1="104.0" y1="313.0" x2="1284.0" y2="313.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="92.0" y="318.0" text-anchor="end" font-family="sans-serif" font-size="13" fill="#475569">16.7</text>
+<line x1="1048.0" y1="107.0" x2="1048.0" y2="622.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="1048.0" y="649.0" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#475569">10.5</text>
+<line x1="104.0" y1="210.0" x2="1284.0" y2="210.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="92.0" y="215.0" text-anchor="end" font-family="sans-serif" font-size="13" fill="#475569">22.2</text>
+<line x1="1284.0" y1="107.0" x2="1284.0" y2="622.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="1284.0" y="649.0" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#475569">13.1</text>
+<line x1="104.0" y1="107.0" x2="1284.0" y2="107.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="92.0" y="112.0" text-anchor="end" font-family="sans-serif" font-size="13" fill="#475569">27.8</text>
+<line x1="104.0" y1="622.0" x2="1284.0" y2="622.0" stroke="#334155" stroke-width="1.5"/>
+<line x1="104.0" y1="107.0" x2="104.0" y2="622.0" stroke="#334155" stroke-width="1.5"/>
+<text x="694.0" y="680.0" text-anchor="middle" font-family="sans-serif" font-size="15" fill="#334155">Committed tokens (millions)</text>
+<text x="24" y="364.5" text-anchor="middle" transform="rotate(-90 24 364.5)" font-family="sans-serif" font-size="15" fill="#334155">GiB</text>
+<polyline points="104.00,150.11 127.88,150.11 152.06,154.45 176.24,154.45 200.42,154.45 224.61,154.45 248.35,150.11 272.23,150.11 296.41,154.45 320.59,154.45 344.47,150.11 368.56,150.11 392.75,154.45 416.93,154.45 441.09,150.11 465.27,154.45 489.23,150.11 512.75,150.11 536.93,154.45 561.11,154.45 585.29,154.45 609.26,150.11 633.45,154.45 657.63,154.45 681.81,154.45 705.80,150.11 729.69,150.11 753.87,154.45 778.05,154.45 802.24,154.45 826.42,154.45 850.56,150.11 874.66,150.11 898.85,154.45 922.75,150.11 946.82,150.11 970.96,150.11 995.14,154.45 1019.33,154.45 1043.51,154.45 1067.43,150.11 1091.61,154.45 1115.79,154.45 1139.70,150.11 1163.88,154.45 1188.06,154.45 1211.91,150.11 1236.10,154.45 1260.08,150.11 1284.00,150.11" fill="none" stroke="#2563eb" stroke-width="2.30" opacity="1.000"/>
+<polyline points="104.00,145.15 127.88,145.15 152.06,145.15 176.24,145.15 200.42,145.15 224.61,145.15 248.35,145.15 272.23,145.15 296.41,145.15 320.59,145.15 344.47,145.15 368.56,145.15 392.75,145.15 416.93,145.15 441.09,145.15 465.27,145.15 489.23,145.15 512.75,145.15 536.93,145.15 561.11,145.15 585.29,145.15 609.26,145.15 633.45,145.15 657.63,145.15 681.81,145.15 705.80,145.15 729.69,145.15 753.87,145.15 778.05,145.15 802.24,145.15 826.42,145.15 850.56,145.15 874.66,145.15 898.85,145.15 922.75,145.15 946.82,145.15 970.96,145.15 995.14,145.15 1019.33,145.15 1043.51,145.15 1067.43,145.15 1091.61,145.15 1115.79,145.15 1139.70,145.15 1163.88,145.15 1188.06,145.15 1211.91,145.15 1236.10,145.15 1260.08,145.15 1284.00,145.15" fill="none" stroke="#f97316" stroke-width="2.30" opacity="1.000"/>
+</svg>

@@ -1,0 +1,106 @@
+{
+  "authorizes_training": false,
+  "bundle_producer": {
+    "path": "/media/data1/Project/AI/Twen1/scripts/generate_v4_calibration_drift_bundle.py",
+    "sha256": "3ff880cce136706a219048762d05da0e511e3960d587f6bf946cdf5679e57f9b",
+    "size": 24679
+  },
+  "files": {
+    "REPORT.zh-CN.md": {
+      "path": "REPORT.zh-CN.md",
+      "sha256": "bbca6790239b53a51b048a25f1da85887e7906430ead03bc32570c7126cf772f",
+      "size": 1246
+    },
+    "analysis.json": {
+      "path": "analysis.json",
+      "sha256": "ae038ff5dfedd828f2d8efe3484fba4eeabd820d8eb6a4aa908b0ef7e321b817",
+      "size": 4427
+    }
+  },
+  "input_fingerprint": "e1dab90c0cf38049f6af2ee01293750dd772f4a4a7f72d438e07ce5c1763d978",
+  "inputs": {
+    "auditor": {
+      "path": "/media/data1/Project/AI/Twen1/scripts/audit_dense_checkpoint_drift.py",
+      "sha256": "4769a6d5d8b9015111bb8621abf7bb9a3af5344bd9036370ed9a03a21de8f696",
+      "size": 8548
+    },
+    "baseline": {
+      "committed_tokens": 500009962,
+      "complete_sha256": "3a21a50e35de74ecd0ff5b8f00aa29ed6c83f746fc2cf97d4da6b0536262b6c7",
+      "global_step": 1912,
+      "kind": "milestone",
+      "manifest_sha256": "ef43670d7c1cbc8ed3908b258659c7426b4cfe10e14c9b7db54968e2481b0e9a",
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v3-500m/step-000000001912-milestone-complete",
+      "tag": "complete"
+    },
+    "bundler": {
+      "path": "/media/data1/Project/AI/Twen1/scripts/generate_v4_calibration_drift_bundle.py",
+      "sha256": "3ff880cce136706a219048762d05da0e511e3960d587f6bf946cdf5679e57f9b",
+      "size": 24679
+    },
+    "calibration_config": {
+      "path": "/media/data1/Project/AI/Twen1/configs/base/dense-v4-13m-low-lr-calibration.yaml",
+      "sha256": "15ce9dbf68643b6abbcbc687a698f2994e2200587c442974903b07613a43109d",
+      "size": 4157
+    },
+    "candidates": [
+      {
+        "committed_tokens": 10444478,
+        "complete_sha256": "92d98a1de19d222dc26d904d8b590be654d082bc84e5fd6594339b04d53f9359",
+        "global_step": 40,
+        "kind": "periodic",
+        "manifest_sha256": "b5e1e2dae31c3ced0162acd9d12d6ce16f9d9bdf2ab3b6ba3c0b793fffa851f7",
+        "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-13m-low-lr-calibration/step-000000000040-periodic",
+        "tag": null
+      },
+      {
+        "committed_tokens": 13051413,
+        "complete_sha256": "065b0274746b924ccc83d31629ba8bebd14c4bc46063dff5e273c31058153091",
+        "global_step": 50,
+        "kind": "milestone",
+        "manifest_sha256": "c35d362a0944b402f26970cb5d269794dedd92b4ba9a0dc4542e4c92d76c1098",
+        "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-13m-low-lr-calibration/step-000000000050-milestone-complete",
+        "tag": "complete"
+      }
+    ],
+    "final_checkpoint": {
+      "committed_tokens": 13051413,
+      "complete_sha256": "065b0274746b924ccc83d31629ba8bebd14c4bc46063dff5e273c31058153091",
+      "global_step": 50,
+      "kind": "milestone",
+      "manifest_sha256": "c35d362a0944b402f26970cb5d269794dedd92b4ba9a0dc4542e4c92d76c1098",
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-13m-low-lr-calibration/step-000000000050-milestone-complete",
+      "tag": "complete"
+    },
+    "formal_closure": {
+      "bundle_fingerprint": "5b58a0afe981992d41e9c5edfee78a763bfae852657ecc7cb3628ee22c36f12d",
+      "complete_sha256": "2bc6e2c80b8b7c980275a59b341d1ed925099578e219d0b19e81a48de94aca23",
+      "manifest_sha256": "b496a8f90fc23e70ebc101c0d54a6e4cc10158f14da57b47dfa3b03a7dd01885",
+      "path": "/media/data1/Project/AI/Twen1/artifacts/evidence/base-v4-250m-r2-semantic-excluded-closed-formal-evidence-closure-pass-001"
+    }
+  },
+  "kind": "twen_dense_optimizer_drift_audit_bundle",
+  "measurement_script": {
+    "path": "/media/data1/Project/AI/Twen1/scripts/audit_dense_checkpoint_drift.py",
+    "sha256": "4769a6d5d8b9015111bb8621abf7bb9a3af5344bd9036370ed9a03a21de8f696",
+    "size": 8548
+  },
+  "passed": true,
+  "release_gate": {
+    "authorizes_training": false,
+    "final_checkpoint": {
+      "committed_tokens": 13051413,
+      "complete_sha256": "065b0274746b924ccc83d31629ba8bebd14c4bc46063dff5e273c31058153091",
+      "global_step": 50,
+      "kind": "milestone",
+      "manifest_sha256": "c35d362a0944b402f26970cb5d269794dedd92b4ba9a0dc4542e4c92d76c1098",
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-13m-low-lr-calibration/step-000000000050-milestone-complete",
+      "tag": "complete"
+    },
+    "final_scale_relative_l2": 0.01154243747948107,
+    "final_scale_relative_l2_lte": 0.05,
+    "passed": true
+  },
+  "schema_version": 1,
+  "training_started": false
+}

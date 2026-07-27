@@ -1,0 +1,158 @@
+{
+  "bundle_producer": {
+    "path": "/media/data1/Project/AI/Twen1/scripts/analyze_dense_training.py",
+    "sha256": "8f88ec897642f3b9ca1b2ff68bc00c0a0fa1caffa94a980036ecb8beb7133026",
+    "size": 173111
+  },
+  "files": {
+    "REPORT.zh-CN.md": {
+      "path": "REPORT.zh-CN.md",
+      "sha256": "de62eb58029b8f13f5fa49255b92e5b3a1022c0d1d7e7f92ee5932bf7c717d84",
+      "size": 5963
+    },
+    "analysis.json": {
+      "path": "analysis.json",
+      "sha256": "eac3103f4149aaf4ce667b37a2d30f9d1f092ea476946c2a555850d83a1da648",
+      "size": 552783
+    },
+    "charts/gpu_memory.svg": {
+      "path": "charts/gpu_memory.svg",
+      "sha256": "49699760c45a2421f6ca578cf352bf63acf3325bce765b6e261e9fe8e345835c",
+      "size": 5124
+    },
+    "charts/gpu_power.svg": {
+      "path": "charts/gpu_power.svg",
+      "sha256": "91e571240ed59f520187ce377ff0330c31971b7e49788eb915ec01d31d95e761",
+      "size": 5915
+    },
+    "charts/gpu_utilization.svg": {
+      "path": "charts/gpu_utilization.svg",
+      "sha256": "c23a2f59beb77db8c2935943dbae9763f18ff42d6101d45a87545c7dc591f0a7",
+      "size": 5933
+    },
+    "charts/gradient_norm.svg": {
+      "path": "charts/gradient_norm.svg",
+      "sha256": "1542e340e7b6ae8a68d37c94d71fec7614637a51c4868db5cf92e5afe04658ef",
+      "size": 4468
+    },
+    "charts/learning_rate.svg": {
+      "path": "charts/learning_rate.svg",
+      "sha256": "96928f7f8bc7de99585cccef8231576a57d8ca61b136f7a963a49ac61011271a",
+      "size": 6156
+    },
+    "charts/source_token_mix.svg": {
+      "path": "charts/source_token_mix.svg",
+      "sha256": "b24995aca0cbabb55268a677a86baadb74c2eba0ecb6b1c04b4bee9008a796bf",
+      "size": 4460
+    },
+    "charts/throughput.svg": {
+      "path": "charts/throughput.svg",
+      "sha256": "4f2b89054f3ff44fedd7ee6c58b12c3e3b53fcb28ff246191438a29c25ffdba7",
+      "size": 5111
+    },
+    "charts/training_loss.svg": {
+      "path": "charts/training_loss.svg",
+      "sha256": "3fb67443cd2610b5d340320f0e8912afa97bdfa678c5f7be013dd17abbff8544",
+      "size": 8895
+    },
+    "raw/dashboard-gpu-telemetry-last-session.jsonl": {
+      "path": "raw/dashboard-gpu-telemetry-last-session.jsonl",
+      "sha256": "da8195a70f5b9a62b9ab5aa6fcdb9290aaf1a37353433d046ed07f82c78ae14f",
+      "size": 250061
+    }
+  },
+  "kind": "twen_dense_training_analysis_bundle",
+  "release_gate": {
+    "clip_fraction": 0.0,
+    "clip_threshold": 1.0,
+    "fork_checkpoint": {
+      "complete_sha256": "3a21a50e35de74ecd0ff5b8f00aa29ed6c83f746fc2cf97d4da6b0536262b6c7",
+      "manifest_sha256": "ef43670d7c1cbc8ed3908b258659c7426b4cfe10e14c9b7db54968e2481b0e9a",
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v3-500m/step-000000001912-milestone-complete"
+    },
+    "fork_checkpoint_complete_sha256": "3a21a50e35de74ecd0ff5b8f00aa29ed6c83f746fc2cf97d4da6b0536262b6c7",
+    "reference_epoch_max": 0,
+    "reference_epochs": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "required_metric_sources": {
+      "adjusted_lr": "lr_adjusted/adapters",
+      "grad_norm": "grad_norm",
+      "loss": "loss",
+      "mtp": "mtp",
+      "nominal_lr": "lr/adapters",
+      "ntp": "ntp"
+    },
+    "required_metrics_finite": {
+      "adjusted_lr": true,
+      "grad_norm": true,
+      "loss": true,
+      "mtp": true,
+      "nominal_lr": true,
+      "ntp": true
+    },
+    "reused_sequences": 0,
+    "reused_tokens": 0,
+    "source_binding": {
+      "events_sha256": "4fd3c70eacceaf622ad73ca8983728138e033c98a8b25aafbabb32668c381e0d",
+      "metrics_sha256": "877b0b440054208629984f1d448b90bbc5ba25ce509b241275e62940676609e0",
+      "resolved_config_sha256": "0bd33cfb2e9e0210fcb718c58c8978f31b13c90a2b25f2c939cd36fdcd383430",
+      "terminal_checkpoint_complete_sha256": "065b0274746b924ccc83d31629ba8bebd14c4bc46063dff5e273c31058153091",
+      "terminal_checkpoint_manifest_sha256": "c35d362a0944b402f26970cb5d269794dedd92b4ba9a0dc4542e4c92d76c1098"
+    }
+  },
+  "run_id": "base-dense-v4-13m-low-lr-calibration",
+  "schema_version": 1,
+  "source_fork_checkpoint": {
+    "complete_sha256": "3a21a50e35de74ecd0ff5b8f00aa29ed6c83f746fc2cf97d4da6b0536262b6c7",
+    "manifest_sha256": "ef43670d7c1cbc8ed3908b258659c7426b4cfe10e14c9b7db54968e2481b0e9a",
+    "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v3-500m/step-000000001912-milestone-complete"
+  },
+  "source_inputs": {
+    "events": {
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-13m-low-lr-calibration/events.jsonl",
+      "sha256": "4fd3c70eacceaf622ad73ca8983728138e033c98a8b25aafbabb32668c381e0d",
+      "size": 12330
+    },
+    "latest": {
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-13m-low-lr-calibration/latest",
+      "sha256": "5df82eff60830254670536a55afc00d3995e26cb50aed767feccea9f472e00b1",
+      "size": 37
+    },
+    "metrics": {
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-13m-low-lr-calibration/metrics.jsonl",
+      "sha256": "877b0b440054208629984f1d448b90bbc5ba25ce509b241275e62940676609e0",
+      "size": 131890
+    },
+    "rank0_session": {
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-13m-low-lr-calibration/rank0-session.json",
+      "sha256": "7bb24a13a1dd1044b590d86e02b3a650d40b7bbaa6edbfafbe828239531a866c",
+      "size": 3009
+    },
+    "resolved_config": {
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-13m-low-lr-calibration/resolved_config.yaml",
+      "sha256": "0bd33cfb2e9e0210fcb718c58c8978f31b13c90a2b25f2c939cd36fdcd383430",
+      "size": 4109
+    },
+    "telemetry": {
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-13m-low-lr-calibration/telemetry.jsonl",
+      "sha256": "fcc4c27c0391cd713fc49e27c386bc3ed79cdb548b8a71b806c17c85ec9a25ba",
+      "size": 81589
+    }
+  },
+  "source_run_dir": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-13m-low-lr-calibration",
+  "source_terminal_checkpoint": {
+    "complete_sha256": "065b0274746b924ccc83d31629ba8bebd14c4bc46063dff5e273c31058153091",
+    "manifest_sha256": "c35d362a0944b402f26970cb5d269794dedd92b4ba9a0dc4542e4c92d76c1098",
+    "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v4-13m-low-lr-calibration/step-000000000050-milestone-complete"
+  }
+}

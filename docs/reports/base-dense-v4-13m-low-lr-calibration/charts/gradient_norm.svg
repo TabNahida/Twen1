@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="700" viewBox="0 0 1320 700">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="660.0" y="38" text-anchor="middle" font-family="sans-serif" font-size="25" font-weight="600" fill="#0f172a">Gradient norm and clipping threshold</text>
+<line x1="104.0" y1="70.0" x2="132.0" y2="70.0" stroke="#7c3aed" stroke-width="3"/>
+<text x="140.0" y="75.0" font-family="sans-serif" font-size="14" fill="#334155">grad norm</text>
+<line x1="484.0" y1="70.0" x2="512.0" y2="70.0" stroke="#dc2626" stroke-width="3"/>
+<text x="520.0" y="75.0" font-family="sans-serif" font-size="14" fill="#334155">clip=1</text>
+<line x1="104.0" y1="107.0" x2="104.0" y2="622.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="104.0" y="649.0" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#475569">0.260</text>
+<line x1="104.0" y1="622.0" x2="1284.0" y2="622.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="92.0" y="627.0" text-anchor="end" font-family="sans-serif" font-size="13" fill="#475569">0.000</text>
+<line x1="340.0" y1="107.0" x2="340.0" y2="622.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="340.0" y="649.0" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#475569">2.818</text>
+<line x1="104.0" y1="519.0" x2="1284.0" y2="519.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="92.0" y="524.0" text-anchor="end" font-family="sans-serif" font-size="13" fill="#475569">0.216</text>
+<line x1="576.0" y1="107.0" x2="576.0" y2="622.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="576.0" y="649.0" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#475569">5.377</text>
+<line x1="104.0" y1="416.0" x2="1284.0" y2="416.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="92.0" y="421.0" text-anchor="end" font-family="sans-serif" font-size="13" fill="#475569">0.432</text>
+<line x1="812.0" y1="107.0" x2="812.0" y2="622.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="812.0" y="649.0" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#475569">7.935</text>
+<line x1="104.0" y1="313.0" x2="1284.0" y2="313.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="92.0" y="318.0" text-anchor="end" font-family="sans-serif" font-size="13" fill="#475569">0.648</text>
+<line x1="1048.0" y1="107.0" x2="1048.0" y2="622.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="1048.0" y="649.0" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#475569">10.5</text>
+<line x1="104.0" y1="210.0" x2="1284.0" y2="210.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="92.0" y="215.0" text-anchor="end" font-family="sans-serif" font-size="13" fill="#475569">0.864</text>
+<line x1="1284.0" y1="107.0" x2="1284.0" y2="622.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="1284.0" y="649.0" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#475569">13.1</text>
+<line x1="104.0" y1="107.0" x2="1284.0" y2="107.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="92.0" y="112.0" text-anchor="end" font-family="sans-serif" font-size="13" fill="#475569">1.080</text>
+<line x1="104.0" y1="622.0" x2="1284.0" y2="622.0" stroke="#334155" stroke-width="1.5"/>
+<line x1="104.0" y1="107.0" x2="104.0" y2="622.0" stroke="#334155" stroke-width="1.5"/>
+<text x="694.0" y="680.0" text-anchor="middle" font-family="sans-serif" font-size="15" fill="#334155">Committed tokens (millions)</text>
+<text x="24" y="364.5" text-anchor="middle" transform="rotate(-90 24 364.5)" font-family="sans-serif" font-size="15" fill="#334155">Gradient norm</text>
+<polyline points="104.00,266.93 127.88,283.23 152.06,305.16 176.24,303.20 200.42,299.44 224.61,284.44 248.35,287.67 272.23,280.81 296.41,294.88 320.59,316.32 344.47,275.50 368.56,312.33 392.75,303.90 416.93,299.62 441.09,315.55 465.27,296.10 489.23,313.54 512.75,331.69 536.93,324.53 561.11,325.47 585.29,345.84 609.26,317.27 633.45,337.93 657.63,333.55 681.81,351.75 705.80,354.78 729.69,391.18 753.87,369.80 778.05,368.17 802.24,369.97 826.42,382.85 850.56,385.07 874.66,412.67 898.85,372.40 922.75,396.73 946.82,356.32 970.96,367.99 995.14,383.05 1019.33,371.37 1043.51,395.08 1067.43,375.10 1091.61,407.45 1115.79,395.15 1139.70,391.06 1163.88,418.16 1188.06,410.72 1211.91,376.25 1236.10,400.12 1260.08,415.12 1284.00,379.57" fill="none" stroke="#7c3aed" stroke-width="2.20" opacity="1.000"/>
+<polyline points="104.00,145.15 1284.00,145.15" fill="none" stroke="#dc2626" stroke-width="2.00" opacity="1.000" stroke-dasharray="8 6"/>
+</svg>

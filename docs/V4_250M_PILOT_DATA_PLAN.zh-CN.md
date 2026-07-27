@@ -285,9 +285,14 @@ Primary 初始 raw 含 `225,291,527` train token；cooldown 初始过滤后容�
 
 refill、最终双审计、prepare、primary/cooldown train-to-train 与
 train-union/validation-union 的 stable-ID/exact/near 不相交审计现均已完成。
-External governed controller 已实现并由源码 SHA/source-tree SHA 绑定；剩余门禁是
-13M calibration 及其认证报告、最终 release 指纹授权和 `RUN <plan-id>`。Wikipedia
-许可 ACK 已进入独立 calibration admission，但正式 publisher 仍会在最终 release
-再次绑定同一精确字符串。
+External governed controller 已实现并由源码 SHA/source-tree SHA 绑定。首轮 13M
+calibration 已完成；step 50 aggregate NLL `2.374731689` 优于 v3，但冻结中文
+FineWeb2 NLL `3.659148001` 高于硬上限 `3.656194313`，因此 production attestor
+fail-closed，尚无 formal release。训练与 checkpoint validation 报告分别位于
+`docs/reports/base-dense-v4-13m-low-lr-calibration/` 和
+`docs/reports/base-dense-v4-13m-calibration-checkpoint-validation-pass-001/`。
+Wikipedia 许可 ACK 已进入独立 calibration admission；修复该来源特异回归并通过新的
+calibration attestation 后，formal publisher 仍会在最终 release 再次绑定同一精确
+字符串、release 指纹授权和 `RUN <plan-id>`。
 全部通过后仍只能由两阶段发布器原子生成独立的最终 config；当前 blocked draft 的
 `PENDING_*` 不应被手工替换。
