@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import fcntl
 import hashlib
+import io
 import json
 import os
 import platform
@@ -35,10 +36,12 @@ from twen.web import (
     JsonlTailCache,
     LaunchProfile,
     _exclusive_advisory_lock_is_held,
+    _governed_source_archive_hashes,
     _held_run_lock_owner,
     _LinuxProcessIdentity,
     _process_matches_governed_controller,
     _sha256_regular_file_no_follow,
+    _source_tree_archive,
     create_dashboard_server,
     ensure_dashboard_auth_file,
     load_dashboard_auth,
@@ -95,6 +98,14 @@ def _governed_settings(
     readiness_path = (tmp_path / "locks/formal.readiness.json").resolve()
     readiness_path.parent.mkdir(parents=True)
     readiness_path.write_text('{"kind":"readiness"}\n', encoding="utf-8")
+    source_root = (tmp_path / "src/twen").resolve()
+    source_root.mkdir(parents=True)
+    (source_root / "__init__.py").write_text(
+        "SNAPSHOT_MARKER = 'authenticated'\n",
+        encoding="utf-8",
+    )
+    dependency_path = (tmp_path / "uv.lock").resolve()
+    dependency_path.write_text("version = 1\n", encoding="utf-8")
     run_dir = (tmp_path / "runs/base-v4-formal").resolve()
     plan_id = "a" * 64
     profile = LaunchProfile(
@@ -117,6 +128,11 @@ def _governed_settings(
             run_dir.parent / f".{run_dir.name}.governed" / "controller-state.json"
         ),
         governed_plan_id=plan_id,
+        governed_source_tree_sha256=twen_source_tree_sha256(source_root),
+        governed_dependency_lock_name=dependency_path.name,
+        governed_dependency_lock_sha256=hashlib.sha256(
+            dependency_path.read_bytes()
+        ).hexdigest(),
     )
     return DashboardSettings(
         dashboard_config_path=dashboard_config_path,
@@ -176,6 +192,8 @@ def _governed_rank0_identity(
     dict[str, object],
 ]:
     dependency_path = project_root / "uv.lock"
+    assert profile.governed_source_tree_sha256 is not None
+    assert profile.governed_dependency_lock_sha256 is not None
     active_payload = [
         "-m",
         "twen.cli",
@@ -213,11 +231,11 @@ def _governed_rank0_identity(
         },
         "source_tree": {
             "path": str(project_root / "src/twen"),
-            "sha256": "3" * 64,
+            "sha256": profile.governed_source_tree_sha256,
         },
         "dependency_lock": {
             "path": str(dependency_path),
-            "sha256": "4" * 64,
+            "sha256": profile.governed_dependency_lock_sha256,
         },
     }
     governed_state: dict[str, object] = {
@@ -238,9 +256,9 @@ def _governed_rank0_identity(
         "cwd": str(project_root),
         "config_path": str(profile.config_path),
         "config_sha256": profile.config_sha256,
-        "source_tree_sha256": "3" * 64,
+        "source_tree_sha256": profile.governed_source_tree_sha256,
         "dependency_lock": str(dependency_path),
-        "dependency_lock_sha256": "4" * 64,
+        "dependency_lock_sha256": profile.governed_dependency_lock_sha256,
     }
     identity = _LinuxProcessIdentity(
         pid=6161,
@@ -819,6 +837,11 @@ def test_governed_dashboard_binds_blocked_pending_formal_config(
     assert profile.run_dir == (
         project_root / "runs/base-dense-v4-250m-pilot"
     ).resolve()
+    assert profile.governed_source_tree_sha256 == plan["source_tree"]["sha256"]  # type: ignore[index]
+    assert profile.governed_dependency_lock_name == Path(  # type: ignore[index]
+        plan["dependency_lock"]["path"]
+    ).name
+    assert profile.governed_dependency_lock_sha256 == plan["dependency_lock"]["sha256"]  # type: ignore[index]
     assert plan["config"]["preflight_fingerprint"] is None  # type: ignore[index]
     assert plan["readiness_issues"]
 
@@ -1221,7 +1244,7 @@ def test_governed_launch_executes_only_sealed_pre_popen_bytes(
     settings = _governed_settings(tmp_path)
     profile = settings.profiles[0]
     source_root = tmp_path / "src/twen"
-    source_root.mkdir(parents=True)
+    source_root.mkdir(parents=True, exist_ok=True)
     source_file = source_root / "__init__.py"
     source_file.write_text("SNAPSHOT_MARKER = 'authenticated'\n", encoding="utf-8")
     dependency_path = tmp_path / "uv.lock"
@@ -1467,6 +1490,8 @@ def test_governed_reauthorization_failure_remains_zero_write(
 
 def test_governed_process_matcher_requires_exact_controller_contract(tmp_path: Path) -> None:
     profile = _governed_settings(tmp_path).profiles[0]
+    assert profile.governed_source_tree_sha256 is not None
+    assert profile.governed_dependency_lock_sha256 is not None
     controller_fd = 71
     source_fd = 0
     source_transport_fd = 72
@@ -1503,11 +1528,27 @@ def test_governed_process_matcher_requires_exact_controller_contract(tmp_path: P
         "source_snapshot_fd": source_fd,
         "source_snapshot_transport_fd": source_transport_fd,
         "controller_snapshot_sha256": profile.governed_controller_sha256,
-        "source_snapshot_sha256": "2" * 64,
-        "source_tree_sha256": "3" * 64,
-        "dependency_lock_sha256": "4" * 64,
+        "source_snapshot_sha256": None,
+        "source_tree_sha256": profile.governed_source_tree_sha256,
+        "dependency_lock_sha256": profile.governed_dependency_lock_sha256,
         "command_sha256": hashlib.sha256("\0".join(arguments).encode()).hexdigest(),
     }
+    archive_payload, source_tree_sha, dependency_lock_sha = _source_tree_archive(
+        {
+            "project_root": str(tmp_path.resolve()),
+            "source_tree": {
+                "path": str((tmp_path / "src/twen").resolve()),
+                "sha256": profile.governed_source_tree_sha256,
+            },
+            "dependency_lock": {
+                "path": str((tmp_path / "uv.lock").resolve()),
+                "sha256": profile.governed_dependency_lock_sha256,
+            },
+        }
+    )
+    assert source_tree_sha == profile.governed_source_tree_sha256
+    assert dependency_lock_sha == profile.governed_dependency_lock_sha256
+    state["source_snapshot_sha256"] = hashlib.sha256(archive_payload).hexdigest()
     identity = _LinuxProcessIdentity(
         pid=5151,
         start_time_ticks=123456,
@@ -1528,11 +1569,11 @@ def test_governed_process_matcher_requires_exact_controller_contract(tmp_path: P
         ),
         patch(
             "twen.web._sealed_process_fd_sha256",
-            side_effect=lambda _pid, descriptor: (
-                profile.governed_controller_sha256
-                if descriptor == controller_fd
-                else "2" * 64
-            ),
+            return_value=profile.governed_controller_sha256,
+        ),
+        patch(
+            "twen.web._sealed_process_fd_bytes",
+            return_value=archive_payload,
         ),
     ):
         assert _process_matches_governed_controller(
@@ -1541,6 +1582,46 @@ def test_governed_process_matcher_requires_exact_controller_contract(tmp_path: P
             state,
             project_root=tmp_path.resolve(),
         )
+        malicious_buffer = io.BytesIO()
+        with zipfile.ZipFile(
+            malicious_buffer,
+            mode="w",
+            compression=zipfile.ZIP_DEFLATED,
+        ) as archive:
+            archive.writestr(
+                "twen/__init__.py",
+                b"SNAPSHOT_MARKER = 'forged'\n",
+            )
+            archive.writestr(
+                ".twen-governed-dependency/uv.lock",
+                (tmp_path / "uv.lock").read_bytes(),
+            )
+        malicious_payload = malicious_buffer.getvalue()
+        malicious_state = {
+            **state,
+            "source_snapshot_sha256": hashlib.sha256(
+                malicious_payload
+            ).hexdigest(),
+        }
+        with patch(
+            "twen.web._sealed_process_fd_bytes",
+            return_value=malicious_payload,
+        ):
+            assert not _process_matches_governed_controller(
+                5151,
+                profile,
+                malicious_state,
+                project_root=tmp_path.resolve(),
+            )
+            assert not _process_matches_governed_controller(
+                5151,
+                profile,
+                {
+                    **malicious_state,
+                    "source_tree_sha256": "0" * 64,
+                },
+                project_root=tmp_path.resolve(),
+            )
         changed = list(arguments)
         changed[changed.index("--action") + 1] = "status"
         changed_identity = _LinuxProcessIdentity(
@@ -1610,6 +1691,45 @@ def test_governed_process_matcher_requires_exact_controller_contract(tmp_path: P
                     state,
                     project_root=tmp_path.resolve(),
                 )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["duplicate", "extra", "traversal", "stored", "missing_dependency", "malformed"],
+)
+def test_governed_source_archive_requires_exact_safe_inventory(
+    mutation: str,
+) -> None:
+    if mutation == "malformed":
+        payload = b"not a zip archive"
+    else:
+        buffer = io.BytesIO()
+        compression = (
+            zipfile.ZIP_STORED
+            if mutation == "stored"
+            else zipfile.ZIP_DEFLATED
+        )
+        with zipfile.ZipFile(buffer, mode="w", compression=compression) as archive:
+            archive.writestr("twen/__init__.py", b"SAFE = True\n")
+            if mutation == "duplicate":
+                with pytest.warns(UserWarning, match="Duplicate name"):
+                    archive.writestr("twen/__init__.py", b"SAFE = False\n")
+            elif mutation == "extra":
+                archive.writestr("payload.py", b"raise RuntimeError\n")
+            elif mutation == "traversal":
+                archive.writestr("twen/../payload.py", b"raise RuntimeError\n")
+            if mutation != "missing_dependency":
+                archive.writestr(
+                    ".twen-governed-dependency/uv.lock",
+                    b"version = 1\n",
+                )
+        payload = buffer.getvalue()
+
+    with pytest.raises(DashboardError):
+        _governed_source_archive_hashes(
+            payload,
+            dependency_lock_name="uv.lock",
+        )
 
 
 def test_second_start_uses_authenticated_auto_resume_without_fork_or_torch_import(

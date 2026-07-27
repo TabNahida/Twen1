@@ -128,6 +128,9 @@ _F_SEAL_WRITE = 0x0008
 _REQUIRED_MEMFD_SEALS = (
     _F_SEAL_SEAL | _F_SEAL_SHRINK | _F_SEAL_GROW | _F_SEAL_WRITE
 )
+_GOVERNED_SOURCE_ARCHIVE_MAX_BYTES = 64 * 1024 * 1024
+_GOVERNED_SOURCE_ARCHIVE_MAX_FILES = 4096
+_GOVERNED_SOURCE_ARCHIVE_MAX_UNCOMPRESSED_BYTES = 128 * 1024 * 1024
 
 
 def _numeric_summary(values: list[float]) -> dict[str, float] | None:
@@ -1121,6 +1124,9 @@ class LaunchProfile:
     governed_readiness_sha256: str | None = None
     governed_state_path: Path | None = None
     governed_plan_id: str | None = None
+    governed_source_tree_sha256: str | None = None
+    governed_dependency_lock_name: str | None = None
+    governed_dependency_lock_sha256: str | None = None
 
     @property
     def start_confirmation(self) -> str:
@@ -1332,6 +1338,9 @@ def load_dashboard_settings(path: str | Path) -> DashboardSettings:
         governed_readiness_sha256: str | None = None
         governed_state_path: Path | None = None
         governed_plan_id: str | None = None
+        governed_source_tree_sha256: str | None = None
+        governed_dependency_lock_name: str | None = None
+        governed_dependency_lock_sha256: str | None = None
         governed_fields = {
             "controller": item.get("governed_controller"),
             "controller_sha256": item.get("governed_controller_sha256"),
@@ -1455,6 +1464,44 @@ def load_dashboard_settings(path: str | Path) -> DashboardSettings:
                 raise DashboardError(
                     f"profiles[{index}] governed plan does not bind the pinned controller"
                 )
+            governed_source_tree = governed_plan.get("source_tree")
+            governed_dependency_lock = governed_plan.get("dependency_lock")
+            if not isinstance(governed_source_tree, Mapping) or not isinstance(
+                governed_dependency_lock,
+                Mapping,
+            ):
+                raise DashboardError(
+                    f"profiles[{index}] governed plan has no source/dependency identity"
+                )
+            governed_source_root = Path(
+                str(governed_source_tree.get("path"))
+            ).resolve()
+            governed_dependency_path = Path(
+                str(governed_dependency_lock.get("path"))
+            ).resolve()
+            governed_source_tree_sha256 = str(
+                governed_source_tree.get("sha256")
+            )
+            governed_dependency_lock_sha256 = str(
+                governed_dependency_lock.get("sha256")
+            )
+            governed_dependency_lock_name = governed_dependency_path.name
+            if (
+                governed_source_root != project_root / "src/twen"
+                or governed_dependency_path.parent != project_root
+                or governed_dependency_lock_name not in {"uv.lock", "pyproject.toml"}
+                or not re.fullmatch(
+                    r"[0-9a-f]{64}",
+                    governed_source_tree_sha256,
+                )
+                or not re.fullmatch(
+                    r"[0-9a-f]{64}",
+                    governed_dependency_lock_sha256,
+                )
+            ):
+                raise DashboardError(
+                    f"profiles[{index}] governed archive contract is invalid"
+                )
         profiles.append(
             LaunchProfile(
                 profile_id=profile_id,
@@ -1474,6 +1521,9 @@ def load_dashboard_settings(path: str | Path) -> DashboardSettings:
                 governed_readiness_sha256=governed_readiness_sha256,
                 governed_state_path=governed_state_path,
                 governed_plan_id=governed_plan_id,
+                governed_source_tree_sha256=governed_source_tree_sha256,
+                governed_dependency_lock_name=governed_dependency_lock_name,
+                governed_dependency_lock_sha256=governed_dependency_lock_sha256,
             )
         )
     return DashboardSettings(
@@ -1770,7 +1820,7 @@ def _read_process_environment(pid: int) -> dict[str, str]:
     return result
 
 
-def _sealed_process_fd_sha256(pid: int, descriptor: int) -> str:
+def _sealed_process_fd_bytes(pid: int, descriptor: int) -> bytes:
     if isinstance(descriptor, bool) or not isinstance(descriptor, int) or descriptor < 0:
         raise DashboardError("governed snapshot descriptor identity is invalid")
     path = Path(f"/proc/{pid}/fd/{descriptor}")
@@ -1785,27 +1835,118 @@ def _sealed_process_fd_sha256(pid: int, descriptor: int) -> str:
         if (
             not stat.S_ISREG(metadata.st_mode)
             or metadata.st_size < 1
-            or metadata.st_size > 64 * 1024 * 1024
+            or metadata.st_size > _GOVERNED_SOURCE_ARCHIVE_MAX_BYTES
             or seals & _REQUIRED_MEMFD_SEALS != _REQUIRED_MEMFD_SEALS
         ):
             raise DashboardError("governed process snapshot is not a sealed regular memfd")
         os.lseek(opened, 0, os.SEEK_SET)
-        digest = hashlib.sha256()
+        payload = bytearray()
         remaining = metadata.st_size
         while remaining:
             chunk = os.read(opened, min(1024 * 1024, remaining))
             if not chunk:
                 raise DashboardError("governed process snapshot ended early")
-            digest.update(chunk)
+            payload.extend(chunk)
             remaining -= len(chunk)
         if os.read(opened, 1):
-            raise DashboardError("governed process snapshot grew while hashing")
+            raise DashboardError("governed process snapshot grew while reading")
         if os.fstat(opened).st_size != metadata.st_size:
-            raise DashboardError("governed process snapshot changed while hashing")
-        return digest.hexdigest()
+            raise DashboardError("governed process snapshot changed while reading")
+        return bytes(payload)
     finally:
         with suppress(OSError):
             os.close(opened)
+
+
+def _sealed_process_fd_sha256(pid: int, descriptor: int) -> str:
+    return hashlib.sha256(_sealed_process_fd_bytes(pid, descriptor)).hexdigest()
+
+
+def _governed_source_archive_hashes(
+    payload: bytes,
+    *,
+    dependency_lock_name: str,
+) -> tuple[str, str]:
+    """Recompute the executable source and dependency identities inside a zip."""
+
+    if dependency_lock_name not in {"uv.lock", "pyproject.toml"}:
+        raise DashboardError("governed dependency-lock archive name is invalid")
+    dependency_entry = f".twen-governed-dependency/{dependency_lock_name}"
+    try:
+        with zipfile.ZipFile(io.BytesIO(payload), mode="r") as archive:
+            entries = archive.infolist()
+            if (
+                archive.comment
+                or not entries
+                or len(entries) > _GOVERNED_SOURCE_ARCHIVE_MAX_FILES
+            ):
+                raise DashboardError("governed source archive inventory is invalid")
+            names = [entry.filename for entry in entries]
+            if len(names) != len(set(names)):
+                raise DashboardError("governed source archive contains duplicate paths")
+            total_uncompressed = sum(entry.file_size for entry in entries)
+            if (
+                total_uncompressed < 1
+                or total_uncompressed
+                > _GOVERNED_SOURCE_ARCHIVE_MAX_UNCOMPRESSED_BYTES
+            ):
+                raise DashboardError("governed source archive expanded size is invalid")
+
+            source_payloads: list[tuple[str, bytes]] = []
+            dependency_payload: bytes | None = None
+            for entry in entries:
+                name = entry.filename
+                parts = name.split("/")
+                if (
+                    entry.is_dir()
+                    or not name
+                    or "\\" in name
+                    or any(not part or part in {".", ".."} for part in parts)
+                    or entry.flag_bits & 0x1
+                    or entry.compress_type != zipfile.ZIP_DEFLATED
+                    or entry.file_size
+                    > _GOVERNED_SOURCE_ARCHIVE_MAX_UNCOMPRESSED_BYTES
+                ):
+                    raise DashboardError(
+                        "governed source archive contains an unsafe entry"
+                    )
+                entry_payload = archive.read(entry)
+                if len(entry_payload) != entry.file_size:
+                    raise DashboardError("governed source archive entry ended early")
+                if name == dependency_entry:
+                    if dependency_payload is not None:
+                        raise DashboardError(
+                            "governed source archive repeats the dependency lock"
+                        )
+                    dependency_payload = entry_payload
+                    continue
+                if (
+                    len(parts) < 2
+                    or parts[0] != "twen"
+                    or not name.endswith(".py")
+                ):
+                    raise DashboardError(
+                        "governed source archive contains an unexpected path"
+                    )
+                relative = "/".join(parts[1:])
+                source_payloads.append((relative, entry_payload))
+    except DashboardError:
+        raise
+    except Exception as error:
+        raise DashboardError("cannot authenticate governed source archive") from error
+
+    if dependency_payload is None or not source_payloads:
+        raise DashboardError("governed source archive is incomplete")
+    source_payloads.sort(key=lambda item: item[0])
+    digest = hashlib.sha256()
+    digest.update(SOURCE_TREE_HASH_SCHEMA)
+    for relative, source_payload in source_payloads:
+        relative_bytes = relative.encode("utf-8")
+        digest.update(len(relative_bytes).to_bytes(8, "big"))
+        digest.update(relative_bytes)
+        digest.update(len(source_payload).to_bytes(8, "big"))
+        digest.update(source_payload)
+    return digest.hexdigest(), hashlib.sha256(dependency_payload).hexdigest()
 
 
 def _session_source_mix(session: Mapping[str, Any] | None) -> dict[str, Any] | None:
@@ -1930,6 +2071,18 @@ def _process_matches_governed_controller(
         or profile.governed_readiness_path is None
         or profile.governed_state_path is None
         or profile.governed_plan_id is None
+        or not isinstance(profile.governed_source_tree_sha256, str)
+        or not re.fullmatch(
+            r"[0-9a-f]{64}",
+            profile.governed_source_tree_sha256,
+        )
+        or profile.governed_dependency_lock_name
+        not in {"uv.lock", "pyproject.toml"}
+        or not isinstance(profile.governed_dependency_lock_sha256, str)
+        or not re.fullmatch(
+            r"[0-9a-f]{64}",
+            profile.governed_dependency_lock_sha256,
+        )
         or not isinstance(controller_state, Mapping)
         or controller_state.get("schema_version") != 1
         or controller_state.get("status") not in _ACTIVE_TRAINING_STATES
@@ -1983,9 +2136,15 @@ def _process_matches_governed_controller(
         or not isinstance(source_snapshot_sha, str)
         or not re.fullmatch(r"[0-9a-f]{64}", source_snapshot_sha)
         or not isinstance(source_tree_sha, str)
-        or not re.fullmatch(r"[0-9a-f]{64}", source_tree_sha)
+        or not secrets.compare_digest(
+            source_tree_sha,
+            profile.governed_source_tree_sha256,
+        )
         or not isinstance(dependency_lock_sha, str)
-        or not re.fullmatch(r"[0-9a-f]{64}", dependency_lock_sha)
+        or not secrets.compare_digest(
+            dependency_lock_sha,
+            profile.governed_dependency_lock_sha256,
+        )
     ):
         return False
     expected_command = [
@@ -2012,15 +2171,24 @@ def _process_matches_governed_controller(
         identity = _read_linux_process_identity(pid)
         environment = _read_process_environment(pid)
         controller_sha = _sealed_process_fd_sha256(pid, controller_fd)
-        source_sha = _sealed_process_fd_sha256(pid, source_fd)
-        source_transport_sha = _sealed_process_fd_sha256(
+        source_payload = _sealed_process_fd_bytes(pid, source_fd)
+        source_transport_payload = _sealed_process_fd_bytes(
             pid,
             source_transport_fd,
         )
+        source_sha = hashlib.sha256(source_payload).hexdigest()
+        archive_source_tree_sha, archive_dependency_lock_sha = (
+            _governed_source_archive_hashes(
+                source_payload,
+                dependency_lock_name=profile.governed_dependency_lock_name,
+            )
+        )
+        identity_after = _read_linux_process_identity(pid)
     except DashboardError:
         return False
     return bool(
-        list(identity.command) == command
+        identity_after == identity
+        and list(identity.command) == command
         and identity.start_time_ticks == start_time_ticks
         and identity.cwd == project_root
         and str(identity.executable) == executable
@@ -2031,7 +2199,9 @@ def _process_matches_governed_controller(
         and environment.get("PYTHONUNBUFFERED") == "1"
         and controller_sha == controller_snapshot_sha
         and source_sha == source_snapshot_sha
-        and source_transport_sha == source_snapshot_sha
+        and source_payload == source_transport_payload
+        and archive_source_tree_sha == source_tree_sha
+        and archive_dependency_lock_sha == dependency_lock_sha
     )
 
 
