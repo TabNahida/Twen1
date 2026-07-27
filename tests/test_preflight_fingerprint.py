@@ -25,8 +25,10 @@ from twen.data import (
 )
 from twen.preflight import (
     TrainingPreflightError,
+    _validate_inference_kd_shard_manifests,
     _validate_no_reuse_capacity,
     _validate_phase_disjointness_attestation,
+    run_inference_preflight,
     run_training_preflight,
 )
 from twen.source_identity import twen_source_tree_sha256
@@ -36,6 +38,107 @@ def _write(path: Path, payload: bytes) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(payload)
     return hashlib.sha256(payload).hexdigest()
+
+
+def test_training_and_inference_preflight_dispatch_distinct_data_policies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[object, int | None, bool]] = []
+    sentinel = object()
+
+    def fake_run(
+        config: object,
+        *,
+        world_size: int | None,
+        inference_only: bool,
+    ) -> object:
+        calls.append((config, world_size, inference_only))
+        return sentinel
+
+    monkeypatch.setattr("twen.preflight._run_preflight", fake_run)
+    config = object()
+    assert run_training_preflight(config, world_size=2) is sentinel
+    assert run_inference_preflight(config, world_size=1) is sentinel
+    assert calls == [(config, 2, False), (config, 1, True)]
+
+
+def test_inference_kd_metadata_authentication_skips_only_tensor_checksum(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    corpus_manifest = tmp_path / "manifest.json"
+    shard = tmp_path / "shard-000"
+    local_manifest = shard / "kd_manifest.json"
+    local_sha = _write(local_manifest, b'{"kind":"teacher-kd-shard"}\n')
+    entry = SimpleNamespace(
+        path=shard.name,
+        manifest_sha256=local_sha,
+        source_shard_id="source-000",
+        source_tensors_sha256="1" * 64,
+        global_sample_start=0,
+        global_sample_end=2,
+        global_token_start=0,
+        global_token_end=5,
+        sequence_count=2,
+        token_count=5,
+        tensors_sha256="2" * 64,
+    )
+    corpus = SimpleNamespace(
+        teacher_model_id="Qwen/test",
+        teacher_revision="a" * 40,
+        teacher_model_sha256="3" * 64,
+        generator_source_sha256="4" * 64,
+        tokenizer_sha256="5" * 64,
+        dataset_fingerprint="dataset",
+        shards=(entry,),
+    )
+    shard_manifest = SimpleNamespace(
+        teacher_model_id=corpus.teacher_model_id,
+        teacher_revision=corpus.teacher_revision,
+        teacher_model_sha256=corpus.teacher_model_sha256,
+        generator_source_sha256=corpus.generator_source_sha256,
+        tokenizer_sha256=corpus.tokenizer_sha256,
+        dataset_fingerprint=corpus.dataset_fingerprint,
+        source_shard_id=entry.source_shard_id,
+        source_tensors_sha256=entry.source_tensors_sha256,
+        global_sample_start=entry.global_sample_start,
+        global_sample_end=entry.global_sample_end,
+        global_token_start=entry.global_token_start,
+        global_token_end=entry.global_token_end,
+        sequence_count=entry.sequence_count,
+        token_count=entry.token_count,
+        tensors_sha256=entry.tensors_sha256,
+    )
+    calls: list[tuple[Path, float | None, bool]] = []
+
+    def validate_shard(
+        path: Path,
+        *,
+        expected_temperature: float | None = None,
+        verify_checksum: bool = True,
+    ) -> SimpleNamespace:
+        calls.append((Path(path), expected_temperature, verify_checksum))
+        return shard_manifest
+
+    monkeypatch.setattr(
+        "twen.data.teacher_kd.validate_kd_shard",
+        validate_shard,
+    )
+    assert _validate_inference_kd_shard_manifests(
+        corpus_manifest,
+        corpus,
+        expected_temperature=2.0,
+    ) == (shard_manifest,)
+    assert calls == [(shard.resolve(), 2.0, False)]
+
+    local_manifest.write_bytes(local_manifest.read_bytes() + b"tamper")
+    with pytest.raises(TrainingPreflightError, match="manifest hash mismatch"):
+        _validate_inference_kd_shard_manifests(
+            corpus_manifest,
+            corpus,
+            expected_temperature=2.0,
+        )
+    assert calls == [(shard.resolve(), 2.0, False)]
 
 
 def _preflight_config(tmp_path: Path) -> TrainConfig:
@@ -648,12 +751,29 @@ def test_preflight_authenticates_second_prepared_kd_cooldown_contract(
     )
     monkeypatch.setattr(
         twen.data,
-        "validate_kd_corpus_manifest",
+        "validate_prepared_corpus_for_inference",
         lambda path, **_kwargs: (
+            selected_prepared
+            if Path(path).resolve() == cooldown_prepared.resolve()
+            else primary_prepared
+        ),
+    )
+    kd_verification_calls: list[tuple[Path, bool]] = []
+
+    def validate_kd(path: Path, **kwargs: object) -> SimpleNamespace:
+        kd_verification_calls.append(
+            (Path(path).resolve(), bool(kwargs["verify_shards"]))
+        )
+        return (
             kd(cooldown_fingerprint)
             if Path(path).resolve() == cooldown_kd.resolve()
             else kd(primary_fingerprint)
-        ),
+        )
+
+    monkeypatch.setattr(
+        twen.data,
+        "validate_kd_corpus_manifest",
+        validate_kd,
     )
     monkeypatch.setattr(twen.data, "validate_kd_corpus_coverage", lambda *_args: None)
     monkeypatch.setattr(
@@ -683,6 +803,18 @@ def test_preflight_authenticates_second_prepared_kd_cooldown_contract(
     }
     assert str(cooldown_prepared.resolve()) in report.checked_paths
     assert str(cooldown_kd.resolve()) in report.checked_paths
+    assert kd_verification_calls == [
+        (Path(config.data.teacher_kd_manifest_path).resolve(), True),
+        (cooldown_kd.resolve(), True),
+    ]
+
+    kd_verification_calls.clear()
+    inference_report = run_inference_preflight(config, world_size=1)
+    assert inference_report.quality_cooldown_enabled is True
+    assert kd_verification_calls == [
+        (Path(config.data.teacher_kd_manifest_path).resolve(), False),
+        (cooldown_kd.resolve(), False),
+    ]
 
 
 def test_no_reuse_capacity_rejects_nominally_sufficient_smoke_tail_batch() -> None:

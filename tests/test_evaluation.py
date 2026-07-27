@@ -141,6 +141,7 @@ class EvaluationCpuTest(unittest.TestCase):
             prepared = SimpleNamespace(
                 tokenizer_sha256="tokenizer",
                 dataset_fingerprint="dataset",
+                generator_source_sha256="generator",
             )
             metadata = {
                 "global_step": 7,
@@ -176,8 +177,11 @@ class EvaluationCpuTest(unittest.TestCase):
             with (
                 patch("twen.evaluation.enforce_offline_environment"),
                 patch("twen.evaluation.load_train_config", return_value=config),
-                patch("twen.evaluation.run_training_preflight", return_value=report),
-                patch("twen.evaluation.validate_prepared_corpus", return_value=prepared),
+                patch("twen.evaluation.run_inference_preflight", return_value=report),
+                patch(
+                    "twen.evaluation.validate_prepared_corpus_for_inference",
+                    return_value=prepared,
+                ),
                 patch(
                     "twen.evaluation._inspect_inference_evaluation_checkpoint",
                     return_value=(manager, checkpoint, metadata, {"mode": "test"}),

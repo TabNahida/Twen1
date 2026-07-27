@@ -30,6 +30,7 @@ from .cursor import (
     SourceMixSampleReference,
     gradient_accumulation_steps,
 )
+from .inference_prepared import validate_prepared_corpus_for_inference
 from .prepared import (
     PreparedCorpusManifest,
     PreparedShardEntry,
@@ -203,6 +204,7 @@ __all__ = [
     "validate_kd_corpus_manifest",
     "validate_kd_shard",
     "validate_prepared_corpus",
+    "validate_prepared_corpus_for_inference",
     "validate_quality_cooldown_subset",
     "validate_refill_lineage",
     "validate_refill_plan",

@@ -15,10 +15,14 @@ from typing import Any
 import yaml
 
 from .config import TrainConfig, load_train_config
-from .data import ShardTransaction, read_complete_marker, validate_prepared_corpus
+from .data import (
+    ShardTransaction,
+    read_complete_marker,
+    validate_prepared_corpus_for_inference,
+)
 from .io.locking import FileLock
 from .io.offline import enforce_offline_environment
-from .preflight import PreflightReport, run_training_preflight
+from .preflight import PreflightReport, run_inference_preflight
 from .utils import atomic_write_json, atomic_write_text, sha256_file
 
 EVALUATION_SCHEMA_VERSION = 1
@@ -649,12 +653,15 @@ def _evaluate_nll_while_locked(
     if batch_size <= 0:
         raise ValueError("evaluation batch_size must be positive")
     config: TrainConfig = load_train_config(config_path)
-    report: PreflightReport = run_training_preflight(config, world_size=1)
+    report: PreflightReport = run_inference_preflight(config, world_size=1)
     prepared_path = Path(prepared_manifest_path).resolve()
-    prepared = validate_prepared_corpus(prepared_path)
+    prepared_manifest_sha = sha256_file(prepared_path)
+    prepared = validate_prepared_corpus_for_inference(
+        prepared_path,
+        expected_manifest_sha256=prepared_manifest_sha,
+    )
     if prepared.tokenizer_sha256 != config.sources.tokenizer.manifest_sha256:
         raise ValueError("evaluation corpus tokenizer differs from the run tokenizer")
-    prepared_manifest_sha = sha256_file(prepared_path)
     evaluation_device_type = "cuda" if device.startswith("cuda") else "cpu"
     evaluation_dtype = "bfloat16" if config.runtime.bf16 else "float32"
     dense_baseline: dict[str, Any] | None = None
@@ -764,6 +771,7 @@ def _evaluate_nll_while_locked(
         "kind": "twen_nll_evaluation_plan",
         "config_path": str(Path(config_path).resolve()),
         "config_fingerprint": report.config_fingerprint,
+        "preflight_mode": "forward_only_historical_prepared_compatible",
         "checkpoint": str(resolved_checkpoint.resolve()),
         "checkpoint_complete_sha256": checkpoint_complete_sha,
         "checkpoint_state": checkpoint_state,
@@ -771,6 +779,7 @@ def _evaluate_nll_while_locked(
         "prepared_manifest": str(prepared_path),
         "prepared_manifest_sha256": prepared_manifest_sha,
         "prepared_dataset_fingerprint": prepared.dataset_fingerprint,
+        "prepared_generator_source_sha256": prepared.generator_source_sha256,
         "expert_initialization": config.architecture.expert_initialization,
         "dense_control_fingerprint": dense_control_fingerprint,
         "dense_baseline": dense_baseline_identity,

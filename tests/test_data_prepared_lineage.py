@@ -8,10 +8,16 @@ from pathlib import Path
 from unittest.mock import patch
 
 from twen.cli import build_parser
+from twen.data.audits import build_base_audit_attestation
+from twen.data.inference_prepared import validate_prepared_corpus_for_inference
 from twen.data.prepared import (
     AUDITED_PREPARED_GENERATOR_SOURCE_SHA256,
     PREPARED_GENERATOR_SOURCE_SHA256,
+    PreparedCorpusManifest,
     _authenticate_extracted_prepare_inputs,
+    _local_prepared_manifest,
+    _prepared_dataset_fingerprint,
+    _prepared_pipeline_fingerprint,
     prepare_jsonl_corpus,
     read_prepared_manifest,
     validate_prepared_corpus,
@@ -104,6 +110,151 @@ def _write_extracted_fixture(root: Path, *, ready_for_training: bool = False) ->
         encoding="utf-8",
     )
     return manifest
+
+
+def _write_benchmark_registry(root: Path) -> tuple[Path, Path]:
+    benchmark_root = root / "benchmarks"
+    benchmark_root.mkdir()
+    benchmark = benchmark_root / "fixture.jsonl"
+    benchmark.write_text(
+        json.dumps(
+            {
+                "question": (
+                    "one two three four five six seven eight nine ten eleven twelve thirteen"
+                )
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    registry = root / "registry.json"
+    registry.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "twen_benchmark_13gram_registry",
+                "registry_id": "fixture",
+                "benchmarks": [
+                    {
+                        "benchmark_id": "fixture",
+                        "required": True,
+                        "status": "ready",
+                        "revision": "e" * 40,
+                        "files": [
+                            {
+                                **_file_entry(benchmark_root, benchmark.name),
+                                "format": "jsonl",
+                                "text_fields": ["question"],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return registry, benchmark_root
+
+
+def _rewrite_as_historical_prepared(
+    manifest: Path,
+    *,
+    generator_source_sha256: str,
+) -> str:
+    original = read_prepared_manifest(manifest)
+    source_hashes = [
+        (Path(entry.source_path), entry.source_sha256)
+        for entry in original.shards
+    ]
+    pipeline_fingerprint = _prepared_pipeline_fingerprint(
+        source_hashes,
+        tokenizer_sha256=original.tokenizer_sha256,
+        sequence_length=original.sequence_length,
+        text_field=original.text_field,
+        generator_source_sha256=generator_source_sha256,
+        lineage=original.lineage,
+    )
+    dataset_fingerprint = _prepared_dataset_fingerprint(
+        pipeline_fingerprint=pipeline_fingerprint,
+        generator_source_sha256=generator_source_sha256,
+        tokenizer_sha256=original.tokenizer_sha256,
+        sequence_length=original.sequence_length,
+        text_field=original.text_field,
+        shards=original.shards,
+        lineage=original.lineage,
+    )
+    rewritten = PreparedCorpusManifest(
+        dataset_fingerprint=dataset_fingerprint,
+        pipeline_fingerprint=pipeline_fingerprint,
+        generator_source_sha256=generator_source_sha256,
+        tokenizer_sha256=original.tokenizer_sha256,
+        sequence_length=original.sequence_length,
+        text_field=original.text_field,
+        shards=original.shards,
+        lineage=original.lineage,
+    )
+    for entry in original.shards:
+        shard = manifest.parent / entry.path
+        local_path = shard / "prepared_manifest.json"
+        local = _local_prepared_manifest(
+            shard_id=entry.shard_id,
+            source_path=entry.source_path,
+            source_sha256=entry.source_sha256,
+            sequence_count=entry.sequence_count,
+            token_count=entry.token_count,
+            tensors_sha256=entry.tensors_sha256,
+            pipeline_fingerprint=pipeline_fingerprint,
+            generator_source_sha256=generator_source_sha256,
+            tokenizer_sha256=original.tokenizer_sha256,
+            sequence_length=original.sequence_length,
+            text_field=original.text_field,
+        )
+        local_path.write_text(json.dumps(local, sort_keys=True), encoding="utf-8")
+        complete_path = shard / "COMPLETE"
+        complete = json.loads(complete_path.read_text(encoding="utf-8"))
+        for output in complete["outputs"]:
+            if output["path"] == "prepared_manifest.json":
+                output["size"] = local_path.stat().st_size
+                output["sha256"] = sha256_file(local_path)
+        complete_path.write_text(json.dumps(complete, sort_keys=True), encoding="utf-8")
+    manifest.write_text(
+        json.dumps(rewritten.to_dict(), sort_keys=True),
+        encoding="utf-8",
+    )
+    return sha256_file(manifest)
+
+
+def _write_historical_prepared_fixture(root: Path) -> tuple[Path, str]:
+    extracted = _write_extracted_fixture(root / "extracted")
+    registry, benchmark_root = _write_benchmark_registry(root)
+    audit = build_base_audit_attestation(
+        extracted,
+        extracted,
+        registry,
+        benchmark_root,
+        root / "audit",
+    )
+    with (
+        patch("twen.io.offline.enforce_offline_environment"),
+        patch("twen.io.offline.verify_local_download_directory"),
+        patch("transformers.AutoTokenizer.from_pretrained", return_value=_Tokenizer()),
+    ):
+        output = prepare_jsonl_corpus(
+            None,
+            root / "prepared",
+            tokenizer_path=root / "tokenizer",
+            tokenizer_sha256=TOKENIZER_SHA,
+            sequence_length=4,
+            progress="never",
+            extracted_manifest=extracted,
+            role="train",
+            audit_attestation=audit,
+        )
+    pinned_manifest_sha = _rewrite_as_historical_prepared(
+        output,
+        generator_source_sha256="1" * 64,
+    )
+    return output, pinned_manifest_sha
 
 
 class PreparedExtractedLineageTest(unittest.TestCase):
@@ -212,6 +363,67 @@ class PreparedExtractedLineageTest(unittest.TestCase):
             selected.write_text('{"text":"tampered"}\n', encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "(size|SHA256) mismatch"):
                 validate_prepared_corpus(output)
+
+    def test_historical_generator_is_inference_only_and_manifest_pinned(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output, pinned_manifest_sha = _write_historical_prepared_fixture(root)
+
+            with self.assertRaisesRegex(ValueError, "generator source changed"):
+                validate_prepared_corpus(output)
+            inferred = validate_prepared_corpus_for_inference(
+                output,
+                expected_manifest_sha256=pinned_manifest_sha,
+            )
+            self.assertEqual(
+                inferred.generator_source_sha256,
+                "1" * 64,
+            )
+            with self.assertRaisesRegex(ValueError, "pinned SHA256"):
+                validate_prepared_corpus_for_inference(
+                    output,
+                    expected_manifest_sha256="2" * 64,
+                )
+
+            tensors = output.parent / inferred.shards[0].path / "tokens.safetensors"
+            with tensors.open("ab") as handle:
+                handle.write(b"tamper")
+            with self.assertRaisesRegex(ValueError, "(incomplete|tensor hash)"):
+                validate_prepared_corpus_for_inference(
+                    output,
+                    expected_manifest_sha256=pinned_manifest_sha,
+                )
+
+    def test_historical_inference_recomputes_dataset_fingerprint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output, _ = _write_historical_prepared_fixture(Path(directory))
+            value = json.loads(output.read_text(encoding="utf-8"))
+            value["dataset_fingerprint"] = "f" * 64
+            output.write_text(
+                json.dumps(value, sort_keys=True),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "dataset fingerprint"):
+                validate_prepared_corpus_for_inference(
+                    output,
+                    expected_manifest_sha256=sha256_file(output),
+                )
+
+    def test_historical_inference_reauthenticates_extracted_source_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output, pinned_manifest_sha = _write_historical_prepared_fixture(
+                Path(directory)
+            )
+            prepared = read_prepared_manifest(output)
+            source = Path(prepared.shards[0].source_path)
+            source.write_text('{"text":"tampered source"}\n', encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "(size|SHA256) mismatch"):
+                validate_prepared_corpus_for_inference(
+                    output,
+                    expected_manifest_sha256=pinned_manifest_sha,
+                )
 
     def test_explicit_inputs_are_never_presented_as_authenticated_extracted_data(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

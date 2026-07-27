@@ -885,10 +885,98 @@ def _source_mix_weight_contract(
     return lineage, effective, True
 
 
-def run_training_preflight(
-    config: TrainConfig, *, world_size: int | None = None
+def _validate_inference_kd_shard_manifests(
+    corpus_manifest: Path,
+    corpus: object,
+    *,
+    expected_temperature: float,
+) -> tuple[object, ...]:
+    """Authenticate KD shard metadata without hashing unused tensor payloads.
+
+    Forward-only NLL evaluation never opens teacher-KD tensors.  It still binds
+    every local shard manifest to the top-level corpus entry, parses the shard
+    schema, checks its COMPLETE/tensor-header contract, and compares the full
+    identity tuple.  The only omitted operation is the full tensor checksum.
+    """
+
+    from .data.teacher_kd import (
+        KD_MANIFEST_FILENAME,
+        validate_kd_shard,
+    )
+
+    root = corpus_manifest.parent.resolve()
+    validated: list[object] = []
+    for entry in corpus.shards:
+        shard = (root / entry.path).resolve()
+        try:
+            shard.relative_to(root)
+        except ValueError as error:
+            raise TrainingPreflightError(
+                f"KD shard escapes corpus root: {entry.path}"
+            ) from error
+        local_manifest = shard / KD_MANIFEST_FILENAME
+        if sha256_file(local_manifest) != entry.manifest_sha256:
+            raise TrainingPreflightError(
+                f"KD shard manifest hash mismatch: {entry.path}"
+            )
+        shard_manifest = validate_kd_shard(
+            shard,
+            expected_temperature=expected_temperature,
+            verify_checksum=False,
+        )
+        if sha256_file(local_manifest) != entry.manifest_sha256:
+            raise TrainingPreflightError(
+                f"KD shard manifest changed during validation: {entry.path}"
+            )
+        expected_identity = (
+            corpus.teacher_model_id,
+            corpus.teacher_revision,
+            corpus.teacher_model_sha256,
+            corpus.generator_source_sha256,
+            corpus.tokenizer_sha256,
+            corpus.dataset_fingerprint,
+            entry.source_shard_id,
+            entry.source_tensors_sha256,
+            entry.global_sample_start,
+            entry.global_sample_end,
+            entry.global_token_start,
+            entry.global_token_end,
+            entry.sequence_count,
+            entry.token_count,
+            entry.tensors_sha256,
+        )
+        actual_identity = (
+            shard_manifest.teacher_model_id,
+            shard_manifest.teacher_revision,
+            shard_manifest.teacher_model_sha256,
+            shard_manifest.generator_source_sha256,
+            shard_manifest.tokenizer_sha256,
+            shard_manifest.dataset_fingerprint,
+            shard_manifest.source_shard_id,
+            shard_manifest.source_tensors_sha256,
+            shard_manifest.global_sample_start,
+            shard_manifest.global_sample_end,
+            shard_manifest.global_token_start,
+            shard_manifest.global_token_end,
+            shard_manifest.sequence_count,
+            shard_manifest.token_count,
+            shard_manifest.tensors_sha256,
+        )
+        if actual_identity != expected_identity:
+            raise TrainingPreflightError(
+                f"KD corpus/shard identity mismatch: {entry.path}"
+            )
+        validated.append(shard_manifest)
+    return tuple(validated)
+
+
+def _run_preflight(
+    config: TrainConfig,
+    *,
+    world_size: int | None,
+    inference_only: bool,
 ) -> PreflightReport:
-    """Validate every local dependency, artifact identity, and offline invariant."""
+    """Validate local dependencies under an explicit training/inference policy."""
 
     actual_world_size = int(os.environ.get("WORLD_SIZE", "1")) if world_size is None else world_size
     validate_optimizer_world_size(config, actual_world_size)
@@ -919,9 +1007,17 @@ def run_training_preflight(
     data_manifest = _require_file(
         config.data.manifest_path, config.data.manifest_sha256, "training data manifest"
     )
-    from .data import validate_prepared_corpus
+    if inference_only:
+        from .data import validate_prepared_corpus_for_inference
 
-    prepared_corpus = validate_prepared_corpus(data_manifest)
+        prepared_corpus = validate_prepared_corpus_for_inference(
+            data_manifest,
+            expected_manifest_sha256=config.data.manifest_sha256,
+        )
+    else:
+        from .data import validate_prepared_corpus
+
+        prepared_corpus = validate_prepared_corpus(data_manifest)
     prepared_lineage = getattr(prepared_corpus, "lineage", None)
     if isinstance(prepared_lineage, Mapping) and isinstance(
         prepared_lineage.get("quality_cooldown"), Mapping
@@ -1005,6 +1101,7 @@ def run_training_preflight(
         kd_corpus = validate_kd_corpus_manifest(
             kd_manifest,
             expected_temperature=config.losses.kd_temperature,
+            verify_shards=not inference_only,
         )
         validate_kd_corpus_coverage(kd_corpus, prepared_corpus)
         _require_same(
@@ -1028,8 +1125,22 @@ def run_training_preflight(
             kd_corpus.tokenizer_sha256,
             config.sources.tokenizer.manifest_sha256,
         )
-        for entry in kd_corpus.shards:
-            shard_manifest = read_kd_manifest(kd_manifest.parent / entry.path)
+        if inference_only:
+            kd_shard_manifests = _validate_inference_kd_shard_manifests(
+                kd_manifest,
+                kd_corpus,
+                expected_temperature=config.losses.kd_temperature,
+            )
+        else:
+            kd_shard_manifests = tuple(
+                read_kd_manifest(kd_manifest.parent / entry.path)
+                for entry in kd_corpus.shards
+            )
+        for entry, shard_manifest in zip(
+            kd_corpus.shards,
+            kd_shard_manifests,
+            strict=True,
+        ):
             _require_same(
                 f"KD shard {entry.path} sequence length",
                 shard_manifest.sequence_length,
@@ -1067,7 +1178,13 @@ def run_training_preflight(
             cooldown_prepared_sha,
             "quality cooldown data manifest",
         )
-        cooldown_prepared = validate_prepared_corpus(cooldown_data_manifest)
+        if inference_only:
+            cooldown_prepared = validate_prepared_corpus_for_inference(
+                cooldown_data_manifest,
+                expected_manifest_sha256=cooldown_prepared_sha,
+            )
+        else:
+            cooldown_prepared = validate_prepared_corpus(cooldown_data_manifest)
         _require_same(
             "quality cooldown prepared sequence length",
             cooldown_prepared.sequence_length,
@@ -1108,6 +1225,7 @@ def run_training_preflight(
             cooldown_kd = validate_kd_corpus_manifest(
                 cooldown_kd_manifest,
                 expected_temperature=config.losses.kd_temperature,
+                verify_shards=not inference_only,
             )
             validate_kd_corpus_coverage(cooldown_kd, cooldown_prepared)
             _require_same(
@@ -1135,8 +1253,24 @@ def run_training_preflight(
                 cooldown_kd.tokenizer_sha256,
                 config.sources.tokenizer.manifest_sha256,
             )
-            for entry in cooldown_kd.shards:
-                shard_manifest = read_kd_manifest(cooldown_kd_manifest.parent / entry.path)
+            if inference_only:
+                cooldown_kd_shard_manifests = (
+                    _validate_inference_kd_shard_manifests(
+                        cooldown_kd_manifest,
+                        cooldown_kd,
+                        expected_temperature=config.losses.kd_temperature,
+                    )
+                )
+            else:
+                cooldown_kd_shard_manifests = tuple(
+                    read_kd_manifest(cooldown_kd_manifest.parent / entry.path)
+                    for entry in cooldown_kd.shards
+                )
+            for entry, shard_manifest in zip(
+                cooldown_kd.shards,
+                cooldown_kd_shard_manifests,
+                strict=True,
+            ):
                 _require_same(
                     f"quality cooldown KD shard {entry.path} sequence length",
                     shard_manifest.sequence_length,
@@ -1629,6 +1763,41 @@ def run_training_preflight(
             config.data.shuffle_seed if authenticated_source_map is not None else None
         ),
         source_map_payload_json=source_map_payload_json,
+    )
+
+
+def run_training_preflight(
+    config: TrainConfig,
+    *,
+    world_size: int | None = None,
+) -> PreflightReport:
+    """Run the strict preflight that authorizes optimization and resume."""
+
+    return _run_preflight(
+        config,
+        world_size=world_size,
+        inference_only=False,
+    )
+
+
+def run_inference_preflight(
+    config: TrainConfig,
+    *,
+    world_size: int | None = None,
+) -> PreflightReport:
+    """Run a forward-only preflight that may authenticate pinned historical data.
+
+    This preserves all model/config/data/KD/calibration checks from training
+    preflight.  Its sole exception is prepared generator provenance: a
+    historical generator is accepted only through the manifest-pinned,
+    inference-only validator and this report cannot authorize training or
+    exact resume.
+    """
+
+    return _run_preflight(
+        config,
+        world_size=world_size,
+        inference_only=True,
     )
 
 
