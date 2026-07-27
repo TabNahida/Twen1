@@ -14,16 +14,22 @@ def test_dashboard_user_service_is_persistent_and_cuda_wrapped() -> None:
     assert (
         "ExecStartPre=/media/data1/Project/AI/Twen1/.venv/bin/python "
         "/media/data1/Project/AI/Twen1/scripts/"
-        "authorize_v4_13m_calibration.py verify "
+        "authorize_v4_13m_formal_lr_calibration.py verify "
     ) in unit
     assert (
+        "--closure artifacts/evidence/"
+        "base-v4-250m-r2-semantic-excluded-closed-formal-lr-calibration-"
+        "evidence-closure-pass-001 "
+    ) in unit
+    assert "--profile-id base-dense-v4-13m-formal-lr-calibration " in unit
+    assert (
         "--dashboard-config "
-        "locks/base-dense-v4-13m-calibration-admission-pass-002/"
+        "locks/base-dense-v4-13m-formal-lr-calibration-admission-pass-001/"
         "dashboard.json "
     ) in unit
     assert (
         "ReadOnlyPaths=/media/data1/Project/AI/Twen1/locks/"
-        "base-dense-v4-13m-calibration-admission-pass-002"
+        "base-dense-v4-13m-formal-lr-calibration-admission-pass-001"
     ) in unit
     assert (
         "ExecStart=/usr/bin/bash "

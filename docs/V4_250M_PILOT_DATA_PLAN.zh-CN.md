@@ -15,26 +15,28 @@
 正式 r2 已把失败的 FineWeb2 中文源替换为固定版本的中文 Wikipedia，并已重新完成
 语料物化、双重治理审计、prepare、两类不相交证明、中文语义质量审阅和 v3-final
 formal baseline。认证 closure 位于
-`artifacts/evidence/base-v4-250m-r2-semantic-excluded-closed-formal-evidence-closure-pass-001/`，
+`artifacts/evidence/base-v4-250m-r2-semantic-excluded-closed-formal-lr-calibration-evidence-closure-pass-001/`，
 输入指纹为
-`bc778f40527ba4f4857a673102c00989a09c896d7a49949a6f6684625174d36e`。
-13M calibration 尚未执行。Wikipedia 许可确认已于 2026-07-27 由独立 admission bundle
-`locks/base-dense-v4-13m-calibration-admission-pass-002/` 记录；它只允许用户通过
-Dashboard 再次精确确认并启动 calibration，不授权 250M formal。
+`cd9cc9b0c4e6dc8cf6bb4be470ee425f4c83ed4089e6da4900d49605c1ddb826`。
+首轮 13M low-LR calibration 已完成，但其中文 FineWeb2 NLL `3.659148001` 高于
+`3.656194313` 硬门，production attestor 已拒绝。Wikipedia 许可确认现由新的独立
+admission bundle
+`locks/base-dense-v4-13m-formal-lr-calibration-admission-pass-001/` 记录；它只允许用户
+通过 Dashboard 再次精确确认并启动修正 calibration，不授权 250M formal。
 `configs/base/dense-v4-250m-pilot.blocked.yaml` 中的 prepared manifest 与
 source-map 使用显式 `PENDING_*` 值，因此即使绕过 Web 直接调用 CLI，也会在配置校验阶段
 失败。`locks/base-dense-v4-250m-pilot.readiness.json` 与容量 attestation 同时保持
 `launch_enabled=false`。旧 FineWeb2 相关证据仍全部作废；本轮 closure 只认证新的
-Wikipedia semantic-excluded `closed` 身份。13M low-LR calibration 已改绑最终 primary
-prepared manifest；模板 Dashboard 保持关闭，admission bundle 内的认证 Web allowlist
-只开放该 profile，并要求精确输入
-`START base-dense-v4-13m-low-lr-calibration`。
+Wikipedia semantic-excluded `closed` 身份。新的 formal-LR calibration 继续绑定最终
+primary prepared manifest；模板 Dashboard 保持关闭，admission bundle 内的认证 Web
+allowlist 只开放该 profile，并要求精确输入
+`START base-dense-v4-13m-formal-lr-calibration`。
 
 ## 正式超参、fork 与暂停评测门
 
-13M low-LR calibration 仍保持 Adapter `5e-5`、scale `1e-5`、5M warmup；
-它是正式启动前必须由用户安排并通过的质量门，但不是 250M 的 warm start。250M
-始终从 v3 final 重新 fork，并使用更保守的独立合同：
+首轮 13M 使用 Adapter `5e-5`、scale `1e-5`、5M warmup，已作为中文门失败证据冻结。
+修正轮和 250M 均使用更保守的 formal 参数，但二者仍各自从 v3 final 重新 fork，修正轮
+也绝不是 250M 的 warm start：
 
 - Adapter/Lora nominal LR `3e-5`，scale LR `3e-6`；
 - 10M warmup，随后全程 cosine 到 peak 的 `0.1`；
@@ -45,9 +47,9 @@ prepared manifest；模板 Dashboard 保持关闭，admission bundle 内的认�
   SHA256 固定为
   `3a21a50e35de74ecd0ff5b8f00aa29ed6c83f746fc2cf97d4da6b0536262b6c7`。
 
-13M calibration 尚未执行。完成后必须同时认证训练报告、checkpoint 40/50/final 的
-同口径 frozen-v3 validation、checkpoint drift 报告及各 checkpoint 的
-manifest/`COMPLETE`，并满足：
+formal-LR 13M calibration 尚未启动。完成后必须重新生成并认证训练报告、
+checkpoint 40/50/final 的同口径 frozen-v3 validation、checkpoint drift 报告及各
+checkpoint 的 manifest/`COMPLETE`，并满足：
 
 - 最佳和 final aggregate NLL 均不高于 `2.3766688031972105`；
 - 中文 NLL 不高于 `3.656194313354557`；

@@ -505,15 +505,18 @@ candidate/frozen corpus 重审的 quality-v3 attestation SHA256 为
 5M warmup；250M 则使用独立的 Adapter `3e-5` / scale `3e-6` / 10M warmup
 合同，并始终从 v3 final model-only fork。正式暂停评测与新增来源 validation 门见
 [`V4_250M_PILOT_DATA_PLAN.zh-CN.md`](V4_250M_PILOT_DATA_PLAN.zh-CN.md)。
-上述 identity 现仅作失败分析的历史输入，不再表示 ready for launch。当前 13M 配置已经
+上述 identity 现仅作失败分析的历史输入，不再表示 ready for launch。首轮 13M 配置随后
 改绑 formal-primary r2 prepared manifest
 `artifacts/data/base-v4-250m-primary-r2-semantic-excluded-closed-train-pass-001/manifest.json`
 （SHA256 `cf1d837e2130e1d5a045f151eddae5fb20250b44f037676c933b2c6ccfe75af8`）
 及其 source-map
 `d6620197c785464885461738727c320d8046c513b535090c7412615292c50efe`；
-正式语义审阅与 formal evidence closure 已通过。Wikipedia 许可确认现已由
-`locks/base-dense-v4-13m-calibration-admission-pass-002/` 认证；许可 ACK 不等于训练
-启动，13M 仍需独立输入 `START base-dense-v4-13m-low-lr-calibration`。
+正式语义审阅与 formal evidence closure 已通过。首轮训练完成后 aggregate 改善，但中文
+FineWeb2 frozen NLL 以 `3.659148001 > 3.656194313` 未通过。新的 formal-LR 修正轮保持
+相同数据身份，只把 Adapter/Lora、scale 与 warmup 对齐正式合同；Wikipedia 许可确认由
+`locks/base-dense-v4-13m-formal-lr-calibration-admission-pass-001/` 认证。许可 ACK
+不等于训练启动，修正轮仍需独立输入
+`START base-dense-v4-13m-formal-lr-calibration`。
 
 正式 r2 选择中文 Wikipedia 的原因是：它在本轮三类候选中正文质量和 provenance 最清楚；
 Common Corpus 中文样本约 98% 为法院裁判文书并含 PII/采集站噪声，不能作为通用中文主源；

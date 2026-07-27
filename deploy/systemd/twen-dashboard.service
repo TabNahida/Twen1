@@ -5,8 +5,8 @@ After=default.target
 [Service]
 Type=simple
 WorkingDirectory=/media/data1/Project/AI/Twen1
-ExecStartPre=/media/data1/Project/AI/Twen1/.venv/bin/python /media/data1/Project/AI/Twen1/scripts/authorize_v4_13m_calibration.py verify --closure artifacts/evidence/base-v4-250m-r2-semantic-excluded-closed-formal-evidence-closure-pass-001 --dashboard-config configs/web/dashboard.json --profile-id base-dense-v4-13m-low-lr-calibration --acknowledgement "ACCEPT V4 WIKIPEDIA LICENSE fbc16551a1d7c0b9020852be97f751af2759442bd4d22bade707cd50a4fa3762" --output locks/base-dense-v4-13m-calibration-admission-pass-002
-ExecStart=/usr/bin/bash /media/data1/Project/AI/Twen1/scripts/with_cuda_toolchain.sh /media/data1/Project/AI/Twen1/.venv/bin/python -m twen web serve --dashboard-config locks/base-dense-v4-13m-calibration-admission-pass-002/dashboard.json --host 0.0.0.0 --port 8765 --auth-file .twen/dashboard/http-auth.json
+ExecStartPre=/media/data1/Project/AI/Twen1/.venv/bin/python /media/data1/Project/AI/Twen1/scripts/authorize_v4_13m_formal_lr_calibration.py verify --closure artifacts/evidence/base-v4-250m-r2-semantic-excluded-closed-formal-lr-calibration-evidence-closure-pass-001 --dashboard-config configs/web/dashboard.json --profile-id base-dense-v4-13m-formal-lr-calibration --acknowledgement "ACCEPT V4 WIKIPEDIA LICENSE fbc16551a1d7c0b9020852be97f751af2759442bd4d22bade707cd50a4fa3762" --output locks/base-dense-v4-13m-formal-lr-calibration-admission-pass-001
+ExecStart=/usr/bin/bash /media/data1/Project/AI/Twen1/scripts/with_cuda_toolchain.sh /media/data1/Project/AI/Twen1/.venv/bin/python -m twen web serve --dashboard-config locks/base-dense-v4-13m-formal-lr-calibration-admission-pass-001/dashboard.json --host 0.0.0.0 --port 8765 --auth-file .twen/dashboard/http-auth.json
 Restart=always
 RestartSec=3
 KillSignal=SIGTERM
@@ -14,7 +14,7 @@ TimeoutStopSec=30
 LimitNOFILE=1048576
 UMask=0077
 Environment=PYTHONUNBUFFERED=1
-ReadOnlyPaths=/media/data1/Project/AI/Twen1/locks/base-dense-v4-13m-calibration-admission-pass-002
+ReadOnlyPaths=/media/data1/Project/AI/Twen1/locks/base-dense-v4-13m-formal-lr-calibration-admission-pass-001
 
 [Install]
 WantedBy=default.target

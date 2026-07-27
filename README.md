@@ -849,6 +849,15 @@ FineWeb2 NLL 为 `3.659148001`，高于 v3 硬上限 `3.656194313`，差
 attestation、formal release 或 250M launch 权限。现有 Dashboard 继续保持 formal
 profile 关闭，不能循环 16M/13M checkpoint 或绕过该质量门。
 
+最小修正轮使用独立的
+`configs/base/dense-v4-13m-formal-lr-calibration.yaml`（SHA256
+`13fdaea6c21b2e070246a6836be33718137ec1df7563232ba2d7a15dbf7536e9`）：
+仍从 v3 final 重置 fork，保持相同数据、source mix、纯文本目标、Muon 与 13M 预算，只把
+Adapter/Lora LR、scale LR 和 warmup 精确对齐 formal 合同的 `3e-5`、`3e-6` 与
+10M。新的 closure 与 admission 均已认证且保持 formal training 关闭；Dashboard 只开放
+该修正轮，并要求精确输入 `START base-dense-v4-13m-formal-lr-calibration`。该确认前
+训练目录不存在、训练未启动。
+
 250M 合同为 225M primary + 25M cooldown、physical B1/GA64、NTP `1.0` +
 native frozen MTP `0.1`、Muon Adapter/Lora `3e-5`、AdamW scale `3e-6`、
 10M warmup 和全程 cosine。它必须从 v3 final model-only fork；checkpoint
@@ -1091,19 +1100,20 @@ bundle，再从 bundle 内固定且启动后 SHA 不变的 `dashboard.json` 提�
 还需要页面二次输入确认，stop 会在核验 rank-zero hostname/PID/cmdline/config 身份后
 发送 SIGTERM，让引擎先 checkpoint。
 
-当前 v1/v2/v3 与 v4 16M smoke 均为 completed monitor-only。v4 13M low-LR
-calibration 已绑定新的 formal-primary r2 prepared identity，固定 config SHA 为
-`15ce9dbf68643b6abbcbc687a698f2994e2200587c442974903b07613a43109d`。
+当前 v1/v2/v3、v4 16M smoke 与首轮 13M low-LR calibration 均为 completed
+monitor-only；首轮 13M 因中文 frozen-validation 硬门失败而不能发布。新的
+formal-LR calibration config SHA 为
+`13fdaea6c21b2e070246a6836be33718137ec1df7563232ba2d7a15dbf7536e9`，
 Wikipedia ACK admission fingerprint 为
-`d09396bb25269f81e810dab102b97c91184708723ae85e3e3bbd784fccd5ee7c`；
-模板 `configs/web/dashboard.json` 继续 fail-closed，systemd 使用 admission bundle 内
-经过 MANIFEST/COMPLETE 认证的 `dashboard.json`，其中只有 calibration profile 为
-`launch_enabled=true`。许可 ACK 本身没有启动训练，250M formal 仍没有可启动 Web profile。
+`57fdb56a2a5f3811df5f8fe511d894b41ac359f7859365e7e52af1e3305cad5a`。
+模板 `configs/web/dashboard.json` 继续全部 fail-closed；systemd 使用新 admission bundle
+内经 MANIFEST/COMPLETE 认证的 `dashboard.json`，其中只有 formal-LR calibration
+profile 为 `launch_enabled=true`，且训练尚未启动。许可 ACK 不授权 250M formal。
 前台只读验收命令：
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m twen web serve \
-  --dashboard-config locks/base-dense-v4-13m-calibration-admission-pass-002/dashboard.json \
+  --dashboard-config locks/base-dense-v4-13m-formal-lr-calibration-admission-pass-001/dashboard.json \
   --host 0.0.0.0 --port 8765 \
   --auth-file .twen/dashboard/http-auth.json
 ```
