@@ -332,6 +332,10 @@
         <strong>Dashboard 配置已变更，需要重启服务</strong>
         为安全起见，新的训练启动已禁用；运行中的任务仍可保存 checkpoint 或优雅停止。
       </div>
+      <div id="governanceWarning" class="configuration-warning" role="status" hidden>
+        <strong id="governanceWarningTitle">正式 v4 governed 启动门</strong>
+        <span id="governanceWarningDetail">正在读取 controller/readiness 状态…</span>
+      </div>
       <section id="overview" class="panel overview">
         <div class="overview-head">
           <div>
@@ -501,6 +505,19 @@
       const stale = configurationIsStale();
       $("configurationWarning").hidden = !stale;
       $("launchBtn").disabled = busy || stale;
+      const governed = (bootstrap?.profiles || []).filter(profile => profile.launch_kind === "governed_v4");
+      const blocked = governed.filter(profile => profile.governance?.blocked !== false);
+      const warning = $("governanceWarning");
+      warning.hidden = governed.length === 0;
+      if (governed.length) {
+        $("governanceWarningTitle").textContent = blocked.length
+          ? "正式 v4 governed 启动门尚未通过"
+          : "正式 v4 governed 启动门已通过";
+        const details = blocked.flatMap(profile => profile.governance?.blockers || []);
+        $("governanceWarningDetail").textContent = details.length
+          ? details.join("；")
+          : "controller/readiness 已认证；启动仍要求手工输入当前 plan 的完整 RUN ACK。";
+      }
     }
     function toast(message, error = false) {
       const node = $("toast"); node.textContent = message; node.className = "toast show" + (error ? " error" : "");
@@ -689,8 +706,8 @@
         const startAction = status.start_action ?? control.start_action;
         $("startBtn").textContent = startAction === "resume" ? "恢复训练" : "启动训练";
         $("startBtn").disabled = busy || active || !startAvailable;
-        $("saveBtn").disabled = busy || !active || status.state !== "running";
-        $("stopBtn").disabled = busy || !active;
+        $("saveBtn").disabled = busy || status.save_available !== true;
+        $("stopBtn").disabled = busy || status.stop_available === false || !active;
       }
       const note = $("associationNote");
       if (task.state === "completed" && snapshot.active_task_key) {
@@ -1134,7 +1151,9 @@
       const typed = window.prompt(`安全确认：请输入\n${confirmation}`); if (typed === null) return;
       busy = true; renderOverview();
       try {
-        const url = kind === "start" ? "/api/start" : "/api/signal";
+        const url = kind === "start"
+          ? (status.launch_kind === "governed_v4" ? "/api/governed/start" : "/api/start")
+          : "/api/signal";
         const body = kind === "start" ? { profile_id: profile, confirmation: typed } : { profile_id: profile, action: kind, confirmation: typed };
         await request(url, { method: "POST", headers: { "Content-Type": "application/json", "X-Twen-CSRF": csrf }, body: JSON.stringify(body) });
         toast(kind === "start" ? "启动请求已接受" : kind === "save" ? "checkpoint 请求已发送" : "优雅停止请求已发送");
@@ -1150,7 +1169,8 @@
       const typed = window.prompt(`安全确认：请输入\n${confirmation}`); if (typed === null) return;
       busy = true; $("launchBtn").disabled = true;
       try {
-        await request("/api/start", { method: "POST", headers: { "Content-Type": "application/json", "X-Twen-CSRF": csrf }, body: JSON.stringify({ profile_id: profile.profile_id, confirmation: typed }) });
+        const url = profile.launch_kind === "governed_v4" ? "/api/governed/start" : "/api/start";
+        await request(url, { method: "POST", headers: { "Content-Type": "application/json", "X-Twen-CSRF": csrf }, body: JSON.stringify({ profile_id: profile.profile_id, confirmation: typed }) });
         toast(`${profile.start_action === "resume" ? "恢复" : "启动"}请求已接受；任务通过 preflight 后会进入运行中列表`);
         bootstrap = await request("/api/bootstrap"); selectedTaskKey = bootstrap.active_task_key || selectedTaskKey;
       } catch (error) { toast(error.message, true); }

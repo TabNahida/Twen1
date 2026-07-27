@@ -8,8 +8,10 @@ import os
 import platform
 import signal
 import subprocess
+import sys
 import threading
 import time
+import zipfile
 from importlib.resources import files
 from pathlib import Path
 from types import SimpleNamespace
@@ -20,8 +22,10 @@ from urllib.request import Request, urlopen
 import pytest
 
 from twen.config import load_train_config
+from twen.governed import GovernedControllerError, build_governed_plan
 from twen.io.locking import FileLock
 from twen.runtime.checkpoint import CHECKPOINT_SCHEMA_VERSION, MANIFEST_VERSION
+from twen.source_identity import twen_source_tree_sha256
 from twen.web import (
     DashboardAuth,
     DashboardController,
@@ -31,6 +35,9 @@ from twen.web import (
     JsonlTailCache,
     LaunchProfile,
     _exclusive_advisory_lock_is_held,
+    _held_run_lock_owner,
+    _LinuxProcessIdentity,
+    _process_matches_governed_controller,
     _sha256_regular_file_no_follow,
     create_dashboard_server,
     ensure_dashboard_auth_file,
@@ -70,6 +77,185 @@ def _settings(tmp_path: Path, *, launch_enabled: bool = False) -> DashboardSetti
         state_dir=(tmp_path / ".twen/dashboard").resolve(),
         profiles=(_profile(tmp_path, launch_enabled=launch_enabled),),
     )
+
+
+def _governed_settings(
+    tmp_path: Path,
+    *,
+    launch_enabled: bool = True,
+) -> DashboardSettings:
+    dashboard_config_path = (tmp_path / "dashboard.json").resolve()
+    dashboard_config_path.write_text('{"schema_version":1}\n', encoding="utf-8")
+    config_path = (tmp_path / "configs/base/formal.yaml").resolve()
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text("fixed governed training config\n", encoding="utf-8")
+    controller_path = (tmp_path / "scripts/govern_v4_training.py").resolve()
+    controller_path.parent.mkdir(parents=True)
+    controller_path.write_text("# governed controller\n", encoding="utf-8")
+    readiness_path = (tmp_path / "locks/formal.readiness.json").resolve()
+    readiness_path.parent.mkdir(parents=True)
+    readiness_path.write_text('{"kind":"readiness"}\n', encoding="utf-8")
+    run_dir = (tmp_path / "runs/base-v4-formal").resolve()
+    plan_id = "a" * 64
+    profile = LaunchProfile(
+        profile_id="base-v4-formal",
+        label="Base v4 formal",
+        config_path=config_path,
+        config_sha256=hashlib.sha256(config_path.read_bytes()).hexdigest(),
+        run_dir=run_dir,
+        run_id="base-v4-formal",
+        stage="dense-oracle",
+        resume="none",
+        fork_from=None,
+        launch_enabled=launch_enabled,
+        launch_kind="governed_v4",
+        governed_controller_path=controller_path,
+        governed_controller_sha256=hashlib.sha256(controller_path.read_bytes()).hexdigest(),
+        governed_readiness_path=readiness_path,
+        governed_readiness_sha256=hashlib.sha256(readiness_path.read_bytes()).hexdigest(),
+        governed_state_path=(
+            run_dir.parent / f".{run_dir.name}.governed" / "controller-state.json"
+        ),
+        governed_plan_id=plan_id,
+    )
+    return DashboardSettings(
+        dashboard_config_path=dashboard_config_path,
+        dashboard_config_sha256=hashlib.sha256(
+            dashboard_config_path.read_bytes()
+        ).hexdigest(),
+        project_root=tmp_path.resolve(),
+        state_dir=(tmp_path / ".twen/dashboard").resolve(),
+        profiles=(profile,),
+    )
+
+
+class _FakeGovernedSnapshot:
+    controller_fd = 71
+    source_fd = 72
+    controller_sha256 = "1" * 64
+    source_archive_sha256 = "2" * 64
+    source_tree_sha256 = "3" * 64
+    dependency_lock_sha256 = "4" * 64
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    @property
+    def controller_path(self) -> str:
+        return f"/proc/self/fd/{self.controller_fd}"
+
+    @property
+    def source_path(self) -> str:
+        return f"/proc/self/fd/{self.source_fd}"
+
+    @property
+    def runtime_source_fd(self) -> int:
+        return 0
+
+    @property
+    def runtime_source_path(self) -> str:
+        return "/proc/self/fd/0"
+
+    @property
+    def pass_fds(self) -> tuple[int, int]:
+        return self.controller_fd, self.source_fd
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _governed_rank0_identity(
+    profile: LaunchProfile,
+    project_root: Path,
+) -> tuple[
+    dict[str, object],
+    dict[str, object],
+    dict[str, object],
+    list[str],
+    _LinuxProcessIdentity,
+    dict[str, object],
+]:
+    dependency_path = project_root / "uv.lock"
+    active_payload = [
+        "-m",
+        "twen.cli",
+        "train",
+        "--stage",
+        profile.stage,
+        "--config",
+        str(profile.config_path),
+        "--progress",
+        "always",
+        "--resume",
+        "none",
+    ]
+    active_command = [
+        sys.executable,
+        "-m",
+        "torch.distributed.run",
+        "--standalone",
+        "--nproc-per-node=1",
+        *active_payload,
+    ]
+    process_command = [sys.executable, "-u", *active_payload]
+    plan: dict[str, object] = {
+        "plan_id": profile.governed_plan_id,
+        "project_root": str(project_root),
+        "config": {
+            "path": str(profile.config_path),
+            "sha256": profile.config_sha256,
+        },
+        "run": {
+            "run_id": profile.run_id,
+            "stage": profile.stage,
+            "world_size": 1,
+            "output_dir": str(profile.run_dir),
+        },
+        "source_tree": {
+            "path": str(project_root / "src/twen"),
+            "sha256": "3" * 64,
+        },
+        "dependency_lock": {
+            "path": str(dependency_path),
+            "sha256": "4" * 64,
+        },
+    }
+    governed_state: dict[str, object] = {
+        "status": "running",
+        "active_command": active_command,
+    }
+    session: dict[str, object] = {
+        "schema_version": 1,
+        "status": "running",
+        "pid": 6161,
+        "rank": 0,
+        "world_size": 1,
+        "hostname": platform.node(),
+        "run_id": profile.run_id,
+        "stage": profile.stage,
+        "process_start_time_ticks": 987654,
+        "process_cmdline": process_command,
+        "cwd": str(project_root),
+        "config_path": str(profile.config_path),
+        "config_sha256": profile.config_sha256,
+        "source_tree_sha256": "3" * 64,
+        "dependency_lock": str(dependency_path),
+        "dependency_lock_sha256": "4" * 64,
+    }
+    identity = _LinuxProcessIdentity(
+        pid=6161,
+        start_time_ticks=987654,
+        command=tuple(process_command),
+        cwd=project_root,
+        executable=Path(sys.executable).resolve(),
+        process_group_id=5151,
+    )
+    owner: dict[str, object] = {
+        "pid": 6161,
+        "host": platform.node(),
+        "acquired_at": "2026-07-27T00:00:00+00:00",
+    }
+    return plan, governed_state, session, active_command, identity, owner
 
 
 def _write_evaluation_plan(
@@ -192,12 +378,17 @@ def test_packaged_dashboard_html_is_available() -> None:
     assert "grid-template-rows: auto minmax(230px, 1fr)" in html
     assert 'id="evaluationSection"' in html
     assert 'id="configurationWarning"' in html
+    assert 'id="governanceWarning"' in html
     assert "Dashboard 配置已变更" in html
+    assert "正式 v4 governed 启动门尚未通过" in html
     assert "configuration_stale" in html
     assert 'id="launchSelect"' in html
     assert 'id="pausedTasks"' in html
     assert "profile.start_available === true" in html
     assert 'profile.start_action === "resume" ? "恢复" : "首次启动"' in html
+    assert 'profile.launch_kind === "governed_v4" ? "/api/governed/start"' in html
+    assert 'status.launch_kind === "governed_v4" ? "/api/governed/start"' in html
+    assert "完整 RUN ACK" in html
     assert "任务通过 preflight 后会进入运行中列表" in html
     assert 'addSummary("MTP Loss"' in html
     assert 'id="sourceMixChart"' in html
@@ -568,6 +759,70 @@ def test_real_dashboard_config_only_enables_ready_v4_calibration() -> None:
     assert settings.state_dir.is_relative_to(settings.project_root)
 
 
+def test_governed_dashboard_binds_blocked_pending_formal_config(
+    tmp_path: Path,
+) -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    config_path = project_root / "configs/base/dense-v4-250m-pilot.blocked.yaml"
+    controller_path = project_root / "scripts/govern_v4_training.py"
+    readiness_path = project_root / "locks/base-dense-v4-250m-pilot.readiness.json"
+    plan = build_governed_plan(readiness_path)
+    dashboard = tmp_path / "dashboard.json"
+    dashboard.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "project_root": str(project_root),
+                "state_dir": ".twen/dashboard",
+                "profiles": [
+                    {
+                        "id": "base-dense-v4-250m-pilot",
+                        "label": "Base dense v4 formal (blocked)",
+                        "config": str(config_path.relative_to(project_root)),
+                        "config_sha256": hashlib.sha256(
+                            config_path.read_bytes()
+                        ).hexdigest(),
+                        "resume": "none",
+                        "fork_from": None,
+                        "launch_enabled": False,
+                        "launch_kind": "governed_v4",
+                        "governed_controller": str(
+                            controller_path.relative_to(project_root)
+                        ),
+                        "governed_controller_sha256": hashlib.sha256(
+                            controller_path.read_bytes()
+                        ).hexdigest(),
+                        "governed_readiness": str(
+                            readiness_path.relative_to(project_root)
+                        ),
+                        "governed_readiness_sha256": hashlib.sha256(
+                            readiness_path.read_bytes()
+                        ).hexdigest(),
+                        "governed_state": (
+                            "runs/.base-dense-v4-250m-pilot.governed/"
+                            "controller-state.json"
+                        ),
+                        "governed_plan_id": plan["plan_id"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    settings = load_dashboard_settings(dashboard)
+    profile = settings.profiles[0]
+    assert profile.launch_kind == "governed_v4"
+    assert profile.launch_enabled is False
+    assert profile.run_id == "base-dense-v4-250m-pilot"
+    assert profile.stage == "dense-oracle"
+    assert profile.run_dir == (
+        project_root / "runs/base-dense-v4-250m-pilot"
+    ).resolve()
+    assert plan["config"]["preflight_fingerprint"] is None  # type: ignore[index]
+    assert plan["readiness_issues"]
+
+
 def _dashboard_with_real_train_config(
     root: Path,
     *,
@@ -760,6 +1015,601 @@ def test_start_is_fixed_allowlisted_and_requires_confirmation(tmp_path: Path) ->
     ]
     assert actions[-1]["outcome"] == "accepted"
     assert actions[-1]["launch_mode"] == "initial_fork"
+
+
+def test_governed_profile_refuses_direct_route_and_requires_exact_user_ack(
+    tmp_path: Path,
+) -> None:
+    calls: list[tuple[list[str], dict[str, object]]] = []
+    settings = _governed_settings(tmp_path)
+    profile = settings.profiles[0]
+    plan = {
+        "plan_id": profile.governed_plan_id,
+        "config": {
+            "path": str(profile.config_path),
+            "sha256": profile.config_sha256,
+        },
+        "run": {
+            "run_id": profile.run_id,
+            "stage": profile.stage,
+            "output_dir": str(profile.run_dir),
+        },
+    }
+
+    def factory(command: list[str], **kwargs: object) -> SimpleNamespace:
+        calls.append((command, kwargs))
+        return SimpleNamespace(pid=5151)
+
+    def process_identity(pid: int) -> _LinuxProcessIdentity:
+        assert calls
+        return _LinuxProcessIdentity(
+            pid=pid,
+            start_time_ticks=123456,
+            command=tuple(calls[-1][0]),
+            cwd=tmp_path.resolve(),
+            executable=Path(sys.executable).resolve(),
+            process_group_id=pid,
+        )
+
+    def authorize(_plan: object, acknowledgement: str | None) -> None:
+        if acknowledgement != f"RUN {profile.governed_plan_id}":
+            raise GovernedControllerError("explicit acknowledgement does not match")
+
+    controller = DashboardController(settings, process_factory=factory)
+    with pytest.raises(DashboardError, match="governed start route"):
+        controller.start(profile.profile_id, f"RUN {profile.governed_plan_id}")
+    assert not profile.run_dir.exists()
+    assert calls == []
+
+    with (
+        patch.object(controller, "_governed_plan", return_value=plan),
+        patch("twen.web.authorize_governed_run", side_effect=authorize),
+        pytest.raises(DashboardError, match="acknowledgement"),
+    ):
+        controller.start_governed(profile.profile_id, "START base-v4-formal")
+    assert not profile.run_dir.exists()
+    assert not profile.governed_state_path.exists()
+    assert calls == []
+
+    acknowledgement = f"RUN {profile.governed_plan_id}"
+    snapshot = _FakeGovernedSnapshot()
+    with (
+        patch.object(controller, "_governed_plan", return_value=plan),
+        patch("twen.web.authorize_governed_run", side_effect=authorize),
+        patch(
+            "twen.web._build_governed_execution_snapshot",
+            return_value=snapshot,
+        ),
+        patch(
+            "twen.web._read_linux_process_identity",
+            side_effect=process_identity,
+        ),
+        patch("twen.web.os.getpgrp", return_value=9999),
+    ):
+        result = controller.start_governed(profile.profile_id, acknowledgement)
+
+    assert len(calls) == 1
+    command, kwargs = calls[0]
+    assert command == [
+        sys.executable,
+        "-B",
+        "-P",
+        snapshot.controller_path,
+        "--readiness",
+        str(profile.governed_readiness_path),
+        "--action",
+        "run",
+        "--state",
+        str(profile.governed_state_path),
+        "--ack",
+        acknowledgement,
+    ]
+    assert "train" not in command
+    assert kwargs["start_new_session"] is True
+    assert kwargs["pass_fds"] == snapshot.pass_fds
+    assert kwargs["stdin"] == snapshot.source_fd
+    assert kwargs["env"]["PYTHONPATH"] == snapshot.runtime_source_path
+    assert kwargs["env"]["PYTHONSAFEPATH"] == "1"
+    assert result["launch_kind"] == "governed_v4"
+    assert result["launch_mode"] == "governed"
+    assert result["process_group_id"] == 5151
+    assert result["process_start_time_ticks"] == 123456
+    assert result["process_cmdline"] == command
+    assert result["process_executable"] == str(Path(sys.executable).resolve())
+    assert result["source_snapshot_fd"] == snapshot.runtime_source_fd
+    assert result["source_snapshot_transport_fd"] == snapshot.source_fd
+    assert result["governed_plan_id"] == profile.governed_plan_id
+    assert result["governed_state_path"] == str(profile.governed_state_path)
+    assert snapshot.closed is True
+
+
+@pytest.mark.parametrize("failure_stage", ["process_identity", "state_write", "action_log"])
+def test_post_spawn_launch_failure_kills_process_group_and_removes_owned_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_stage: str,
+) -> None:
+    settings = _governed_settings(tmp_path)
+    profile = settings.profiles[0]
+    plan = {
+        "plan_id": profile.governed_plan_id,
+        "config": {
+            "path": str(profile.config_path),
+            "sha256": profile.config_sha256,
+        },
+        "run": {
+            "run_id": profile.run_id,
+            "stage": profile.stage,
+            "output_dir": str(profile.run_dir),
+        },
+    }
+    calls: list[list[str]] = []
+    waits: list[float] = []
+
+    class FailedProcess:
+        pid = 5151
+
+        @staticmethod
+        def wait(*, timeout: float) -> int:
+            waits.append(timeout)
+            return -signal.SIGKILL
+
+        @staticmethod
+        def kill() -> None:
+            raise AssertionError("verified fresh-session launch must be killed by process group")
+
+    def factory(command: list[str], **_kwargs: object) -> FailedProcess:
+        calls.append(command)
+        return FailedProcess()
+
+    def process_identity(pid: int) -> _LinuxProcessIdentity:
+        if failure_stage == "process_identity":
+            raise DashboardError("cannot authenticate spawned process")
+        return _LinuxProcessIdentity(
+            pid=pid,
+            start_time_ticks=123456,
+            command=tuple(calls[-1]),
+            cwd=tmp_path.resolve(),
+            executable=Path(sys.executable).resolve(),
+            process_group_id=pid,
+        )
+
+    snapshot = _FakeGovernedSnapshot()
+    controller = DashboardController(settings, process_factory=factory)
+    monkeypatch.setattr(controller, "_governed_plan", lambda _profile: plan)
+    monkeypatch.setattr("twen.web.authorize_governed_run", lambda *_args: None)
+    monkeypatch.setattr(
+        "twen.web._build_governed_execution_snapshot",
+        lambda *_args: snapshot,
+    )
+    monkeypatch.setattr("twen.web._read_linux_process_identity", process_identity)
+    monkeypatch.setattr("twen.web.os.getpgrp", lambda: 9999)
+    killed_groups: list[tuple[int, signal.Signals]] = []
+    monkeypatch.setattr(
+        "twen.web.os.killpg",
+        lambda pid, requested_signal: killed_groups.append((pid, requested_signal)),
+    )
+    if failure_stage == "state_write":
+        monkeypatch.setattr(
+            "twen.web._atomic_json",
+            lambda *_args: (_ for _ in ()).throw(OSError("state write failed")),
+        )
+    elif failure_stage == "action_log":
+        monkeypatch.setattr(
+            controller,
+            "_record_action",
+            lambda **_kwargs: (_ for _ in ()).throw(OSError("action log failed")),
+        )
+
+    with pytest.raises((DashboardError, OSError)):
+        controller.start_governed(
+            profile.profile_id,
+            f"RUN {profile.governed_plan_id}",
+        )
+
+    assert len(calls) == 1
+    assert killed_groups == [(5151, signal.SIGKILL)]
+    assert waits == [5.0]
+    assert snapshot.closed is True
+    assert not controller._state_path.exists()
+    assert not controller._audit_path.exists()
+
+
+def test_governed_launch_executes_only_sealed_pre_popen_bytes(
+    tmp_path: Path,
+) -> None:
+    settings = _governed_settings(tmp_path)
+    profile = settings.profiles[0]
+    source_root = tmp_path / "src/twen"
+    source_root.mkdir(parents=True)
+    source_file = source_root / "__init__.py"
+    source_file.write_text("SNAPSHOT_MARKER = 'authenticated'\n", encoding="utf-8")
+    dependency_path = tmp_path / "uv.lock"
+    dependency_path.write_text("version = 1\n", encoding="utf-8")
+    original_controller = profile.governed_controller_path.read_bytes()
+    original_source = source_file.read_bytes()
+    original_dependency = dependency_path.read_bytes()
+    plan = {
+        "plan_id": profile.governed_plan_id,
+        "project_root": str(tmp_path.resolve()),
+        "config": {
+            "path": str(profile.config_path),
+            "sha256": profile.config_sha256,
+        },
+        "run": {
+            "run_id": profile.run_id,
+            "stage": profile.stage,
+            "output_dir": str(profile.run_dir),
+        },
+        "controller_sources": [
+            {
+                "path": str(profile.governed_controller_path),
+                "sha256": profile.governed_controller_sha256,
+            }
+        ],
+        "source_tree": {
+            "path": str(source_root.resolve()),
+            "sha256": twen_source_tree_sha256(source_root),
+        },
+        "dependency_lock": {
+            "path": str(dependency_path.resolve()),
+            "sha256": hashlib.sha256(original_dependency).hexdigest(),
+        },
+    }
+    captured: dict[str, object] = {}
+
+    def factory(command: list[str], **kwargs: object) -> SimpleNamespace:
+        controller_fd, source_fd = kwargs["pass_fds"]
+        captured["command"] = list(command)
+        captured["controller_fd"] = controller_fd
+        captured["source_fd"] = source_fd
+        captured["stdin"] = kwargs["stdin"]
+        captured["pythonpath"] = kwargs["env"]["PYTHONPATH"]
+        profile.governed_controller_path.write_text(
+            "# replaced after final admission\n",
+            encoding="utf-8",
+        )
+        source_file.write_text("SNAPSHOT_MARKER = 'replaced'\n", encoding="utf-8")
+        nested = subprocess.run(
+            [
+                sys.executable,
+                "-P",
+                "-c",
+                (
+                    "import subprocess,sys;"
+                    "completed=subprocess.run("
+                    "[sys.executable,'-P','-c',"
+                    "'import twen; print(twen.SNAPSHOT_MARKER)'],"
+                    "check=False,capture_output=True,text=True,close_fds=True);"
+                    "sys.stdout.write(completed.stdout);"
+                    "sys.stderr.write(completed.stderr);"
+                    "raise SystemExit(completed.returncode)"
+                ),
+            ],
+            check=False,
+            stdin=kwargs["stdin"],
+            pass_fds=kwargs["pass_fds"],
+            env=kwargs["env"],
+            capture_output=True,
+            text=True,
+            close_fds=True,
+        )
+        captured["nested_returncode"] = nested.returncode
+        captured["nested_stdout"] = nested.stdout
+        captured["nested_stderr"] = nested.stderr
+        captured["controller"] = Path(f"/proc/self/fd/{controller_fd}").read_bytes()
+        captured["source_archive"] = Path(
+            f"/proc/self/fd/{source_fd}"
+        ).read_bytes()
+        with zipfile.ZipFile(f"/proc/self/fd/{source_fd}") as archive:
+            captured["source"] = archive.read("twen/__init__.py")
+            captured["dependency"] = archive.read(
+                ".twen-governed-dependency/uv.lock"
+            )
+        return SimpleNamespace(pid=5151)
+
+    def process_identity(pid: int) -> _LinuxProcessIdentity:
+        return _LinuxProcessIdentity(
+            pid=pid,
+            start_time_ticks=123456,
+            command=tuple(captured["command"]),
+            cwd=tmp_path.resolve(),
+            executable=Path(sys.executable).resolve(),
+            process_group_id=pid,
+        )
+
+    controller = DashboardController(settings, process_factory=factory)
+    with (
+        patch.object(controller, "_governed_plan", return_value=plan),
+        patch("twen.web.authorize_governed_run"),
+        patch(
+            "twen.web._read_linux_process_identity",
+            side_effect=process_identity,
+        ),
+        patch("twen.web.os.getpgrp", return_value=9999),
+    ):
+        state = controller.start_governed(
+            profile.profile_id,
+            f"RUN {profile.governed_plan_id}",
+        )
+
+    assert captured["controller"] == original_controller
+    assert captured["source"] == original_source
+    assert captured["dependency"] == original_dependency
+    assert captured["nested_returncode"] == 0, captured["nested_stderr"]
+    assert captured["nested_stdout"] == "authenticated\n"
+    assert state["controller_snapshot_sha256"] == hashlib.sha256(
+        original_controller
+    ).hexdigest()
+    assert state["source_snapshot_sha256"] == hashlib.sha256(
+        captured["source_archive"]
+    ).hexdigest()
+    assert state["source_tree_sha256"] == plan["source_tree"]["sha256"]
+    assert state["dependency_lock_sha256"] == plan["dependency_lock"]["sha256"]
+    assert state["process_cmdline"][3] == (
+        f"/proc/self/fd/{captured['controller_fd']}"
+    )
+    assert captured["stdin"] == captured["source_fd"]
+    assert captured["pythonpath"] == "/proc/self/fd/0"
+    assert state["source_snapshot_fd"] == 0
+    assert state["source_snapshot_transport_fd"] == captured["source_fd"]
+    with pytest.raises(OSError):
+        os.fstat(int(captured["controller_fd"]))
+    with pytest.raises(OSError):
+        os.fstat(int(captured["source_fd"]))
+
+
+def test_blocked_governed_readiness_fails_before_process_or_run_state_write(
+    tmp_path: Path,
+) -> None:
+    calls: list[object] = []
+    settings = _governed_settings(tmp_path)
+    profile = settings.profiles[0]
+    plan = {
+        "plan_id": profile.governed_plan_id,
+        "config": {
+            "path": str(profile.config_path),
+            "sha256": profile.config_sha256,
+        },
+        "run": {
+            "run_id": profile.run_id,
+            "stage": profile.stage,
+            "output_dir": str(profile.run_dir),
+        },
+    }
+    controller = DashboardController(
+        settings,
+        process_factory=lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+
+    with (
+        patch.object(controller, "_governed_plan", return_value=plan),
+        patch(
+            "twen.web.authorize_governed_run",
+            side_effect=GovernedControllerError("governed launch is blocked: calibration"),
+        ),
+        pytest.raises(DashboardError, match="governed launch is blocked"),
+    ):
+        controller.start_governed(
+            profile.profile_id,
+            f"RUN {profile.governed_plan_id}",
+        )
+
+    assert calls == []
+    assert not profile.run_dir.exists()
+    assert not profile.governed_state_path.exists()
+    assert not controller._state_path.exists()
+    assert not controller._audit_path.exists()
+    assert list(settings.state_dir.iterdir()) == []
+
+
+@pytest.mark.parametrize("blocked_authorization", [2, 3])
+def test_governed_reauthorization_failure_remains_zero_write(
+    tmp_path: Path,
+    blocked_authorization: int,
+) -> None:
+    calls: list[object] = []
+    settings = _governed_settings(tmp_path)
+    profile = settings.profiles[0]
+    plan = {
+        "plan_id": profile.governed_plan_id,
+        "config": {
+            "path": str(profile.config_path),
+            "sha256": profile.config_sha256,
+        },
+        "run": {
+            "run_id": profile.run_id,
+            "stage": profile.stage,
+            "output_dir": str(profile.run_dir),
+        },
+    }
+    authorizations = 0
+
+    def authorize(_plan: object, _acknowledgement: str | None) -> None:
+        nonlocal authorizations
+        authorizations += 1
+        if authorizations == blocked_authorization:
+            raise GovernedControllerError("governed launch became blocked")
+
+    snapshot = _FakeGovernedSnapshot()
+    controller = DashboardController(
+        settings,
+        process_factory=lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+    with (
+        patch.object(controller, "_governed_plan", return_value=plan),
+        patch("twen.web.authorize_governed_run", side_effect=authorize),
+        patch(
+            "twen.web._build_governed_execution_snapshot",
+            return_value=snapshot,
+        ) as build_snapshot,
+        pytest.raises(DashboardError, match="became blocked"),
+    ):
+        controller.start_governed(
+            profile.profile_id,
+            f"RUN {profile.governed_plan_id}",
+        )
+
+    assert authorizations == blocked_authorization
+    assert calls == []
+    assert not profile.run_dir.exists()
+    assert not profile.governed_state_path.exists()
+    assert not controller._state_path.exists()
+    assert not controller._audit_path.exists()
+    assert list(settings.state_dir.iterdir()) == []
+    if blocked_authorization == 2:
+        build_snapshot.assert_not_called()
+        assert snapshot.closed is False
+    else:
+        build_snapshot.assert_called_once_with(profile, plan)
+        assert snapshot.closed is True
+
+
+def test_governed_process_matcher_requires_exact_controller_contract(tmp_path: Path) -> None:
+    profile = _governed_settings(tmp_path).profiles[0]
+    controller_fd = 71
+    source_fd = 0
+    source_transport_fd = 72
+    executable = Path(sys.executable).resolve()
+    arguments = [
+        sys.executable,
+        "-B",
+        "-P",
+        f"/proc/self/fd/{controller_fd}",
+        "--readiness",
+        str(profile.governed_readiness_path),
+        "--action",
+        "run",
+        "--state",
+        str(profile.governed_state_path),
+        "--ack",
+        f"RUN {profile.governed_plan_id}",
+    ]
+    state = {
+        "schema_version": 1,
+        "profile_id": profile.profile_id,
+        "run_id": profile.run_id,
+        "launch_kind": "governed_v4",
+        "governed_plan_id": profile.governed_plan_id,
+        "governed_state_path": str(profile.governed_state_path),
+        "project_root": str(tmp_path.resolve()),
+        "status": "running",
+        "pid": 5151,
+        "process_group_id": 5151,
+        "process_start_time_ticks": 123456,
+        "process_cmdline": arguments,
+        "process_executable": str(executable),
+        "controller_snapshot_fd": controller_fd,
+        "source_snapshot_fd": source_fd,
+        "source_snapshot_transport_fd": source_transport_fd,
+        "controller_snapshot_sha256": profile.governed_controller_sha256,
+        "source_snapshot_sha256": "2" * 64,
+        "source_tree_sha256": "3" * 64,
+        "dependency_lock_sha256": "4" * 64,
+        "command_sha256": hashlib.sha256("\0".join(arguments).encode()).hexdigest(),
+    }
+    identity = _LinuxProcessIdentity(
+        pid=5151,
+        start_time_ticks=123456,
+        command=tuple(arguments),
+        cwd=tmp_path.resolve(),
+        executable=executable,
+        process_group_id=5151,
+    )
+    with (
+        patch("twen.web._read_linux_process_identity", return_value=identity),
+        patch(
+            "twen.web._read_process_environment",
+            return_value={
+                "PYTHONPATH": f"/proc/self/fd/{source_fd}",
+                "PYTHONSAFEPATH": "1",
+                "PYTHONUNBUFFERED": "1",
+            },
+        ),
+        patch(
+            "twen.web._sealed_process_fd_sha256",
+            side_effect=lambda _pid, descriptor: (
+                profile.governed_controller_sha256
+                if descriptor == controller_fd
+                else "2" * 64
+            ),
+        ),
+    ):
+        assert _process_matches_governed_controller(
+            5151,
+            profile,
+            state,
+            project_root=tmp_path.resolve(),
+        )
+        changed = list(arguments)
+        changed[changed.index("--action") + 1] = "status"
+        changed_identity = _LinuxProcessIdentity(
+            pid=5151,
+            start_time_ticks=123456,
+            command=tuple(changed),
+            cwd=tmp_path.resolve(),
+            executable=executable,
+            process_group_id=5151,
+        )
+        with patch(
+            "twen.web._read_linux_process_identity",
+            return_value=changed_identity,
+        ):
+            assert not _process_matches_governed_controller(
+                5151,
+                profile,
+                state,
+                project_root=tmp_path.resolve(),
+            )
+        for field, value in (
+            ("status", "exited"),
+            ("process_start_time_ticks", 123455),
+            ("process_group_id", 6161),
+            ("project_root", str(tmp_path / "other")),
+        ):
+            changed_state = {**state, field: value}
+            assert not _process_matches_governed_controller(
+                5151,
+                profile,
+                changed_state,
+                project_root=tmp_path.resolve(),
+            )
+        for changed_identity in (
+            _LinuxProcessIdentity(
+                pid=5151,
+                start_time_ticks=123455,
+                command=tuple(arguments),
+                cwd=tmp_path.resolve(),
+                executable=executable,
+                process_group_id=5151,
+            ),
+            _LinuxProcessIdentity(
+                pid=5151,
+                start_time_ticks=123456,
+                command=tuple(arguments),
+                cwd=(tmp_path / "other").resolve(),
+                executable=executable,
+                process_group_id=5151,
+            ),
+            _LinuxProcessIdentity(
+                pid=5151,
+                start_time_ticks=123456,
+                command=tuple(arguments),
+                cwd=tmp_path.resolve(),
+                executable=executable,
+                process_group_id=6161,
+            ),
+        ):
+            with patch(
+                "twen.web._read_linux_process_identity",
+                return_value=changed_identity,
+            ):
+                assert not _process_matches_governed_controller(
+                    5151,
+                    profile,
+                    state,
+                    project_root=tmp_path.resolve(),
+                )
 
 
 def test_second_start_uses_authenticated_auto_resume_without_fork_or_torch_import(
@@ -985,15 +1835,43 @@ def test_cross_process_action_lock_refuses_a_second_launcher_without_deadlock(
         process_factory=lambda *args, **kwargs: calls.append((args, kwargs)),
     )
 
-    with (
-        FileLock(controller._action_lock_path, timeout_seconds=0),
-        patch("twen.web._DASHBOARD_ACTION_LOCK_TIMEOUT_SECONDS", 0.0),
-        pytest.raises(DashboardError, match="another dashboard process"),
-    ):
-        controller.start("base-v2", "START base-v2")
+    descriptor = os.open(settings.state_dir, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with (
+            patch("twen.web._DASHBOARD_ACTION_LOCK_TIMEOUT_SECONDS", 0.0),
+            pytest.raises(DashboardError, match="another dashboard process"),
+        ):
+            controller.start("base-v2", "START base-v2")
+    finally:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
 
     assert calls == []
     assert not (settings.state_dir / "actions.jsonl").exists()
+
+
+def test_held_run_lock_owner_requires_regular_nofollow_actively_locked_file(
+    tmp_path: Path,
+) -> None:
+    lock_path = tmp_path / ".run.lock"
+    owner = {
+        "pid": os.getpid(),
+        "host": platform.node(),
+        "acquired_at": "2026-07-27T00:00:00+00:00",
+    }
+    descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        os.write(descriptor, json.dumps(owner).encode())
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert _held_run_lock_owner(lock_path) == owner
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        assert _held_run_lock_owner(lock_path) is None
+    finally:
+        os.close(descriptor)
+    redirected = tmp_path / "redirected.lock"
+    redirected.symlink_to(lock_path)
+    assert _held_run_lock_owner(redirected) is None
 
 
 def test_start_rejects_run_directory_symlink_escape(tmp_path: Path) -> None:
@@ -1212,6 +2090,312 @@ def test_stop_can_terminate_a_verified_launching_process_before_rank0_session(
     kill.assert_called_once_with(31337, signal.SIGTERM)
     assert result["signal"] == "SIGTERM"
     assert json.loads(controller._state_path.read_text())["status"] == "stop_requested"
+
+
+def test_governed_stop_signals_verified_controller_process_group_during_evaluation(
+    tmp_path: Path,
+) -> None:
+    settings = _governed_settings(tmp_path)
+    profile = settings.profiles[0]
+    controller = DashboardController(settings)
+    controller._state_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "profile_id": profile.profile_id,
+                "run_id": profile.run_id,
+                "pid": 5151,
+                "process_group_id": 5151,
+                "launch_kind": "governed_v4",
+                "governed_plan_id": profile.governed_plan_id,
+                "status": "running",
+                "started_at_utc": "2026-01-01T00:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with (
+        patch("twen.web._process_matches_governed_controller", return_value=True),
+        patch("twen.web.os.getpgrp", return_value=999),
+        patch("twen.web.os.getpgid", return_value=5151),
+        patch("twen.web.os.killpg") as kill_group,
+        patch("twen.web.os.kill") as kill_process,
+    ):
+        result = controller.signal(
+            profile.profile_id,
+            "stop",
+            profile.stop_confirmation,
+        )
+
+    kill_group.assert_called_once_with(5151, signal.SIGTERM)
+    kill_process.assert_not_called()
+    assert result["signal_target"] == "process_group"
+    assert result["process_group_id"] == 5151
+    state = json.loads(controller._state_path.read_text())
+    assert state["status"] == "stop_requested"
+    assert state["last_signal_target"] == "process_group"
+
+
+def test_governed_save_only_signals_verified_rank_zero_training_process(
+    tmp_path: Path,
+) -> None:
+    settings = _governed_settings(tmp_path)
+    profile = settings.profiles[0]
+    controller = DashboardController(settings)
+    state = {
+        "schema_version": 1,
+        "profile_id": profile.profile_id,
+        "run_id": profile.run_id,
+        "pid": 5151,
+        "process_group_id": 5151,
+        "launch_kind": "governed_v4",
+        "governed_plan_id": profile.governed_plan_id,
+        "status": "running",
+    }
+
+    with (
+        patch.object(controller, "_controller_state", return_value=state),
+        patch.object(
+            controller,
+            "_verified_rank0_training_pid",
+            return_value=6161,
+        ) as verified_rank0,
+        patch("twen.web.os.kill") as kill_process,
+        patch("twen.web.os.killpg") as kill_group,
+    ):
+        result = controller.signal(
+            profile.profile_id,
+            "save",
+            profile.save_confirmation,
+        )
+
+    kill_process.assert_called_once_with(6161, signal.SIGUSR1)
+    kill_group.assert_not_called()
+    verified_rank0.assert_called_once_with(profile, state)
+    assert result["signal_target"] == "process"
+    assert result["process_group_id"] is None
+
+
+def test_governed_rank0_authentication_binds_session_process_plan_and_lock(
+    tmp_path: Path,
+) -> None:
+    settings = _governed_settings(tmp_path)
+    profile = settings.profiles[0]
+    profile.run_dir.mkdir(parents=True)
+    plan, governed_state, session, active_command, identity, owner = (
+        _governed_rank0_identity(profile, tmp_path.resolve())
+    )
+
+    def read_identity(path: Path) -> dict[str, object] | None:
+        if path == profile.governed_state_path:
+            return dict(governed_state)
+        if path == profile.run_dir / "rank0-session.json":
+            return dict(session)
+        return None
+
+    controller = DashboardController(settings)
+    controller_state = {"status": "running"}
+    with (
+        patch.object(controller, "_governed_plan", return_value=plan),
+        patch.object(
+            controller,
+            "_verified_governed_process_group",
+            return_value=(5151, 5151),
+        ),
+        patch(
+            "twen.web.governed_controller_status",
+            return_value={"controller_state": "running"},
+        ),
+        patch(
+            "twen.web._expected_governed_active_command",
+            return_value=active_command,
+        ),
+        patch("twen.web._read_json_regular_no_follow", side_effect=read_identity),
+        patch("twen.web._read_linux_process_identity", return_value=identity),
+        patch("twen.web._held_run_lock_owner", return_value=owner),
+    ):
+        assert (
+            controller._verified_rank0_training_pid(profile, controller_state)
+            == 6161
+        )
+
+
+@pytest.mark.parametrize(
+    "mismatch",
+    [
+        "missing_rank",
+        "python_c",
+        "pid_reuse",
+        "wrong_pgid",
+        "wrong_cwd",
+        "wrong_config",
+        "missing_lock",
+        "wrong_lock_owner",
+        "nonrunning_governed_state",
+        "wrong_active_command",
+    ],
+)
+def test_governed_save_rejects_any_weak_or_mismatched_rank0_identity(
+    tmp_path: Path,
+    mismatch: str,
+) -> None:
+    settings = _governed_settings(tmp_path)
+    profile = settings.profiles[0]
+    profile.run_dir.mkdir(parents=True)
+    plan, governed_state, session, active_command, identity, owner = (
+        _governed_rank0_identity(profile, tmp_path.resolve())
+    )
+    expected_active_command = list(active_command)
+    if mismatch == "missing_rank":
+        session.pop("rank")
+    elif mismatch == "python_c":
+        payload_index = next(
+            index
+            for index in range(len(active_command) - 1)
+            if active_command[index : index + 2] == ["-m", "twen.cli"]
+        )
+        malicious = [
+            sys.executable,
+            "-c",
+            "print('not a trainer')",
+            *active_command[payload_index:],
+        ]
+        session["process_cmdline"] = malicious
+        identity = _LinuxProcessIdentity(
+            pid=identity.pid,
+            start_time_ticks=identity.start_time_ticks,
+            command=tuple(malicious),
+            cwd=identity.cwd,
+            executable=identity.executable,
+            process_group_id=identity.process_group_id,
+        )
+    elif mismatch == "pid_reuse":
+        identity = _LinuxProcessIdentity(
+            pid=identity.pid,
+            start_time_ticks=identity.start_time_ticks + 1,
+            command=identity.command,
+            cwd=identity.cwd,
+            executable=identity.executable,
+            process_group_id=identity.process_group_id,
+        )
+    elif mismatch == "wrong_pgid":
+        identity = _LinuxProcessIdentity(
+            pid=identity.pid,
+            start_time_ticks=identity.start_time_ticks,
+            command=identity.command,
+            cwd=identity.cwd,
+            executable=identity.executable,
+            process_group_id=6161,
+        )
+    elif mismatch == "wrong_cwd":
+        identity = _LinuxProcessIdentity(
+            pid=identity.pid,
+            start_time_ticks=identity.start_time_ticks,
+            command=identity.command,
+            cwd=(tmp_path / "other").resolve(),
+            executable=identity.executable,
+            process_group_id=identity.process_group_id,
+        )
+    elif mismatch == "wrong_config":
+        session["config_sha256"] = "0" * 64
+    elif mismatch == "missing_lock":
+        owner = None
+    elif mismatch == "wrong_lock_owner":
+        owner["pid"] = 9999
+    elif mismatch == "nonrunning_governed_state":
+        governed_state["status"] = "awaiting_evaluation"
+    elif mismatch == "wrong_active_command":
+        governed_state["active_command"] = [*active_command, "--unexpected"]
+    else:  # pragma: no cover - parameter list is exhaustive
+        raise AssertionError(mismatch)
+
+    def read_identity(path: Path) -> dict[str, object] | None:
+        if path == profile.governed_state_path:
+            return dict(governed_state)
+        if path == profile.run_dir / "rank0-session.json":
+            return dict(session)
+        return None
+
+    controller_state = {
+        "schema_version": 1,
+        "profile_id": profile.profile_id,
+        "run_id": profile.run_id,
+        "status": "running",
+    }
+    controller = DashboardController(settings)
+    with (
+        patch.object(controller, "_controller_state", return_value=controller_state),
+        patch.object(controller, "_governed_plan", return_value=plan),
+        patch.object(
+            controller,
+            "_verified_governed_process_group",
+            return_value=(5151, 5151),
+        ),
+        patch(
+            "twen.web.governed_controller_status",
+            return_value={"controller_state": "running"},
+        ),
+        patch(
+            "twen.web._expected_governed_active_command",
+            return_value=expected_active_command,
+        ),
+        patch("twen.web._read_json_regular_no_follow", side_effect=read_identity),
+        patch("twen.web._read_linux_process_identity", return_value=identity),
+        patch("twen.web._held_run_lock_owner", return_value=owner),
+        patch("twen.web.os.kill") as kill_process,
+        pytest.raises(DashboardError),
+    ):
+        controller.signal(
+            profile.profile_id,
+            "save",
+            profile.save_confirmation,
+        )
+
+    kill_process.assert_not_called()
+    assert not controller._state_path.exists()
+    assert not controller._audit_path.exists()
+
+
+def test_governed_root_remains_active_without_rank_zero_during_evaluation(
+    tmp_path: Path,
+) -> None:
+    settings = _governed_settings(tmp_path)
+    profile = settings.profiles[0]
+    controller = DashboardController(settings)
+    controller._state_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "profile_id": profile.profile_id,
+                "run_id": profile.run_id,
+                "pid": 5151,
+                "process_group_id": 5151,
+                "launch_kind": "governed_v4",
+                "status": "running",
+            }
+        ),
+        encoding="utf-8",
+    )
+    governance = {
+        "blocked": False,
+        "configuration_stale": False,
+        "controller_state": "awaiting_evaluation",
+        "required_ack": f"RUN {profile.governed_plan_id}",
+        "blockers": [],
+    }
+
+    with (
+        patch("twen.web._process_matches_governed_controller", return_value=True),
+        patch.object(controller, "_governance_status", return_value=governance),
+    ):
+        status = controller.profile_status(profile)
+
+    assert status["state"] == "running"
+    assert status["active"] is True
+    assert status["stop_available"] is True
+    assert status["save_available"] is False
+    assert status["governed_controller_enforced"] is True
 
 
 def test_discovery_includes_history_evaluation_and_omits_reports(tmp_path: Path) -> None:
@@ -1780,6 +2964,9 @@ def test_http_home_bootstrap_snapshot_and_csrf_guard(tmp_path: Path) -> None:
             "automatic_launch": False,
             "server_side_allowlist": True,
             "preflight_mandatory": True,
+            "formal_v4_governed_route": "/api/governed/start",
+            "formal_v4_direct_train_refused": True,
+            "formal_v4_exact_plan_ack_required": True,
             "csrf_required": True,
             "authentication_required": False,
         }

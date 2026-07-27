@@ -8,8 +8,10 @@ no CUDA work, profiler hooks, or synchronization into the hot path.
 from __future__ import annotations
 
 import base64
+import ctypes
 import fcntl
 import hashlib
+import io
 import ipaddress
 import json
 import math
@@ -19,11 +21,13 @@ import re
 import secrets
 import select
 import signal
+import socket
 import stat
 import subprocess
 import sys
 import threading
 import time
+import zipfile
 from collections import deque
 from collections.abc import Callable, Mapping
 from contextlib import contextmanager, suppress
@@ -36,14 +40,43 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
-from .config import load_train_config
-from .io.locking import FileLock, FileLockTimeout
+import yaml
+
+from .config import ConfigError, load_train_config
+from .governed import (
+    GovernedControllerError,
+    build_governed_plan,
+)
+from .governed import (
+    authorize_run as authorize_governed_run,
+)
+from .governed import (
+    build_train_command as build_governed_train_command,
+)
+from .governed import (
+    controller_status as governed_controller_status,
+)
+from .governed import (
+    load_controller_state as load_governed_controller_state,
+)
 from .runtime.checkpoint import CheckpointManager
+from .source_identity import SOURCE_TREE_HASH_SCHEMA
 from .utils import sha256_file
 
 
 class DashboardError(RuntimeError):
     """Raised for invalid dashboard configuration or guarded actions."""
+
+
+_GOVERNED_DYNAMIC_DATA_IDENTITIES = (
+    "manifest_path",
+    "manifest_sha256",
+    "source_map_sha256",
+    "quality_cooldown_manifest_path",
+    "quality_cooldown_manifest_sha256",
+    "phase_disjointness_attestation_path",
+    "phase_disjointness_attestation_sha256",
+)
 
 
 class _DashboardTermination(BaseException):
@@ -68,6 +101,7 @@ _GPU_TELEMETRY_MAX_PARTIAL_OUTPUT_BYTES = 64 * 1024
 _GPU_TELEMETRY_JOURNAL_BUCKET_SECONDS = 10.0
 _GPU_TELEMETRY_JOURNAL_MAX_BYTES = 16 * 1024 * 1024
 _DASHBOARD_ACTION_LOCK_TIMEOUT_SECONDS = 5.0
+_DASHBOARD_ACTION_LOCK_POLL_SECONDS = 0.05
 _ACTIVE_TRAINING_STATES = frozenset(("running", "launching", "stop_requested"))
 _COMPLETED_TRAINING_STATES = frozenset(("complete", "completed", "already_complete"))
 _KD_ORCHESTRATION_STATUS_KIND = "twen_base_v2_500m_kd_orchestration_status"
@@ -82,6 +116,17 @@ _GPU_TELEMETRY_FIELDS = (
     "vram_free_mib",
     "vram_total_mib",
     "temperature_c",
+)
+_MEMFD_CLOEXEC = 0x0001
+_MEMFD_ALLOW_SEALING = 0x0002
+_F_ADD_SEALS = 1033
+_F_GET_SEALS = 1034
+_F_SEAL_SEAL = 0x0001
+_F_SEAL_SHRINK = 0x0002
+_F_SEAL_GROW = 0x0004
+_F_SEAL_WRITE = 0x0008
+_REQUIRED_MEMFD_SEALS = (
+    _F_SEAL_SEAL | _F_SEAL_SHRINK | _F_SEAL_GROW | _F_SEAL_WRITE
 )
 
 
@@ -846,18 +891,27 @@ def _file_identity(metadata: os.stat_result) -> tuple[int, int, int, int, int, i
     )
 
 
-def _sha256_regular_file_no_follow(path: Path) -> str | None:
-    """Hash one regular file without following or blocking on special files."""
+def _read_regular_file_no_follow(
+    path: Path,
+    *,
+    max_bytes: int = 16 * 1024 * 1024,
+) -> bytes | None:
+    """Read one stable regular file without following or blocking on special files."""
 
     flags = _read_only_probe_flags()
-    if flags is None:
+    if (
+        flags is None
+        or isinstance(max_bytes, bool)
+        or not isinstance(max_bytes, int)
+        or max_bytes < 0
+    ):
         return None
     try:
         path_before = os.stat(path, follow_symlinks=False)
         if (
             not stat.S_ISREG(path_before.st_mode)
             or path_before.st_size < 0
-            or path_before.st_size > 16 * 1024 * 1024
+            or path_before.st_size > max_bytes
         ):
             return None
         descriptor = os.open(path, flags)
@@ -867,13 +921,13 @@ def _sha256_regular_file_no_follow(path: Path) -> str | None:
         opened_before = os.fstat(descriptor)
         if _file_identity(opened_before) != _file_identity(path_before):
             return None
-        digest = hashlib.sha256()
+        payload = bytearray()
         remaining = opened_before.st_size
         while remaining:
             chunk = os.read(descriptor, min(1024 * 1024, remaining))
             if not chunk:
                 return None
-            digest.update(chunk)
+            payload.extend(chunk)
             remaining -= len(chunk)
         if os.read(descriptor, 1):
             return None
@@ -885,12 +939,30 @@ def _sha256_regular_file_no_follow(path: Path) -> str | None:
             or _file_identity(path_after) != expected_identity
         ):
             return None
-        return digest.hexdigest()
+        return bytes(payload)
     except OSError:
         return None
     finally:
         with suppress(OSError):
             os.close(descriptor)
+
+
+def _sha256_regular_file_no_follow(path: Path) -> str | None:
+    """Hash one stable regular file without following special files."""
+
+    payload = _read_regular_file_no_follow(path)
+    return hashlib.sha256(payload).hexdigest() if payload is not None else None
+
+
+def _read_json_regular_no_follow(path: Path) -> dict[str, Any] | None:
+    payload = _read_regular_file_no_follow(path, max_bytes=4 * 1024 * 1024)
+    if payload is None:
+        return None
+    try:
+        value = json.loads(payload)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, dict) else None
 
 
 def _exclusive_advisory_lock_is_held(path: Path) -> bool:
@@ -927,6 +999,107 @@ def _exclusive_advisory_lock_is_held(path: Path) -> bool:
             os.close(descriptor)
 
 
+def _held_run_lock_owner(path: Path) -> dict[str, Any] | None:
+    """Return the stable owner of an actively held, regular trainer run lock."""
+
+    flags = _read_only_probe_flags()
+    if flags is None:
+        return None
+    try:
+        path_before = os.stat(path, follow_symlinks=False)
+        if (
+            not stat.S_ISREG(path_before.st_mode)
+            or path_before.st_size < 2
+            or path_before.st_size > 4096
+        ):
+            return None
+        descriptor = os.open(path, flags)
+    except OSError:
+        return None
+    try:
+        opened_before = os.fstat(descriptor)
+        if _file_identity(opened_before) != _file_identity(path_before):
+            return None
+        payload = os.read(descriptor, opened_before.st_size + 1)
+        if len(payload) != opened_before.st_size:
+            return None
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BlockingIOError:
+            lock_is_held = True
+        except OSError:
+            return None
+        else:
+            lock_is_held = False
+            with suppress(OSError):
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+        if not lock_is_held:
+            return None
+        opened_after = os.fstat(descriptor)
+        try:
+            path_after = os.stat(path, follow_symlinks=False)
+        except OSError:
+            return None
+        if (
+            _file_identity(opened_after) != _file_identity(opened_before)
+            or _file_identity(path_after) != _file_identity(opened_before)
+        ):
+            return None
+        try:
+            owner = json.loads(payload)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return None
+        return dict(owner) if isinstance(owner, Mapping) else None
+    finally:
+        with suppress(OSError):
+            os.close(descriptor)
+
+
+@contextmanager
+def _exclusive_existing_directory_lock(
+    path: Path,
+    *,
+    timeout_seconds: float,
+) -> Any:
+    """Lock an already-existing private directory without creating lock artifacts."""
+
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_DIRECTORY", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+    )
+    try:
+        path_before = os.stat(path, follow_symlinks=False)
+        descriptor = os.open(path, flags)
+        opened = os.fstat(descriptor)
+    except OSError as error:
+        raise DashboardError(f"cannot open existing dashboard action-lock directory: {path}") from error
+    try:
+        if (
+            not stat.S_ISDIR(path_before.st_mode)
+            or _file_identity(path_before) != _file_identity(opened)
+        ):
+            raise DashboardError("dashboard action-lock directory identity changed")
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError as error:
+                if time.monotonic() >= deadline:
+                    raise DashboardError(
+                        "another dashboard process is handling a training control action"
+                    ) from error
+                time.sleep(_DASHBOARD_ACTION_LOCK_POLL_SECONDS)
+        yield
+    finally:
+        with suppress(OSError):
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        with suppress(OSError):
+            os.close(descriptor)
+
+
 @dataclass(frozen=True, slots=True)
 class LaunchProfile:
     """One immutable, server-side training command allowlist entry."""
@@ -941,9 +1114,18 @@ class LaunchProfile:
     resume: str
     fork_from: Path | None
     launch_enabled: bool
+    launch_kind: str = "direct_train"
+    governed_controller_path: Path | None = None
+    governed_controller_sha256: str | None = None
+    governed_readiness_path: Path | None = None
+    governed_readiness_sha256: str | None = None
+    governed_state_path: Path | None = None
+    governed_plan_id: str | None = None
 
     @property
     def start_confirmation(self) -> str:
+        if self.launch_kind == "governed_v4" and self.governed_plan_id is not None:
+            return f"RUN {self.governed_plan_id}"
         return f"START {self.profile_id}"
 
     @property
@@ -968,6 +1150,66 @@ class DashboardSettings:
             if profile.profile_id == profile_id:
                 return profile
         raise DashboardError(f"unknown launch profile: {profile_id!r}")
+
+
+def _dashboard_train_identity(
+    config_path: Path,
+    *,
+    launch_kind: str,
+) -> tuple[str, str, str]:
+    """Return the fixed run identity without unblocking governed PENDING data.
+
+    A closure-stage governed profile intentionally points at the source-bound
+    blocked YAML, whose dynamic data identities remain ``PENDING_*``.  The
+    ordinary config loader correctly rejects those sentinels.  For that one
+    profile kind, extract only the three dashboard routing fields; the
+    subsequent ``build_governed_plan`` call authenticates the entire YAML
+    semantics and keeps the launch blocked.
+    """
+
+    try:
+        config = load_train_config(config_path)
+    except ConfigError as error:
+        if launch_kind != "governed_v4":
+            raise
+        try:
+            raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError) as parse_error:
+            raise DashboardError(
+                f"cannot inspect blocked governed config {config_path}: {parse_error}"
+            ) from parse_error
+        if not isinstance(raw, Mapping):
+            raise DashboardError("blocked governed config must be a YAML mapping") from error
+        data = raw.get("data")
+        checkpoint = raw.get("checkpoint")
+        if not isinstance(data, Mapping) or not isinstance(checkpoint, Mapping):
+            raise DashboardError(
+                "blocked governed config lacks data/checkpoint mappings"
+            ) from error
+        pending = [
+            field
+            for field in _GOVERNED_DYNAMIC_DATA_IDENTITIES
+            if isinstance(data.get(field), str) and "PENDING" in str(data[field])
+        ]
+        if not pending:
+            raise DashboardError(
+                "governed config failed validation without a PENDING data identity"
+            ) from error
+        run_id = raw.get("run_id")
+        stage = raw.get("stage")
+        output_dir = checkpoint.get("output_dir")
+        if (
+            not isinstance(run_id, str)
+            or not run_id
+            or stage not in {"dense-oracle", "sparse"}
+            or not isinstance(output_dir, str)
+            or not output_dir
+        ):
+            raise DashboardError(
+                "blocked governed config has an invalid run routing identity"
+            ) from error
+        return run_id, stage, output_dir
+    return config.run_id, config.stage, config.checkpoint.output_dir
 
 
 def load_dashboard_settings(path: str | Path) -> DashboardSettings:
@@ -1025,11 +1267,16 @@ def load_dashboard_settings(path: str | Path) -> DashboardSettings:
         launch_enabled = item.get("launch_enabled", False)
         if not isinstance(launch_enabled, bool):
             raise DashboardError(f"profiles[{index}].launch_enabled must be boolean")
+        launch_kind = item.get("launch_kind", "direct_train")
+        if launch_kind not in {"direct_train", "governed_v4"}:
+            raise DashboardError(
+                f"profiles[{index}].launch_kind must be direct_train or governed_v4"
+            )
         declared_config_sha256 = item.get("config_sha256")
         if declared_config_sha256 is None:
-            if launch_enabled:
+            if launch_enabled or launch_kind == "governed_v4":
                 raise DashboardError(
-                    f"profiles[{index}].config_sha256 is required when launch_enabled=true"
+                    f"profiles[{index}].config_sha256 is required for launchable or governed profiles"
                 )
         elif not isinstance(declared_config_sha256, str) or not re.fullmatch(
             r"[0-9a-f]{64}", declared_config_sha256
@@ -1043,10 +1290,13 @@ def load_dashboard_settings(path: str | Path) -> DashboardSettings:
             raise DashboardError(
                 f"profiles[{index}].config SHA256 does not match the pinned allowlist identity"
             )
-        train_config = load_train_config(config_path)
+        run_id, stage, output_dir = _dashboard_train_identity(
+            config_path,
+            launch_kind=launch_kind,
+        )
         run_dir = _inside(
             project_root,
-            project_root / train_config.checkpoint.output_dir,
+            project_root / output_dir,
             label=f"profiles[{index}] training output_dir",
         )
         if run_dir in run_dirs:
@@ -1076,6 +1326,135 @@ def load_dashboard_settings(path: str | Path) -> DashboardSettings:
         )
         if fork_from is not None and resume != "none":
             raise DashboardError("fork_from profiles must use resume='none'")
+        governed_controller_path: Path | None = None
+        governed_controller_sha256: str | None = None
+        governed_readiness_path: Path | None = None
+        governed_readiness_sha256: str | None = None
+        governed_state_path: Path | None = None
+        governed_plan_id: str | None = None
+        governed_fields = {
+            "controller": item.get("governed_controller"),
+            "controller_sha256": item.get("governed_controller_sha256"),
+            "readiness": item.get("governed_readiness"),
+            "readiness_sha256": item.get("governed_readiness_sha256"),
+            "state": item.get("governed_state"),
+            "plan_id": item.get("governed_plan_id"),
+        }
+        if launch_kind == "direct_train":
+            if any(value is not None for value in governed_fields.values()):
+                raise DashboardError(
+                    f"profiles[{index}] direct_train must not declare governed launch fields"
+                )
+        else:
+            if resume != "none" or fork_from is not None:
+                raise DashboardError(
+                    f"profiles[{index}] governed_v4 must use resume='none' and fork_from=null"
+                )
+            for field, value in governed_fields.items():
+                if not isinstance(value, str) or not value.strip():
+                    raise DashboardError(
+                        f"profiles[{index}].governed_{field} must be a non-empty string"
+                    )
+            governed_controller_path = _inside(
+                project_root,
+                project_root / str(governed_fields["controller"]),
+                label=f"profiles[{index}].governed_controller",
+            )
+            governed_readiness_path = _inside(
+                project_root,
+                project_root / str(governed_fields["readiness"]),
+                label=f"profiles[{index}].governed_readiness",
+            )
+            governed_state_path = _inside(
+                project_root,
+                project_root / str(governed_fields["state"]),
+                label=f"profiles[{index}].governed_state",
+            )
+            expected_governed_state_path = (
+                run_dir.parent / f".{run_dir.name}.governed" / "controller-state.json"
+            )
+            if governed_state_path != expected_governed_state_path:
+                raise DashboardError(
+                    f"profiles[{index}].governed_state must equal "
+                    f"{expected_governed_state_path.relative_to(project_root)}"
+                )
+            for governed_path, label in (
+                (governed_controller_path, "controller"),
+                (governed_readiness_path, "readiness"),
+            ):
+                if not governed_path.is_file():
+                    raise DashboardError(
+                        f"profiles[{index}] governed {label} does not exist: {governed_path}"
+                    )
+            governed_controller_sha256 = str(governed_fields["controller_sha256"])
+            governed_readiness_sha256 = str(governed_fields["readiness_sha256"])
+            governed_plan_id = str(governed_fields["plan_id"])
+            for field, value in (
+                ("governed_controller_sha256", governed_controller_sha256),
+                ("governed_readiness_sha256", governed_readiness_sha256),
+                ("governed_plan_id", governed_plan_id),
+            ):
+                if not re.fullmatch(r"[0-9a-f]{64}", value):
+                    raise DashboardError(
+                        f"profiles[{index}].{field} must be lowercase SHA256"
+                    )
+            if not secrets.compare_digest(
+                sha256_file(governed_controller_path),
+                governed_controller_sha256,
+            ):
+                raise DashboardError(
+                    f"profiles[{index}] governed controller SHA256 does not match"
+                )
+            if not secrets.compare_digest(
+                sha256_file(governed_readiness_path),
+                governed_readiness_sha256,
+            ):
+                raise DashboardError(
+                    f"profiles[{index}] governed readiness SHA256 does not match"
+                )
+            try:
+                governed_plan = build_governed_plan(governed_readiness_path)
+            except GovernedControllerError as error:
+                raise DashboardError(
+                    f"profiles[{index}] governed readiness is invalid: {error}"
+                ) from error
+            if not secrets.compare_digest(
+                str(governed_plan.get("plan_id", "")),
+                governed_plan_id,
+            ):
+                raise DashboardError(
+                    f"profiles[{index}] governed plan_id does not match the pinned plan"
+                )
+            governed_config = governed_plan.get("config")
+            governed_run = governed_plan.get("run")
+            if (
+                not isinstance(governed_config, Mapping)
+                or Path(str(governed_config.get("path"))).resolve() != config_path
+                or governed_config.get("sha256") != config_sha256
+                or not isinstance(governed_run, Mapping)
+                or Path(str(governed_run.get("output_dir"))).resolve() != run_dir
+                or governed_run.get("run_id") != run_id
+                or governed_run.get("stage") != stage
+            ):
+                raise DashboardError(
+                    f"profiles[{index}] governed plan does not bind the profile config/run"
+                )
+            controller_sources = governed_plan.get("controller_sources")
+            if not isinstance(controller_sources, list):
+                raise DashboardError(
+                    f"profiles[{index}] governed plan has no controller source inventory"
+                )
+            controller_matches = [
+                source
+                for source in controller_sources
+                if isinstance(source, Mapping)
+                and Path(str(source.get("path"))).resolve() == governed_controller_path
+                and source.get("sha256") == governed_controller_sha256
+            ]
+            if len(controller_matches) != 1:
+                raise DashboardError(
+                    f"profiles[{index}] governed plan does not bind the pinned controller"
+                )
         profiles.append(
             LaunchProfile(
                 profile_id=profile_id,
@@ -1083,11 +1462,18 @@ def load_dashboard_settings(path: str | Path) -> DashboardSettings:
                 config_path=config_path,
                 config_sha256=config_sha256,
                 run_dir=run_dir,
-                run_id=train_config.run_id,
-                stage=train_config.stage,
+                run_id=run_id,
+                stage=stage,
                 resume=resume,
                 fork_from=fork_from,
                 launch_enabled=launch_enabled,
+                launch_kind=launch_kind,
+                governed_controller_path=governed_controller_path,
+                governed_controller_sha256=governed_controller_sha256,
+                governed_readiness_path=governed_readiness_path,
+                governed_readiness_sha256=governed_readiness_sha256,
+                governed_state_path=governed_state_path,
+                governed_plan_id=governed_plan_id,
             )
         )
     return DashboardSettings(
@@ -1310,6 +1696,118 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
+@dataclass(frozen=True, slots=True)
+class _LinuxProcessIdentity:
+    pid: int
+    start_time_ticks: int
+    command: tuple[str, ...]
+    cwd: Path
+    executable: Path
+    process_group_id: int
+
+
+def _linux_process_start_time_ticks(pid: int) -> int:
+    try:
+        raw = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+    except OSError as error:
+        raise DashboardError(f"cannot read process start identity for PID {pid}") from error
+    close = raw.rfind(")")
+    if close < 0:
+        raise DashboardError(f"process stat for PID {pid} has no command terminator")
+    fields_from_state = raw[close + 2 :].split()
+    try:
+        value = int(fields_from_state[19])
+    except (IndexError, ValueError) as error:
+        raise DashboardError(f"process stat for PID {pid} has no starttime") from error
+    if value < 0:
+        raise DashboardError(f"process stat for PID {pid} has an invalid starttime")
+    return value
+
+
+def _read_linux_process_identity(pid: int) -> _LinuxProcessIdentity:
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 1 or not _pid_alive(pid):
+        raise DashboardError(f"PID {pid!r} is not a live non-init process")
+    try:
+        command = tuple(
+            item.decode("utf-8", errors="surrogateescape")
+            for item in Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+            if item
+        )
+        cwd = Path(os.readlink(f"/proc/{pid}/cwd")).resolve()
+        executable = Path(os.readlink(f"/proc/{pid}/exe")).resolve()
+        process_group_id = os.getpgid(pid)
+    except OSError as error:
+        raise DashboardError(f"cannot read complete process identity for PID {pid}") from error
+    if not command:
+        raise DashboardError(f"PID {pid} has an empty command line")
+    start_time_ticks = _linux_process_start_time_ticks(pid)
+    if not _pid_alive(pid) or _linux_process_start_time_ticks(pid) != start_time_ticks:
+        raise DashboardError(f"PID {pid} changed while reading its process identity")
+    return _LinuxProcessIdentity(
+        pid=pid,
+        start_time_ticks=start_time_ticks,
+        command=command,
+        cwd=cwd,
+        executable=executable,
+        process_group_id=process_group_id,
+    )
+
+
+def _read_process_environment(pid: int) -> dict[str, str]:
+    try:
+        payload = Path(f"/proc/{pid}/environ").read_bytes()
+    except OSError as error:
+        raise DashboardError(f"cannot read governed controller environment for PID {pid}") from error
+    result: dict[str, str] = {}
+    for raw in payload.split(b"\0"):
+        if not raw or b"=" not in raw:
+            continue
+        key, value = raw.split(b"=", 1)
+        decoded_key = key.decode("utf-8", errors="surrogateescape")
+        if decoded_key in result:
+            raise DashboardError("governed controller environment contains duplicate keys")
+        result[decoded_key] = value.decode("utf-8", errors="surrogateescape")
+    return result
+
+
+def _sealed_process_fd_sha256(pid: int, descriptor: int) -> str:
+    if isinstance(descriptor, bool) or not isinstance(descriptor, int) or descriptor < 0:
+        raise DashboardError("governed snapshot descriptor identity is invalid")
+    path = Path(f"/proc/{pid}/fd/{descriptor}")
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    try:
+        opened = os.open(path, flags)
+    except OSError as error:
+        raise DashboardError("cannot open governed process snapshot descriptor") from error
+    try:
+        metadata = os.fstat(opened)
+        seals = int(fcntl.fcntl(opened, _F_GET_SEALS))
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_size < 1
+            or metadata.st_size > 64 * 1024 * 1024
+            or seals & _REQUIRED_MEMFD_SEALS != _REQUIRED_MEMFD_SEALS
+        ):
+            raise DashboardError("governed process snapshot is not a sealed regular memfd")
+        os.lseek(opened, 0, os.SEEK_SET)
+        digest = hashlib.sha256()
+        remaining = metadata.st_size
+        while remaining:
+            chunk = os.read(opened, min(1024 * 1024, remaining))
+            if not chunk:
+                raise DashboardError("governed process snapshot ended early")
+            digest.update(chunk)
+            remaining -= len(chunk)
+        if os.read(opened, 1):
+            raise DashboardError("governed process snapshot grew while hashing")
+        if os.fstat(opened).st_size != metadata.st_size:
+            raise DashboardError("governed process snapshot changed while hashing")
+        return digest.hexdigest()
+    finally:
+        with suppress(OSError):
+            os.close(opened)
+
+
 def _session_source_mix(session: Mapping[str, Any] | None) -> dict[str, Any] | None:
     """Expose the authenticated runtime mix without parsing a checkpoint."""
 
@@ -1319,11 +1817,9 @@ def _session_source_mix(session: Mapping[str, Any] | None) -> dict[str, Any] | N
     return dict(source_mix) if isinstance(source_mix, Mapping) else None
 
 
-def _process_matches_profile(pid: int, profile: LaunchProfile) -> bool:
-    """Defend against stale/reused PIDs before signaling a training process."""
-
+def _process_arguments(pid: int) -> tuple[list[str], Path] | None:
     if not _pid_alive(pid):
-        return False
+        return None
     try:
         arguments = [
             item.decode("utf-8", errors="surrogateescape")
@@ -1332,7 +1828,72 @@ def _process_matches_profile(pid: int, profile: LaunchProfile) -> bool:
         ]
         cwd = Path(f"/proc/{pid}/cwd").resolve()
     except OSError:
+        return None
+    return arguments, cwd
+
+
+def _argument_value(arguments: list[str], name: str) -> str | None:
+    indexes = [index for index, value in enumerate(arguments) if value == name]
+    if len(indexes) != 1 or indexes[0] + 1 >= len(arguments):
+        return None
+    return arguments[indexes[0] + 1]
+
+
+def _governed_training_payload(command: list[str], *, label: str) -> list[str]:
+    matches = [
+        index
+        for index in range(len(command) - 1)
+        if command[index : index + 2] == ["-m", "twen.cli"]
+    ]
+    if len(matches) != 1:
+        raise DashboardError(f"{label} has no unique '-m twen.cli' payload")
+    index = matches[0]
+    if "-c" in command[:index]:
+        raise DashboardError(f"{label} uses a forbidden Python -c prefix")
+    return command[index:]
+
+
+def _expected_governed_active_command(
+    plan: Mapping[str, Any],
+    state: Mapping[str, Any],
+) -> list[str]:
+    """Reconstruct the controller-owned command, including crash recovery."""
+
+    try:
+        command = build_governed_train_command(plan, state)
+    except GovernedControllerError as error:
+        raise DashboardError(
+            f"governed controller active command is invalid: {error}"
+        ) from error
+    recovery = state.get("recovery_checkpoint")
+    if recovery is None:
+        return command
+    if not isinstance(recovery, Mapping) or not isinstance(recovery.get("path"), str):
+        raise DashboardError("governed controller recovery checkpoint is invalid")
+    resume_indexes = [
+        index for index, value in enumerate(command[:-1]) if value == "--resume"
+    ]
+    if len(resume_indexes) != 1:
+        raise DashboardError("governed controller command has no unique resume argument")
+    command[resume_indexes[0] + 1] = str(recovery["path"])
+    fork_indexes = [
+        index for index, value in enumerate(command[:-1]) if value == "--fork-from"
+    ]
+    if len(fork_indexes) > 1:
+        raise DashboardError("governed controller command has duplicate fork arguments")
+    if fork_indexes:
+        index = fork_indexes[0]
+        del command[index : index + 2]
+    return command
+
+
+def _process_matches_training_profile(pid: int, profile: LaunchProfile) -> bool:
+    """Defend against stale/reused PIDs before signaling rank-zero training."""
+
+    process = _process_arguments(pid)
+    if process is None:
         return False
+    arguments, cwd = process
     if "train" not in arguments:
         return False
     executable_markers = {
@@ -1355,19 +1916,140 @@ def _process_matches_profile(pid: int, profile: LaunchProfile) -> bool:
     return configured.resolve() == profile.config_path
 
 
+def _process_matches_governed_controller(
+    pid: int,
+    profile: LaunchProfile,
+    controller_state: Mapping[str, Any] | None,
+    *,
+    project_root: Path,
+) -> bool:
+    """Authenticate one exact, active, sealed governed-controller root process."""
+
+    if (
+        profile.launch_kind != "governed_v4"
+        or profile.governed_readiness_path is None
+        or profile.governed_state_path is None
+        or profile.governed_plan_id is None
+        or not isinstance(controller_state, Mapping)
+        or controller_state.get("schema_version") != 1
+        or controller_state.get("status") not in _ACTIVE_TRAINING_STATES
+        or controller_state.get("profile_id") != profile.profile_id
+        or controller_state.get("run_id") != profile.run_id
+        or controller_state.get("launch_kind") != "governed_v4"
+        or controller_state.get("governed_plan_id") != profile.governed_plan_id
+        or controller_state.get("governed_state_path") != str(profile.governed_state_path)
+        or controller_state.get("project_root") != str(project_root)
+        or controller_state.get("pid") != pid
+    ):
+        return False
+    process_group_id = controller_state.get("process_group_id")
+    start_time_ticks = controller_state.get("process_start_time_ticks")
+    command = controller_state.get("process_cmdline")
+    executable = controller_state.get("process_executable")
+    controller_fd = controller_state.get("controller_snapshot_fd")
+    source_fd = controller_state.get("source_snapshot_fd")
+    source_transport_fd = controller_state.get("source_snapshot_transport_fd")
+    controller_snapshot_sha = controller_state.get("controller_snapshot_sha256")
+    source_snapshot_sha = controller_state.get("source_snapshot_sha256")
+    source_tree_sha = controller_state.get("source_tree_sha256")
+    dependency_lock_sha = controller_state.get("dependency_lock_sha256")
+    if (
+        not isinstance(process_group_id, int)
+        or isinstance(process_group_id, bool)
+        or process_group_id != pid
+        or not isinstance(start_time_ticks, int)
+        or isinstance(start_time_ticks, bool)
+        or start_time_ticks < 0
+        or not isinstance(command, list)
+        or not all(isinstance(item, str) and item for item in command)
+        or not isinstance(executable, str)
+        or not executable
+        or not isinstance(controller_fd, int)
+        or isinstance(controller_fd, bool)
+        or controller_fd < 3
+        or not isinstance(source_fd, int)
+        or isinstance(source_fd, bool)
+        or source_fd != 0
+        or source_fd == controller_fd
+        or not isinstance(source_transport_fd, int)
+        or isinstance(source_transport_fd, bool)
+        or source_transport_fd < 3
+        or source_transport_fd == controller_fd
+        or not isinstance(controller_snapshot_sha, str)
+        or not secrets.compare_digest(
+            controller_snapshot_sha,
+            profile.governed_controller_sha256,
+        )
+        or not isinstance(source_snapshot_sha, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", source_snapshot_sha)
+        or not isinstance(source_tree_sha, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", source_tree_sha)
+        or not isinstance(dependency_lock_sha, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", dependency_lock_sha)
+    ):
+        return False
+    expected_command = [
+        sys.executable,
+        "-B",
+        "-P",
+        f"/proc/self/fd/{controller_fd}",
+        "--readiness",
+        str(profile.governed_readiness_path),
+        "--action",
+        "run",
+        "--state",
+        str(profile.governed_state_path),
+        "--ack",
+        f"RUN {profile.governed_plan_id}",
+    ]
+    if command != expected_command:
+        return False
+    if controller_state.get("command_sha256") != hashlib.sha256(
+        "\0".join(command).encode()
+    ).hexdigest():
+        return False
+    try:
+        identity = _read_linux_process_identity(pid)
+        environment = _read_process_environment(pid)
+        controller_sha = _sealed_process_fd_sha256(pid, controller_fd)
+        source_sha = _sealed_process_fd_sha256(pid, source_fd)
+        source_transport_sha = _sealed_process_fd_sha256(
+            pid,
+            source_transport_fd,
+        )
+    except DashboardError:
+        return False
+    return bool(
+        list(identity.command) == command
+        and identity.start_time_ticks == start_time_ticks
+        and identity.cwd == project_root
+        and str(identity.executable) == executable
+        and identity.executable == Path(sys.executable).resolve()
+        and identity.process_group_id == process_group_id
+        and environment.get("PYTHONPATH") == f"/proc/self/fd/{source_fd}"
+        and environment.get("PYTHONSAFEPATH") == "1"
+        and environment.get("PYTHONUNBUFFERED") == "1"
+        and controller_sha == controller_snapshot_sha
+        and source_sha == source_snapshot_sha
+        and source_transport_sha == source_snapshot_sha
+    )
+
+
+def _process_matches_profile(pid: int, profile: LaunchProfile) -> bool:
+    """Verify the long-lived process owned by one dashboard launch profile."""
+
+    if profile.launch_kind == "governed_v4":
+        return False
+    return _process_matches_training_profile(pid, profile)
+
+
 def _process_is_twen_training(pid: int) -> bool:
     """Verify an unmanaged PID is still some Twen training command."""
 
-    if not _pid_alive(pid):
+    process = _process_arguments(pid)
+    if process is None:
         return False
-    try:
-        arguments = [
-            item.decode("utf-8", errors="surrogateescape")
-            for item in Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
-            if item
-        ]
-    except OSError:
-        return False
+    arguments, _cwd = process
     markers = {"twen", "twen.cli", "twen.__main__"}
     return "train" in arguments and any(
         Path(argument).name in markers or argument in markers for argument in arguments
@@ -1375,6 +2057,260 @@ def _process_is_twen_training(pid: int) -> bool:
 
 
 ProcessFactory = Callable[..., subprocess.Popen[bytes]]
+
+
+def _reap_failed_launch(process: Any) -> None:
+    """Unconditionally reap a child whose launch was not durably admitted.
+
+    Every dashboard launch requests a new session, so the returned PID is also
+    the expected process-group ID.  Kill the whole group before reaping the
+    child: a governed controller may already have created evaluation or
+    training descendants when a later identity/state/audit write fails.
+    """
+
+    raw_pid = getattr(process, "pid", None)
+    pid = (
+        raw_pid
+        if isinstance(raw_pid, int)
+        and not isinstance(raw_pid, bool)
+        and raw_pid > 1
+        and raw_pid != os.getpgrp()
+        else None
+    )
+    if pid is not None:
+        with suppress(OSError):
+            os.killpg(pid, signal.SIGKILL)
+    else:
+        kill = getattr(process, "kill", None)
+        if callable(kill):
+            with suppress(OSError):
+                kill()
+    wait = getattr(process, "wait", None)
+    if callable(wait):
+        with suppress(OSError, subprocess.TimeoutExpired):
+            wait(timeout=5.0)
+
+
+@dataclass(frozen=True, slots=True)
+class _GovernedExecutionSnapshot:
+    """Sealed, inherited launch bytes; live repository paths are never executed."""
+
+    controller_fd: int
+    source_fd: int
+    controller_sha256: str
+    source_archive_sha256: str
+    source_tree_sha256: str
+    dependency_lock_sha256: str
+
+    @property
+    def controller_path(self) -> str:
+        return f"/proc/self/fd/{self.controller_fd}"
+
+    @property
+    def source_path(self) -> str:
+        return f"/proc/self/fd/{self.source_fd}"
+
+    @property
+    def runtime_source_fd(self) -> int:
+        # Popen duplicates the sealed source memfd onto stdin.  Descriptor 0
+        # survives the governed controller's later close_fds=True torchrun
+        # launch, keeping the complete descendant process tree on this exact
+        # authenticated source archive.
+        return 0
+
+    @property
+    def runtime_source_path(self) -> str:
+        return f"/proc/self/fd/{self.runtime_source_fd}"
+
+    @property
+    def pass_fds(self) -> tuple[int, int]:
+        return (self.controller_fd, self.source_fd)
+
+    def close(self) -> None:
+        for descriptor in self.pass_fds:
+            with suppress(OSError):
+                os.close(descriptor)
+
+
+def _create_sealed_memfd(name: str, payload: bytes) -> int:
+    """Create one read-only sealed Linux memfd or fail closed."""
+
+    libc = ctypes.CDLL(None, use_errno=True)
+    create = getattr(libc, "memfd_create", None)
+    if create is None:
+        raise DashboardError("Linux memfd_create is required for governed Web launch")
+    create.argtypes = (ctypes.c_char_p, ctypes.c_uint)
+    create.restype = ctypes.c_int
+    descriptor = int(
+        create(
+            name.encode("ascii"),
+            _MEMFD_CLOEXEC | _MEMFD_ALLOW_SEALING,
+        )
+    )
+    if descriptor < 0:
+        error_number = ctypes.get_errno()
+        raise DashboardError(
+            f"cannot create sealed governed launch snapshot: errno {error_number}"
+        )
+    try:
+        view = memoryview(payload)
+        offset = 0
+        while offset < len(view):
+            written = os.write(descriptor, view[offset:])
+            if written <= 0:
+                raise DashboardError("cannot populate governed launch snapshot")
+            offset += written
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        fcntl.fcntl(descriptor, _F_ADD_SEALS, _REQUIRED_MEMFD_SEALS)
+        seals = int(fcntl.fcntl(descriptor, _F_GET_SEALS))
+        if seals & _REQUIRED_MEMFD_SEALS != _REQUIRED_MEMFD_SEALS:
+            raise DashboardError("governed launch snapshot is not fully sealed")
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size != len(payload):
+            raise DashboardError("governed launch snapshot identity is invalid")
+        return descriptor
+    except (OSError, ValueError):
+        with suppress(OSError):
+            os.close(descriptor)
+        raise
+    except BaseException:
+        with suppress(OSError):
+            os.close(descriptor)
+        raise
+
+
+def _source_tree_archive(
+    plan: Mapping[str, Any],
+) -> tuple[bytes, str, str]:
+    source = plan.get("source_tree")
+    dependency = plan.get("dependency_lock")
+    project_root = Path(str(plan.get("project_root"))).resolve()
+    if not isinstance(source, Mapping) or not isinstance(dependency, Mapping):
+        raise DashboardError("governed plan source/dependency identity is incomplete")
+    source_root = Path(str(source.get("path"))).resolve()
+    if source_root != project_root / "src/twen":
+        raise DashboardError("governed source tree is not the fixed Twen package")
+    expected_source_sha = source.get("sha256")
+    expected_dependency_sha = dependency.get("sha256")
+    if not isinstance(expected_source_sha, str) or not re.fullmatch(
+        r"[0-9a-f]{64}", expected_source_sha
+    ):
+        raise DashboardError("governed source tree SHA256 is invalid")
+    if not isinstance(expected_dependency_sha, str) or not re.fullmatch(
+        r"[0-9a-f]{64}", expected_dependency_sha
+    ):
+        raise DashboardError("governed dependency-lock SHA256 is invalid")
+
+    try:
+        entries = sorted(source_root.rglob("*"))
+    except OSError as error:
+        raise DashboardError("cannot inventory governed Twen source tree") from error
+    if any(path.is_symlink() for path in entries):
+        raise DashboardError("governed Twen source tree contains a symlink")
+    python_files = [path for path in entries if path.suffix == ".py" and path.is_file()]
+    if not python_files:
+        raise DashboardError("governed Twen source tree contains no Python files")
+
+    tree_digest = hashlib.sha256()
+    tree_digest.update(SOURCE_TREE_HASH_SCHEMA)
+    source_payloads: list[tuple[str, bytes]] = []
+    for path in python_files:
+        relative = path.relative_to(source_root).as_posix()
+        payload = _read_regular_file_no_follow(path)
+        if payload is None:
+            raise DashboardError(f"governed source changed while snapshotting: {relative}")
+        relative_bytes = relative.encode("utf-8")
+        tree_digest.update(len(relative_bytes).to_bytes(8, "big"))
+        tree_digest.update(relative_bytes)
+        tree_digest.update(len(payload).to_bytes(8, "big"))
+        tree_digest.update(payload)
+        source_payloads.append((f"twen/{relative}", payload))
+    actual_source_sha = tree_digest.hexdigest()
+    if not secrets.compare_digest(actual_source_sha, expected_source_sha):
+        raise DashboardError("governed source tree changed during launch admission")
+
+    dependency_path = Path(str(dependency.get("path"))).resolve()
+    if (
+        dependency_path.parent != project_root
+        or dependency_path.name not in {"uv.lock", "pyproject.toml"}
+    ):
+        raise DashboardError("governed dependency lock is outside the fixed project root")
+    dependency_payload = _read_regular_file_no_follow(
+        dependency_path,
+        max_bytes=64 * 1024 * 1024,
+    )
+    if (
+        dependency_payload is None
+        or not secrets.compare_digest(
+            hashlib.sha256(dependency_payload).hexdigest(),
+            expected_dependency_sha,
+        )
+    ):
+        raise DashboardError("governed dependency lock changed during launch admission")
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(
+        buffer,
+        mode="w",
+        compression=zipfile.ZIP_DEFLATED,
+        compresslevel=9,
+    ) as archive:
+        for relative, payload in source_payloads:
+            info = zipfile.ZipInfo(relative, date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o444 << 16
+            archive.writestr(info, payload)
+        lock_info = zipfile.ZipInfo(
+            f".twen-governed-dependency/{dependency_path.name}",
+            date_time=(1980, 1, 1, 0, 0, 0),
+        )
+        lock_info.compress_type = zipfile.ZIP_DEFLATED
+        lock_info.external_attr = 0o444 << 16
+        archive.writestr(lock_info, dependency_payload)
+    archive_payload = buffer.getvalue()
+    return archive_payload, actual_source_sha, expected_dependency_sha
+
+
+def _build_governed_execution_snapshot(
+    profile: LaunchProfile,
+    plan: Mapping[str, Any],
+) -> _GovernedExecutionSnapshot:
+    if (
+        profile.governed_controller_path is None
+        or profile.governed_controller_sha256 is None
+    ):
+        raise DashboardError("governed controller snapshot identity is incomplete")
+    controller_payload = _read_regular_file_no_follow(profile.governed_controller_path)
+    if controller_payload is None:
+        raise DashboardError("governed controller changed while snapshotting")
+    controller_sha = hashlib.sha256(controller_payload).hexdigest()
+    if not secrets.compare_digest(controller_sha, profile.governed_controller_sha256):
+        raise DashboardError("governed controller changed during launch admission")
+    sources = plan.get("controller_sources")
+    if not isinstance(sources, list) or not any(
+        isinstance(source, Mapping)
+        and Path(str(source.get("path"))).resolve() == profile.governed_controller_path
+        and source.get("sha256") == controller_sha
+        for source in sources
+    ):
+        raise DashboardError("governed plan does not bind the snapshotted controller")
+
+    archive_payload, source_tree_sha, dependency_sha = _source_tree_archive(plan)
+    controller_fd = _create_sealed_memfd("twen-v4-governed-controller", controller_payload)
+    try:
+        source_fd = _create_sealed_memfd("twen-v4-governed-source", archive_payload)
+    except BaseException:
+        with suppress(OSError):
+            os.close(controller_fd)
+        raise
+    return _GovernedExecutionSnapshot(
+        controller_fd=controller_fd,
+        source_fd=source_fd,
+        controller_sha256=controller_sha,
+        source_archive_sha256=hashlib.sha256(archive_payload).hexdigest(),
+        source_tree_sha256=source_tree_sha,
+        dependency_lock_sha256=dependency_sha,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1415,7 +2351,6 @@ class DashboardController:
             journal_path=settings.state_dir / "gpu-telemetry.jsonl"
         )
         self._action_lock = threading.Lock()
-        self._action_lock_path = settings.state_dir / "controller-action.lock"
         self._state_path = settings.state_dir / "controller-state.json"
         self._audit_path = settings.state_dir / "actions.jsonl"
         self._operations_cache: tuple[float, dict[str, Any]] | None = None
@@ -1425,18 +2360,11 @@ class DashboardController:
     def _serialized_action(self) -> Any:
         """Serialize mutations across threads and independently started servers."""
 
-        with self._action_lock:
-            try:
-                with FileLock(
-                    self._action_lock_path,
-                    timeout_seconds=_DASHBOARD_ACTION_LOCK_TIMEOUT_SECONDS,
-                    poll_seconds=0.05,
-                ):
-                    yield
-            except FileLockTimeout as error:
-                raise DashboardError(
-                    "another dashboard process is handling a training control action"
-                ) from error
+        with self._action_lock, _exclusive_existing_directory_lock(
+            self.settings.state_dir,
+            timeout_seconds=_DASHBOARD_ACTION_LOCK_TIMEOUT_SECONDS,
+        ):
+            yield
 
     def _run_file(self, run_dir: Path, name: str) -> Path | None:
         confined_run_dir = _existing_directory_inside(self.settings.project_root, run_dir)
@@ -1476,11 +2404,162 @@ class DashboardController:
             "restart_required": configuration_stale,
         }
 
+    def _governed_plan(self, profile: LaunchProfile) -> dict[str, Any]:
+        if (
+            profile.launch_kind != "governed_v4"
+            or profile.governed_controller_path is None
+            or profile.governed_controller_sha256 is None
+            or profile.governed_readiness_path is None
+            or profile.governed_readiness_sha256 is None
+            or profile.governed_state_path is None
+            or profile.governed_plan_id is None
+        ):
+            raise DashboardError("governed profile launch contract is incomplete")
+        controller_path = self._fixed_profile_path(
+            profile.governed_controller_path,
+            label=f"profile {profile.profile_id!r} governed controller",
+        )
+        readiness_path = self._fixed_profile_path(
+            profile.governed_readiness_path,
+            label=f"profile {profile.profile_id!r} governed readiness",
+        )
+        state_path = self._fixed_profile_path(
+            profile.governed_state_path,
+            label=f"profile {profile.profile_id!r} governed state",
+        )
+        for path, expected, label in (
+            (
+                controller_path,
+                profile.governed_controller_sha256,
+                "governed controller",
+            ),
+            (
+                readiness_path,
+                profile.governed_readiness_sha256,
+                "governed readiness",
+            ),
+        ):
+            current = _sha256_regular_file_no_follow(path)
+            if current is None or not secrets.compare_digest(current, expected):
+                raise DashboardError(
+                    f"{label} changed after dashboard startup; review and restart the dashboard"
+                )
+        try:
+            plan = build_governed_plan(readiness_path)
+        except GovernedControllerError as error:
+            raise DashboardError(f"governed readiness authentication failed: {error}") from error
+        if not secrets.compare_digest(str(plan.get("plan_id", "")), profile.governed_plan_id):
+            raise DashboardError(
+                "governed plan changed after dashboard startup; review and restart the dashboard"
+            )
+        config = plan.get("config")
+        run = plan.get("run")
+        if (
+            not isinstance(config, Mapping)
+            or Path(str(config.get("path"))).resolve() != profile.config_path
+            or config.get("sha256") != profile.config_sha256
+            or not isinstance(run, Mapping)
+            or Path(str(run.get("output_dir"))).resolve() != profile.run_dir
+            or run.get("run_id") != profile.run_id
+            or run.get("stage") != profile.stage
+        ):
+            raise DashboardError("governed plan no longer binds the fixed profile config/run")
+        expected_state = (
+            profile.run_dir.parent
+            / f".{profile.run_dir.name}.governed"
+            / "controller-state.json"
+        )
+        if state_path != expected_state:
+            raise DashboardError("governed state path no longer binds the fixed run")
+        return plan
+
+    def _authorized_governed_plan(
+        self,
+        profile: LaunchProfile,
+        confirmation: str,
+    ) -> dict[str, Any]:
+        plan = self._governed_plan(profile)
+        try:
+            authorize_governed_run(plan, confirmation)
+        except GovernedControllerError as error:
+            raise DashboardError(str(error)) from error
+        return plan
+
+    def _governance_status(self, profile: LaunchProfile) -> dict[str, Any] | None:
+        if profile.launch_kind != "governed_v4":
+            return None
+        try:
+            plan = self._governed_plan(profile)
+            if profile.governed_state_path is None:
+                raise DashboardError("governed profile state path is missing")
+            state = load_governed_controller_state(profile.governed_state_path, plan)
+            status = governed_controller_status(plan, state)
+        except (DashboardError, GovernedControllerError, OSError, ValueError) as error:
+            return {
+                "kind": "twen_v4_governed_web_launch_status",
+                "blocked": True,
+                "launch_enabled": False,
+                "web_launch_enabled": profile.launch_enabled,
+                "configuration_stale": True,
+                "controller_state": "invalid",
+                "plan_id": profile.governed_plan_id,
+                "required_ack": None,
+                "blockers": [str(error)],
+            }
+        blockers = [
+            str(value)
+            for value in status.get("blockers", [])
+            if isinstance(value, str) and value
+        ]
+        if not profile.launch_enabled:
+            blockers.append("dashboard formal profile launch_enabled is false")
+        return {
+            "kind": "twen_v4_governed_web_launch_status",
+            "blocked": bool(status.get("blocked")) or not profile.launch_enabled,
+            "launch_enabled": status.get("launch_enabled") is True,
+            "web_launch_enabled": profile.launch_enabled,
+            "configuration_stale": False,
+            "controller_state": status.get("controller_state"),
+            "plan_id": status.get("plan_id"),
+            "required_ack": status.get("required_ack"),
+            "completed_thresholds": status.get("completed_thresholds"),
+            "next_threshold": status.get("next_threshold"),
+            "current_checkpoint": status.get("current_checkpoint"),
+            "blockers": blockers,
+        }
+
     def _command(
         self,
         profile: LaunchProfile,
         launch: _TrainingLaunch,
+        *,
+        acknowledgement: str | None = None,
+        governed_snapshot: _GovernedExecutionSnapshot | None = None,
     ) -> list[str]:
+        if profile.launch_kind == "governed_v4":
+            if (
+                profile.governed_readiness_path is None
+                or profile.governed_state_path is None
+                or profile.governed_plan_id is None
+                or acknowledgement != f"RUN {profile.governed_plan_id}"
+                or launch.mode != "governed"
+                or governed_snapshot is None
+            ):
+                raise DashboardError("governed command admission is incomplete")
+            return [
+                sys.executable,
+                "-B",
+                "-P",
+                governed_snapshot.controller_path,
+                "--readiness",
+                str(profile.governed_readiness_path),
+                "--action",
+                "run",
+                "--state",
+                str(profile.governed_state_path),
+                "--ack",
+                acknowledgement,
+            ]
         # This fixed entry point unconditionally calls
         # run_coordinated_training_preflight() before importing torch or
         # constructing an optimizer.  Do not replace it with a direct engine
@@ -1626,11 +2705,16 @@ class DashboardController:
         claims_running = session.get("status") == "running"
         valid_pid = isinstance(pid, int) and not isinstance(pid, bool) and pid > 1
         hostname_matches = session.get("hostname") == platform.node()
+        process_matches = (
+            _process_matches_training_profile(pid, profile)
+            if profile.launch_kind == "governed_v4"
+            else _process_matches_profile(pid, profile)
+        )
         active = bool(
             claims_running
             and valid_pid
             and hostname_matches
-            and _process_matches_profile(pid, profile)
+            and process_matches
         )
         result = dict(session)
         if claims_running and not active:
@@ -1638,8 +2722,12 @@ class DashboardController:
             result["stale_reason"] = "rank-0 PID is absent or no longer matches this profile"
         return result, active
 
-    def _controller_state(self) -> dict[str, Any] | None:
-        state = _read_json(self._state_path)
+    def _controller_state(
+        self,
+        *,
+        persist_exit: bool = True,
+    ) -> dict[str, Any] | None:
+        state = _read_json_regular_no_follow(self._state_path)
         if state is None:
             return None
         pid = state.get("pid")
@@ -1654,21 +2742,35 @@ class DashboardController:
             "launching",
             "running",
             "stop_requested",
-        } and not _process_matches_profile(pid, profile):
+        } and not (
+            _process_matches_governed_controller(
+                pid,
+                profile,
+                state,
+                project_root=self.settings.project_root,
+            )
+            if profile.launch_kind == "governed_v4"
+            else _process_matches_profile(pid, profile)
+        ):
             state = {
                 **state,
                 "status": "exited",
                 "updated_at_utc": _utc_now(),
             }
-            _atomic_json(self._state_path, state)
+            if persist_exit:
+                _atomic_json(self._state_path, state)
         return state
 
-    def active_profile(self) -> LaunchProfile | None:
+    def active_profile(
+        self,
+        *,
+        persist_controller_exit: bool = True,
+    ) -> LaunchProfile | None:
         for profile in self.settings.profiles:
             _, active = self._session(profile)
             if active:
                 return profile
-        state = self._controller_state()
+        state = self._controller_state(persist_exit=persist_controller_exit)
         if state and state.get("status") in {"launching", "running", "stop_requested"}:
             try:
                 return self.settings.profile(str(state["profile_id"]))
@@ -1676,8 +2778,220 @@ class DashboardController:
                 pass
         return None
 
+    def _verified_governed_process_group(
+        self,
+        profile: LaunchProfile,
+        controller_state: Mapping[str, Any] | None,
+    ) -> tuple[int, int]:
+        if profile.launch_kind != "governed_v4" or controller_state is None:
+            raise DashboardError(
+                f"profile {profile.profile_id!r} has no tracked governed controller"
+            )
+        controller_pid = controller_state.get("pid")
+        process_group_id = controller_state.get("process_group_id")
+        if (
+            controller_state.get("profile_id") != profile.profile_id
+            or controller_state.get("launch_kind") != "governed_v4"
+            or controller_state.get("status") not in _ACTIVE_TRAINING_STATES
+            or controller_state.get("run_id") != profile.run_id
+            or controller_state.get("governed_plan_id") != profile.governed_plan_id
+            or not isinstance(controller_pid, int)
+            or isinstance(controller_pid, bool)
+            or controller_pid <= 1
+            or not isinstance(process_group_id, int)
+            or isinstance(process_group_id, bool)
+            or process_group_id != controller_pid
+            or process_group_id <= 1
+            or process_group_id == os.getpgrp()
+        ):
+            raise DashboardError("governed controller process-group identity is invalid")
+        if not _process_matches_governed_controller(
+            controller_pid,
+            profile,
+            controller_state,
+            project_root=self.settings.project_root,
+        ):
+            raise DashboardError(
+                f"profile {profile.profile_id!r} has no exact active controller process group"
+            )
+        return controller_pid, process_group_id
+
+    def _verified_rank0_training_pid(
+        self,
+        profile: LaunchProfile,
+        controller_state: Mapping[str, Any] | None,
+    ) -> int:
+        """Authenticate the exact governed rank-zero trainer before SIGUSR1."""
+
+        if profile.launch_kind != "governed_v4":
+            raise DashboardError("strong rank-zero authentication requires a governed profile")
+        if (
+            not isinstance(controller_state, Mapping)
+            or controller_state.get("status") not in {"launching", "running"}
+        ):
+            raise DashboardError("governed dashboard controller is not save-active")
+        plan = self._governed_plan(profile)
+        controller_pid, controller_group = self._verified_governed_process_group(
+            profile,
+            controller_state,
+        )
+        governed_state_path = profile.governed_state_path
+        if governed_state_path is None:
+            raise DashboardError("governed state path is missing")
+        governed_state = _read_json_regular_no_follow(governed_state_path)
+        if governed_state is None:
+            raise DashboardError("governed controller state is not a stable regular JSON file")
+        try:
+            status = governed_controller_status(plan, governed_state)
+        except GovernedControllerError as error:
+            raise DashboardError(
+                f"governed controller state authentication failed: {error}"
+            ) from error
+        if (
+            status.get("controller_state") != "running"
+            or governed_state.get("status") != "running"
+        ):
+            raise DashboardError("governed controller has no running training segment")
+        active_command = governed_state.get("active_command")
+        if not isinstance(active_command, list) or not all(
+            isinstance(item, str) and item for item in active_command
+        ):
+            raise DashboardError("governed controller has no exact active command")
+        if active_command != _expected_governed_active_command(plan, governed_state):
+            raise DashboardError(
+                "governed controller active command differs from the immutable plan"
+            )
+
+        run = plan.get("run")
+        config = plan.get("config")
+        source_tree = plan.get("source_tree")
+        dependency_lock = plan.get("dependency_lock")
+        if not all(
+            isinstance(value, Mapping)
+            for value in (run, config, source_tree, dependency_lock)
+        ):
+            raise DashboardError("governed plan process identity is incomplete")
+        expected_root = self.settings.project_root
+        if Path(str(plan.get("project_root"))).resolve() != expected_root:
+            raise DashboardError("governed plan project root differs from the dashboard")
+        run_dir = _existing_directory_inside(expected_root, profile.run_dir)
+        if run_dir != profile.run_dir:
+            raise DashboardError("governed run directory is missing or redirected")
+        session_path = run_dir / "rank0-session.json"
+        session = _read_json_regular_no_follow(session_path)
+        if session is None:
+            raise DashboardError("rank-zero session is not a stable regular JSON file")
+
+        pid = session.get("pid")
+        rank = session.get("rank")
+        world_size = session.get("world_size")
+        recorded_start = session.get("process_start_time_ticks")
+        recorded_command = session.get("process_cmdline")
+        if (
+            session.get("schema_version") != 1
+            or session.get("status") != "running"
+            or not isinstance(pid, int)
+            or isinstance(pid, bool)
+            or pid <= 1
+            or pid == controller_pid
+            or not isinstance(rank, int)
+            or isinstance(rank, bool)
+            or rank != 0
+            or not isinstance(world_size, int)
+            or isinstance(world_size, bool)
+            or not isinstance(recorded_start, int)
+            or isinstance(recorded_start, bool)
+            or recorded_start < 0
+            or not isinstance(recorded_command, list)
+            or not all(isinstance(item, str) and item for item in recorded_command)
+        ):
+            raise DashboardError("rank-zero session process identity is incomplete")
+
+        expected_world_size = run.get("world_size")
+        expected_config_path = Path(str(config.get("path"))).resolve()
+        expected_dependency_path = Path(str(dependency_lock.get("path"))).resolve()
+        recorded_cwd = session.get("cwd")
+        recorded_config_path = session.get("config_path")
+        recorded_dependency_path = session.get("dependency_lock")
+        if (
+            session.get("hostname") != platform.node()
+            or session.get("run_id") != profile.run_id
+            or session.get("run_id") != run.get("run_id")
+            or session.get("stage") != profile.stage
+            or session.get("stage") != run.get("stage")
+            or world_size != expected_world_size
+            or not isinstance(recorded_cwd, str)
+            or Path(recorded_cwd).resolve() != expected_root
+            or not isinstance(recorded_config_path, str)
+            or Path(recorded_config_path).resolve() != profile.config_path
+            or Path(recorded_config_path).resolve() != expected_config_path
+            or session.get("config_sha256") != profile.config_sha256
+            or session.get("config_sha256") != config.get("sha256")
+            or session.get("source_tree_sha256") != source_tree.get("sha256")
+            or not isinstance(recorded_dependency_path, str)
+            or Path(recorded_dependency_path).resolve() != expected_dependency_path
+            or session.get("dependency_lock_sha256") != dependency_lock.get("sha256")
+        ):
+            raise DashboardError("rank-zero session differs from the governed plan")
+
+        try:
+            identity = _read_linux_process_identity(pid)
+        except DashboardError as error:
+            raise DashboardError("rank-zero process identity cannot be read") from error
+        actual_command = list(identity.command)
+        try:
+            actual_payload = _governed_training_payload(
+                actual_command,
+                label="rank-zero process command",
+            )
+            active_payload = _governed_training_payload(
+                active_command,
+                label="governed controller active command",
+            )
+        except DashboardError:
+            raise
+        if (
+            identity.pid != pid
+            or actual_command != recorded_command
+            or identity.start_time_ticks != recorded_start
+            or identity.cwd != expected_root
+            or identity.executable != Path(sys.executable).resolve()
+            or identity.process_group_id != controller_group
+            or Path(actual_command[0]).resolve() != identity.executable
+            or actual_payload != active_payload
+        ):
+            raise DashboardError("rank-zero live process differs from its authenticated session")
+
+        owner = _held_run_lock_owner(run_dir / ".run.lock")
+        if (
+            owner is None
+            or owner.get("pid") != pid
+            or owner.get("host") != socket.gethostname()
+            or owner.get("host") != session.get("hostname")
+        ):
+            raise DashboardError("rank-zero trainer does not own the live run lock")
+
+        try:
+            identity_after = _read_linux_process_identity(pid)
+        except DashboardError as error:
+            raise DashboardError("rank-zero process changed during authentication") from error
+        session_after = _read_json_regular_no_follow(session_path)
+        governed_state_after = _read_json_regular_no_follow(governed_state_path)
+        owner_after = _held_run_lock_owner(run_dir / ".run.lock")
+        plan_after = self._governed_plan(profile)
+        if (
+            identity_after != identity
+            or session_after != session
+            or governed_state_after != governed_state
+            or owner_after != owner
+            or plan_after != plan
+        ):
+            raise DashboardError("rank-zero training identity changed during authentication")
+        return pid
+
     def profile_status(self, profile: LaunchProfile) -> dict[str, Any]:
         session, active = self._session(profile)
+        governance = self._governance_status(profile)
         metrics = self._run_records(profile.run_dir, "metrics.jsonl", limit=1)
         telemetry = self._run_records(profile.run_dir, "telemetry.jsonl", limit=1)
         events = self._run_records(profile.run_dir, "events.jsonl", limit=1)
@@ -1700,12 +3014,39 @@ class DashboardController:
             state = str(session.get("status", "unknown"))
         elif controller_for_profile is not None:
             state = str(controller_for_profile.get("status", "unknown"))
+        if (
+            profile.launch_kind == "governed_v4"
+            and not active
+            and (
+                controller_for_profile is None
+                or controller_for_profile.get("status") not in _ACTIVE_TRAINING_STATES
+            )
+            and isinstance(governance, Mapping)
+        ):
+            governed_state = governance.get("controller_state")
+            if governed_state == "completed":
+                state = "completed"
+            elif governed_state in {"running", "awaiting_evaluation", "resume_authorized"}:
+                state = "paused"
+            elif governed_state in {"halted", "review_required", "failed", "invalid"}:
+                state = str(governed_state)
+            elif governed_state == "not_started":
+                state = "not_started"
         effectively_active = active or state in _ACTIVE_TRAINING_STATES
         configuration = self.configuration_status()
+        governance_ready = bool(
+            governance is None
+            or (
+                governance.get("blocked") is False
+                and governance.get("configuration_stale") is False
+            )
+        )
         start_available = bool(
             profile.launch_enabled
+            and governance_ready
             and not effectively_active
             and state not in _COMPLETED_TRAINING_STATES
+            and state not in {"halted", "review_required", "failed", "invalid"}
             and not configuration["configuration_stale"]
         )
         start_action = "start" if state == "not_started" else "resume"
@@ -1718,6 +3059,7 @@ class DashboardController:
             "label": profile.label,
             "run_id": profile.run_id,
             "stage": profile.stage,
+            "launch_kind": profile.launch_kind,
             "config_sha256": profile.config_sha256,
             "state": state,
             "active": effectively_active,
@@ -1729,9 +3071,18 @@ class DashboardController:
             "start_available": start_available,
             "start_action": start_action,
             "preflight_enforced": True,
-            "start_confirmation": profile.start_confirmation,
+            "governed_controller_enforced": profile.launch_kind == "governed_v4",
+            "start_confirmation": (
+                governance.get("required_ack")
+                if isinstance(governance, Mapping)
+                and isinstance(governance.get("required_ack"), str)
+                else profile.start_confirmation
+            ),
             "stop_confirmation": profile.stop_confirmation,
             "save_confirmation": profile.save_confirmation,
+            "save_available": active,
+            "stop_available": effectively_active,
+            "governance": governance,
             "session": session,
             "source_mix": _session_source_mix(session),
             "allow_corpus_reuse": (
@@ -2592,6 +3943,34 @@ class DashboardController:
 
     def start(self, profile_id: str, confirmation: str) -> dict[str, Any]:
         profile = self.settings.profile(profile_id)
+        if profile.launch_kind != "direct_train":
+            raise DashboardError(
+                f"profile {profile.profile_id!r} must use the governed start route"
+            )
+        return self._start_profile(profile, confirmation)
+
+    def start_governed(self, profile_id: str, confirmation: str) -> dict[str, Any]:
+        profile = self.settings.profile(profile_id)
+        if profile.launch_kind != "governed_v4":
+            raise DashboardError(
+                f"profile {profile.profile_id!r} is not a governed v4 profile"
+            )
+        # This first authorization is deliberately outside every action lock.
+        # A blocked request must not create a lock artifact or touch run state.
+        initial_plan = self._authorized_governed_plan(profile, confirmation)
+        return self._start_profile(
+            profile,
+            confirmation,
+            initial_governed_plan=initial_plan,
+        )
+
+    def _start_profile(
+        self,
+        profile: LaunchProfile,
+        confirmation: str,
+        *,
+        initial_governed_plan: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
         with self._serialized_action():
             if self.configuration_status()["configuration_stale"]:
                 raise DashboardError(
@@ -2600,7 +3979,16 @@ class DashboardController:
                 )
             if not profile.launch_enabled:
                 raise DashboardError(f"launch is disabled for profile {profile.profile_id!r}")
-            if confirmation != profile.start_confirmation:
+            governed_plan: dict[str, Any] | None = None
+            if profile.launch_kind == "governed_v4":
+                if initial_governed_plan is None:
+                    raise DashboardError("governed launch lacks its lock-free authorization")
+                governed_plan = self._authorized_governed_plan(profile, confirmation)
+                if governed_plan != dict(initial_governed_plan):
+                    raise DashboardError(
+                        "governed plan changed between lock-free and serialized admission"
+                    )
+            elif confirmation != profile.start_confirmation:
                 raise DashboardError("start confirmation text does not match")
             config_path = self._fixed_profile_path(
                 profile.config_path,
@@ -2617,7 +4005,9 @@ class DashboardController:
                 profile.run_dir,
                 label=f"profile {profile.profile_id!r} run directory",
             )
-            active = self.active_profile()
+            active = self.active_profile(
+                persist_controller_exit=profile.launch_kind != "governed_v4"
+            )
             if active is not None:
                 raise DashboardError(
                     f"training profile {active.profile_id!r} is already active; duplicate launch refused"
@@ -2628,7 +4018,15 @@ class DashboardController:
                     raise DashboardError(
                         f"unmanaged training run {history['run_id']!r} is already active; duplicate launch refused"
                     )
-            launch = self._fixed_initial_fork_launch(profile, run_dir)
+            launch = (
+                _TrainingLaunch(
+                    mode="governed",
+                    resume="controller",
+                    fork_from=None,
+                )
+                if profile.launch_kind == "governed_v4"
+                else self._fixed_initial_fork_launch(profile, run_dir)
+            )
             if launch.fork_from is not None:
                 fork_from = self._fixed_profile_path(
                     launch.fork_from,
@@ -2636,91 +4034,236 @@ class DashboardController:
                 )
                 if not fork_from.is_dir():
                     raise DashboardError(f"allowlisted fork checkpoint is missing: {fork_from}")
-            if launch.resume not in {"auto", "none"}:
+            if profile.launch_kind == "direct_train" and launch.resume not in {"auto", "none"}:
                 resume_path = self._fixed_profile_path(
                     Path(launch.resume),
                     label=f"profile {profile.profile_id!r} resume checkpoint",
                 )
                 if not resume_path.is_dir():
                     raise DashboardError(f"allowlisted resume checkpoint is missing: {resume_path}")
-            run_dir.mkdir(parents=True, exist_ok=True)
-            run_dir = self._fixed_profile_path(
-                profile.run_dir,
-                label=f"profile {profile.profile_id!r} run directory",
-            )
-            command = self._command(profile, launch)
-            command_digest = hashlib.sha256("\0".join(command).encode()).hexdigest()
-            expected_console_path = run_dir / "console.log"
-            console_path = _inside(
-                self.settings.project_root,
-                expected_console_path,
-                label=f"profile {profile.profile_id!r} console log",
-            )
-            if console_path != expected_console_path:
-                raise DashboardError(
-                    f"profile {profile.profile_id!r} console log was redirected by a symlink"
+
+            governed_snapshot: _GovernedExecutionSnapshot | None = None
+            if governed_plan is not None:
+                governed_snapshot = _build_governed_execution_snapshot(
+                    profile,
+                    governed_plan,
                 )
-            environment = os.environ.copy()
-            environment["PYTHONUNBUFFERED"] = "1"
-            with console_path.open("ab", buffering=0) as console:
+            process: Any | None = None
+            process_pid: int | None = None
+            command_digest: str | None = None
+            try:
                 if self.configuration_status()["configuration_stale"]:
                     raise DashboardError(
                         "dashboard configuration changed during launch admission; "
                         "review and restart the dashboard before starting training"
                     )
-                process = self._process_factory(
-                    command,
-                    cwd=self.settings.project_root,
-                    env=environment,
-                    stdin=subprocess.DEVNULL,
-                    stdout=console,
-                    stderr=subprocess.STDOUT,
-                    start_new_session=True,
-                    close_fds=True,
+                if governed_plan is not None:
+                    final_plan = self._authorized_governed_plan(profile, confirmation)
+                    if final_plan != governed_plan:
+                        raise DashboardError(
+                            "governed plan changed after execution snapshot admission"
+                        )
+                    governed_plan = final_plan
+
+                # All governed authorization, duplicate, config, source, and
+                # dependency checks are now complete.  Filesystem mutation
+                # starts below this line.
+                run_dir.mkdir(parents=True, exist_ok=True)
+                run_dir = self._fixed_profile_path(
+                    profile.run_dir,
+                    label=f"profile {profile.profile_id!r} run directory",
                 )
-            state = {
-                "schema_version": 1,
-                "profile_id": profile.profile_id,
-                "run_id": profile.run_id,
-                "pid": int(process.pid),
-                "status": "launching",
-                "started_at_utc": _utc_now(),
-                "updated_at_utc": _utc_now(),
-                "command_sha256": command_digest,
-                "launch_mode": launch.mode,
-                "effective_resume": launch.resume,
-                "effective_fork_from": (
-                    str(launch.fork_from) if launch.fork_from is not None else None
-                ),
-                "verified_checkpoint_id": launch.verified_checkpoint_id,
-                "resume_compatibility_gate": (
-                    "training_entrypoint_preflight_and_checkpoint_loader"
-                    if launch.mode == "resume_auto"
-                    else None
-                ),
-            }
-            _atomic_json(self._state_path, state)
-            self._record_action(
-                action="start",
-                profile=profile,
-                outcome="accepted",
-                fields={
-                    "pid": process.pid,
+                command = self._command(
+                    profile,
+                    launch,
+                    acknowledgement=confirmation if governed_plan is not None else None,
+                    governed_snapshot=governed_snapshot,
+                )
+                command_digest = hashlib.sha256("\0".join(command).encode()).hexdigest()
+                expected_console_path = run_dir / "console.log"
+                console_path = _inside(
+                    self.settings.project_root,
+                    expected_console_path,
+                    label=f"profile {profile.profile_id!r} console log",
+                )
+                if console_path != expected_console_path:
+                    raise DashboardError(
+                        f"profile {profile.profile_id!r} console log was redirected by a symlink"
+                    )
+                environment = os.environ.copy()
+                environment["PYTHONUNBUFFERED"] = "1"
+                process_kwargs: dict[str, Any] = {
+                    "cwd": self.settings.project_root,
+                    "env": environment,
+                    "stdin": subprocess.DEVNULL,
+                    "stderr": subprocess.STDOUT,
+                    "start_new_session": True,
+                    "close_fds": True,
+                }
+                if governed_snapshot is not None:
+                    environment["PYTHONPATH"] = governed_snapshot.runtime_source_path
+                    environment["PYTHONSAFEPATH"] = "1"
+                    process_kwargs["stdin"] = governed_snapshot.source_fd
+                    process_kwargs["pass_fds"] = governed_snapshot.pass_fds
+                with console_path.open("ab", buffering=0) as console:
+                    process_kwargs["stdout"] = console
+                    process = self._process_factory(command, **process_kwargs)
+
+                process_pid = getattr(process, "pid", None)
+                if (
+                    not isinstance(process_pid, int)
+                    or isinstance(process_pid, bool)
+                    or process_pid <= 1
+                ):
+                    raise DashboardError("launched process returned an invalid PID")
+                process_identity: _LinuxProcessIdentity | None = None
+                if governed_snapshot is not None:
+                    process_identity = _read_linux_process_identity(process_pid)
+                    if (
+                        process_identity.pid != process_pid
+                        or list(process_identity.command) != command
+                        or process_identity.cwd != self.settings.project_root
+                        or process_identity.executable != Path(sys.executable).resolve()
+                        or process_identity.process_group_id != process_pid
+                        or process_identity.process_group_id == os.getpgrp()
+                    ):
+                        raise DashboardError(
+                            "spawned governed controller identity differs from the admitted command"
+                        )
+
+                state = {
+                    "schema_version": 1,
+                    "profile_id": profile.profile_id,
+                    "run_id": profile.run_id,
+                    "pid": process_pid,
+                    "process_group_id": (
+                        process_identity.process_group_id
+                        if process_identity is not None
+                        else process_pid
+                    ),
+                    "status": "launching",
+                    "started_at_utc": _utc_now(),
+                    "updated_at_utc": _utc_now(),
                     "command_sha256": command_digest,
+                    "launch_kind": profile.launch_kind,
                     "launch_mode": launch.mode,
                     "effective_resume": launch.resume,
                     "effective_fork_from": (
                         str(launch.fork_from) if launch.fork_from is not None else None
                     ),
                     "verified_checkpoint_id": launch.verified_checkpoint_id,
+                    "governed_plan_id": (
+                        governed_plan.get("plan_id") if governed_plan is not None else None
+                    ),
+                    "governed_state_path": (
+                        str(profile.governed_state_path)
+                        if profile.governed_state_path is not None
+                        else None
+                    ),
                     "resume_compatibility_gate": (
                         "training_entrypoint_preflight_and_checkpoint_loader"
                         if launch.mode == "resume_auto"
                         else None
                     ),
-                },
-            )
-            return state
+                    "project_root": str(self.settings.project_root),
+                    "process_start_time_ticks": (
+                        process_identity.start_time_ticks
+                        if process_identity is not None
+                        else None
+                    ),
+                    "process_cmdline": (
+                        list(process_identity.command)
+                        if process_identity is not None
+                        else None
+                    ),
+                    "process_executable": (
+                        str(process_identity.executable)
+                        if process_identity is not None
+                        else None
+                    ),
+                    "controller_snapshot_fd": (
+                        governed_snapshot.controller_fd
+                        if governed_snapshot is not None
+                        else None
+                    ),
+                    "source_snapshot_fd": (
+                        governed_snapshot.runtime_source_fd
+                        if governed_snapshot is not None
+                        else None
+                    ),
+                    "source_snapshot_transport_fd": (
+                        governed_snapshot.source_fd
+                        if governed_snapshot is not None
+                        else None
+                    ),
+                    "controller_snapshot_sha256": (
+                        governed_snapshot.controller_sha256
+                        if governed_snapshot is not None
+                        else None
+                    ),
+                    "source_snapshot_sha256": (
+                        governed_snapshot.source_archive_sha256
+                        if governed_snapshot is not None
+                        else None
+                    ),
+                    "source_tree_sha256": (
+                        governed_snapshot.source_tree_sha256
+                        if governed_snapshot is not None
+                        else None
+                    ),
+                    "dependency_lock_sha256": (
+                        governed_snapshot.dependency_lock_sha256
+                        if governed_snapshot is not None
+                        else None
+                    ),
+                }
+                _atomic_json(self._state_path, state)
+                self._record_action(
+                    action="start",
+                    profile=profile,
+                    outcome="accepted",
+                    fields={
+                        "pid": process_pid,
+                        "process_group_id": state["process_group_id"],
+                        "command_sha256": command_digest,
+                        "launch_kind": profile.launch_kind,
+                        "launch_mode": launch.mode,
+                        "effective_resume": launch.resume,
+                        "effective_fork_from": (
+                            str(launch.fork_from)
+                            if launch.fork_from is not None
+                            else None
+                        ),
+                        "verified_checkpoint_id": launch.verified_checkpoint_id,
+                        "governed_plan_id": (
+                            governed_plan.get("plan_id")
+                            if governed_plan is not None
+                            else None
+                        ),
+                        "resume_compatibility_gate": (
+                            "training_entrypoint_preflight_and_checkpoint_loader"
+                            if launch.mode == "resume_auto"
+                            else None
+                        ),
+                    },
+                )
+                return state
+            except BaseException:
+                if process is not None:
+                    _reap_failed_launch(process)
+                    failed_state = _read_json_regular_no_follow(self._state_path)
+                    if (
+                        failed_state is not None
+                        and failed_state.get("profile_id") == profile.profile_id
+                        and failed_state.get("pid") == process_pid
+                        and failed_state.get("command_sha256") == command_digest
+                    ):
+                        with suppress(OSError):
+                            self._state_path.unlink()
+                raise
+            finally:
+                if governed_snapshot is not None:
+                    governed_snapshot.close()
 
     def signal(self, profile_id: str, action: str, confirmation: str) -> dict[str, Any]:
         if action not in {"save", "stop"}:
@@ -2730,9 +4273,27 @@ class DashboardController:
         with self._serialized_action():
             if confirmation != expected:
                 raise DashboardError(f"{action} confirmation text does not match")
-            session, active = self._session(profile)
+            session, active = (
+                (None, False)
+                if profile.launch_kind == "governed_v4"
+                else self._session(profile)
+            )
             state: dict[str, Any] | None = None
-            if active and session is not None:
+            signal_target = "process"
+            process_group_id: int | None = None
+            if profile.launch_kind == "governed_v4" and action == "stop":
+                controller_state = self._controller_state(persist_exit=False)
+                pid, process_group_id = self._verified_governed_process_group(
+                    profile,
+                    controller_state,
+                )
+                state = dict(controller_state or {})
+                signal_target = "process_group"
+            elif profile.launch_kind == "governed_v4":
+                controller_state = self._controller_state(persist_exit=False)
+                pid = self._verified_rank0_training_pid(profile, controller_state)
+                state = dict(controller_state or {})
+            elif active and session is not None:
                 pid = int(session["pid"])
             elif action == "stop":
                 controller_state = self._controller_state()
@@ -2756,7 +4317,10 @@ class DashboardController:
                     f"profile {profile.profile_id!r} has no verified active rank-0 PID"
                 )
             requested_signal = signal.SIGUSR1 if action == "save" else signal.SIGTERM
-            os.kill(pid, requested_signal)
+            if process_group_id is None:
+                os.kill(pid, requested_signal)
+            else:
+                os.killpg(process_group_id, requested_signal)
             state = (
                 state
                 or self._controller_state()
@@ -2773,6 +4337,7 @@ class DashboardController:
                     "status": "stop_requested" if action == "stop" else "running",
                     "updated_at_utc": _utc_now(),
                     "last_signal": requested_signal.name,
+                    "last_signal_target": signal_target,
                 }
             )
             _atomic_json(self._state_path, state)
@@ -2780,14 +4345,21 @@ class DashboardController:
                 action=action,
                 profile=profile,
                 outcome="accepted",
-                fields={"pid": pid, "signal": requested_signal.name},
+                fields={
+                    "pid": pid,
+                    "process_group_id": process_group_id,
+                    "signal": requested_signal.name,
+                    "signal_target": signal_target,
+                },
             )
             return {
                 "ok": True,
                 "action": action,
                 "profile_id": profile.profile_id,
                 "pid": pid,
+                "process_group_id": process_group_id,
                 "signal": requested_signal.name,
+                "signal_target": signal_target,
             }
 
 
@@ -2990,6 +4562,9 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                             "automatic_launch": False,
                             "server_side_allowlist": True,
                             "preflight_mandatory": True,
+                            "formal_v4_governed_route": "/api/governed/start",
+                            "formal_v4_direct_train_refused": True,
+                            "formal_v4_exact_plan_ack_required": True,
                             "csrf_required": True,
                             "authentication_required": self.server.auth is not None,
                         },
@@ -3022,7 +4597,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             self._error(HTTPStatus.FORBIDDEN, "invalid Host/Origin refused")
             return
         parsed = urlsplit(self.path)
-        if parsed.path not in {"/api/start", "/api/signal"}:
+        if parsed.path not in {"/api/start", "/api/governed/start", "/api/signal"}:
             self._error(HTTPStatus.NOT_FOUND, "not found")
             return
         if not secrets.compare_digest(self.headers.get("X-Twen-CSRF", ""), self.server.csrf_token):
@@ -3036,6 +4611,8 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 raise DashboardError("profile_id and confirmation must be strings")
             if parsed.path == "/api/start":
                 result = self.server.controller.start(profile_id, confirmation)
+            elif parsed.path == "/api/governed/start":
+                result = self.server.controller.start_governed(profile_id, confirmation)
             else:
                 action = body.get("action")
                 if not isinstance(action, str):
