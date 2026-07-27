@@ -285,6 +285,117 @@ def test_capacity_underfill_fails_before_any_output() -> None:
         )
 
 
+def test_validation_source_inventory_uses_validation_contract_without_train_mixing() -> None:
+    source_map_unsigned = {
+        "schema_version": 1,
+        "algorithm": "authenticated-extracted-output-map-v1",
+        "roles": {
+            "train": [],
+            "validation": [
+                {
+                    "source_id": "source-a",
+                    "path": "filtered/source-a/validation.jsonl",
+                    "sha256": "a" * 64,
+                    "size": 11,
+                },
+                {
+                    "source_id": "source-b",
+                    "path": "filtered/source-b/validation.jsonl",
+                    "sha256": "b" * 64,
+                    "size": 22,
+                },
+            ],
+        },
+    }
+    source_map = {
+        **source_map_unsigned,
+        "fingerprint": closure._canonical_sha256(source_map_unsigned),
+    }
+    prepared = SimpleNamespace(
+        lineage={
+            "role": "validation",
+            "source_files": [
+                {
+                    "path": "filtered/source-a/validation.jsonl",
+                    "sha256": "a" * 64,
+                    "size": 11,
+                },
+                {
+                    "path": "filtered/source-b/validation.jsonl",
+                    "sha256": "b" * 64,
+                    "size": 22,
+                },
+            ],
+            "data_contract": {"source_map": source_map},
+        },
+        shards=(
+            SimpleNamespace(
+                shard_id="shard-a",
+                source_path="/root/filtered/source-a/validation.jsonl",
+                source_sha256="a" * 64,
+                token_count=101,
+            ),
+            SimpleNamespace(
+                shard_id="shard-b",
+                source_path="/root/filtered/source-b/validation.jsonl",
+                source_sha256="b" * 64,
+                token_count=202,
+            ),
+        ),
+        token_count=303,
+    )
+    validation_map, source_tokens = closure._validation_source_inventory(prepared)
+    assert validation_map.fingerprint == source_map["fingerprint"]
+    assert validation_map.source_ids == ("source-a", "source-b")
+    assert source_tokens == {"source-a": 101, "source-b": 202}
+
+
+def test_validation_source_inventory_rejects_unowned_shard() -> None:
+    source_map_unsigned = {
+        "schema_version": 1,
+        "algorithm": "authenticated-extracted-output-map-v1",
+        "roles": {
+            "train": [],
+            "validation": [
+                {
+                    "source_id": "source-a",
+                    "path": "filtered/source-a/validation.jsonl",
+                    "sha256": "a" * 64,
+                    "size": 11,
+                }
+            ],
+        },
+    }
+    source_map = {
+        **source_map_unsigned,
+        "fingerprint": closure._canonical_sha256(source_map_unsigned),
+    }
+    prepared = SimpleNamespace(
+        lineage={
+            "role": "validation",
+            "source_files": [
+                {
+                    "path": "filtered/source-a/validation.jsonl",
+                    "sha256": "a" * 64,
+                    "size": 11,
+                }
+            ],
+            "data_contract": {"source_map": source_map},
+        },
+        shards=(
+            SimpleNamespace(
+                shard_id="shard-x",
+                source_path="/root/filtered/source-x/validation.jsonl",
+                source_sha256="f" * 64,
+                token_count=1,
+            ),
+        ),
+        token_count=1,
+    )
+    with pytest.raises(closure.ClosureError, match="ambiguous source ownership"):
+        closure._validation_source_inventory(prepared)
+
+
 def test_atomic_bundle_reauthenticates_and_rejects_changed_inputs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

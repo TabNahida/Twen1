@@ -55,6 +55,14 @@ class ClosureError(ValueError):
     """One or more formal evidence closure conditions did not pass."""
 
 
+class _ValidationSourceMap:
+    __slots__ = ("fingerprint", "source_ids")
+
+    def __init__(self, *, fingerprint: str, source_ids: tuple[str, ...]) -> None:
+        self.fingerprint = fingerprint
+        self.source_ids = source_ids
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--capacity-template", type=Path, default=DEFAULT_CAPACITY_TEMPLATE)
@@ -234,7 +242,7 @@ def _governed_prepared(
     extracted_sha256: str,
     audit_path: Path,
     audit_sha256: str,
-) -> tuple[Any, AuthenticatedSourceMap, dict[str, object], dict[str, int]]:
+) -> tuple[Any, Any, dict[str, object], dict[str, int]]:
     manifest_path = path.resolve()
     prepared = validate_prepared_corpus(manifest_path)
     lineage = prepared.lineage
@@ -256,15 +264,18 @@ def _governed_prepared(
         or audit_lineage.get("ready_for_training") is not True
     ):
         raise ClosureError(f"{role} prepared manifest is outside governed phase lineage")
-    source_map = AuthenticatedSourceMap.from_prepared_manifest(prepared)
-    entries = {entry.shard_id: entry for entry in prepared.shards}
-    source_tokens = {
-        source_id: sum(
-            entries[shard.shard_id].token_count
-            for shard in source_map.shards_for_source(source_id)
-        )
-        for source_id in source_map.source_ids
-    }
+    if role == "train":
+        source_map = AuthenticatedSourceMap.from_prepared_manifest(prepared)
+        entries = {entry.shard_id: entry for entry in prepared.shards}
+        source_tokens = {
+            source_id: sum(
+                entries[shard.shard_id].token_count
+                for shard in source_map.shards_for_source(source_id)
+            )
+            for source_id in source_map.source_ids
+        }
+    else:
+        source_map, source_tokens = _validation_source_inventory(prepared)
     if sum(source_tokens.values()) != prepared.token_count:
         raise ClosureError(f"{role} prepared source-map token inventory differs")
     identity = {
@@ -279,6 +290,118 @@ def _governed_prepared(
         "sequence_length": prepared.sequence_length,
     }
     return prepared, source_map, identity, source_tokens
+
+
+def _validation_source_inventory(
+    prepared: Any,
+) -> tuple[_ValidationSourceMap, dict[str, int]]:
+    lineage = getattr(prepared, "lineage", None)
+    contract = lineage.get("data_contract") if isinstance(lineage, Mapping) else None
+    source_map = contract.get("source_map") if isinstance(contract, Mapping) else None
+    roles = source_map.get("roles") if isinstance(source_map, Mapping) else None
+    validation = roles.get("validation") if isinstance(roles, Mapping) else None
+    fingerprint = source_map.get("fingerprint") if isinstance(source_map, Mapping) else None
+    if (
+        not isinstance(source_map, Mapping)
+        or source_map.get("algorithm") != "authenticated-extracted-output-map-v1"
+        or not isinstance(fingerprint, str)
+        or len(fingerprint) != 64
+        or any(character not in "0123456789abcdef" for character in fingerprint)
+        or not isinstance(validation, list)
+        or not validation
+    ):
+        raise ClosureError("validation prepared source-map contract is invalid")
+    unsigned = dict(source_map)
+    unsigned.pop("fingerprint", None)
+    if _canonical_sha256(unsigned) != fingerprint:
+        raise ClosureError("validation prepared source-map fingerprint mismatch")
+
+    lineage_files = lineage.get("source_files")
+    if not isinstance(lineage_files, list):
+        raise ClosureError("validation prepared source file inventory is invalid")
+    expected_files: set[tuple[str, str, int]] = set()
+    for index, row in enumerate(lineage_files):
+        if not isinstance(row, Mapping):
+            raise ClosureError(f"validation source_files[{index}] is invalid")
+        path = row.get("path")
+        digest = row.get("sha256")
+        size = row.get("size")
+        if (
+            not isinstance(path, str)
+            or not path
+            or Path(path).is_absolute()
+            or ".." in Path(path).parts
+            or not isinstance(digest, str)
+            or len(digest) != 64
+            or isinstance(size, bool)
+            or not isinstance(size, int)
+            or size < 0
+        ):
+            raise ClosureError(f"validation source_files[{index}] identity is invalid")
+        expected_files.add((path.replace("\\", "/"), digest, size))
+
+    mapped_files: set[tuple[str, str, int]] = set()
+    source_by_file: dict[tuple[str, str], str] = {}
+    for index, row in enumerate(validation):
+        if not isinstance(row, Mapping):
+            raise ClosureError(f"validation source_map[{index}] is invalid")
+        source_id = row.get("source_id")
+        path = row.get("path")
+        digest = row.get("sha256")
+        size = row.get("size")
+        if (
+            not isinstance(source_id, str)
+            or not source_id
+            or not isinstance(path, str)
+            or not path
+            or Path(path).is_absolute()
+            or ".." in Path(path).parts
+            or not isinstance(digest, str)
+            or len(digest) != 64
+            or isinstance(size, bool)
+            or not isinstance(size, int)
+            or size < 0
+        ):
+            raise ClosureError(f"validation source_map[{index}] identity is invalid")
+        normalized = path.replace("\\", "/")
+        identity = (normalized, digest, size)
+        key = (normalized, digest)
+        if identity in mapped_files or key in source_by_file:
+            raise ClosureError("validation source-map repeats a source file")
+        mapped_files.add(identity)
+        source_by_file[key] = source_id
+    if mapped_files != expected_files:
+        raise ClosureError("validation source-map differs from prepared source files")
+
+    source_tokens: dict[str, int] = {}
+    for shard in prepared.shards:
+        normalized_source = str(shard.source_path).replace("\\", "/")
+        candidates = {
+            source_id
+            for (path, digest), source_id in source_by_file.items()
+            if shard.source_sha256 == digest
+            and (
+                normalized_source == path
+                or normalized_source.endswith(f"/{path}")
+            )
+        }
+        if len(candidates) != 1:
+            raise ClosureError(
+                f"validation prepared shard has ambiguous source ownership: {shard.shard_id}"
+            )
+        source_id = next(iter(candidates))
+        source_tokens[source_id] = source_tokens.get(source_id, 0) + int(
+            shard.token_count
+        )
+    if sum(source_tokens.values()) != prepared.token_count:
+        raise ClosureError("validation prepared source-map token inventory differs")
+    return (
+        _ValidationSourceMap(
+            fingerprint=fingerprint,
+            source_ids=tuple(sorted(source_tokens)),
+        ),
+        source_tokens,
+    )
 
 
 def _phase_evidence(
