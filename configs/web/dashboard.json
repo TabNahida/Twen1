@@ -43,6 +43,16 @@
       "label": "Base Dense v4 13M (blocked: use authenticated admission snapshot)",
       "launch_enabled": false,
       "resume": "none"
+    },
+    {
+      "config": "configs/base/dense-v4-13m-formal-lr-calibration.yaml",
+      "config_sha256": "13fdaea6c21b2e070246a6836be33718137ec1df7563232ba2d7a15dbf7536e9",
+      "fork_from": "runs/base-dense-v3-500m/step-000000001912-milestone-complete",
+      "id": "base-dense-v4-13m-formal-lr-calibration",
+      "label": "Base Dense v4 13M formal-LR calibration (disabled template)",
+      "launch_enabled": false,
+      "launch_kind": "direct_train",
+      "resume": "none"
     }
   ],
   "project_root": "../..",

@@ -736,14 +736,25 @@ def test_real_dashboard_config_remains_a_blocked_template() -> None:
         "base-dense-v3-500m",
         "base-dense-v4-16m-smoke",
         "base-dense-v4-13m-low-lr-calibration",
+        "base-dense-v4-13m-formal-lr-calibration",
     ]
-    _, v2, v3, v4, calibration = settings.profiles
+    _, v2, v3, v4, calibration, formal_lr_calibration = settings.profiles
     launchable = [profile for profile in settings.profiles if profile.launch_enabled]
     assert launchable == []
     assert calibration.label == (
         "Base Dense v4 13M (blocked: use authenticated admission snapshot)"
     )
-    assert v2.resume == v3.resume == v4.resume == calibration.resume == "none"
+    assert formal_lr_calibration.label == (
+        "Base Dense v4 13M formal-LR calibration (disabled template)"
+    )
+    assert (
+        v2.resume
+        == v3.resume
+        == v4.resume
+        == calibration.resume
+        == formal_lr_calibration.resume
+        == "none"
+    )
     assert v2.fork_from == v3.fork_from
     assert (
         v3.fork_from
@@ -754,6 +765,7 @@ def test_real_dashboard_config_remains_a_blocked_template() -> None:
         == (project_root / "runs/base-dense-v3-500m/step-000000001912-milestone-complete").resolve()
     )
     assert calibration.fork_from == v4.fork_from
+    assert formal_lr_calibration.fork_from == v4.fork_from
     calibration_config = load_train_config(calibration.config_path)
     assert calibration_config.run_id == "base-dense-v4-13m-low-lr-calibration"
     assert calibration_config.optimizer.adapter_optimizer == "muon"
@@ -763,9 +775,18 @@ def test_real_dashboard_config_remains_a_blocked_template() -> None:
     assert calibration_config.optimizer.warmup_tokens == 5_000_000
     assert calibration_config.optimizer.lr_schedule == "cosine"
     assert calibration_config.data.allow_corpus_reuse is False
+    formal_lr_config = load_train_config(formal_lr_calibration.config_path)
+    assert formal_lr_config.run_id == "base-dense-v4-13m-formal-lr-calibration"
+    assert formal_lr_config.optimizer.adapter_optimizer == "muon"
+    assert formal_lr_config.optimizer.adapter_lr == 3e-5
+    assert formal_lr_config.optimizer.scale_lr == 3e-6
+    assert formal_lr_config.optimizer.max_tokens == 13_000_000
+    assert formal_lr_config.optimizer.warmup_tokens == 10_000_000
+    assert formal_lr_config.optimizer.lr_schedule == "cosine"
+    assert formal_lr_config.data.allow_corpus_reuse is False
     assert all(
         profile.config_sha256 == hashlib.sha256(profile.config_path.read_bytes()).hexdigest()
-        for profile in (v2, v3, v4, calibration)
+        for profile in (v2, v3, v4, calibration, formal_lr_calibration)
     )
     assert all(
         profile.config_path.is_relative_to(settings.project_root) for profile in settings.profiles
