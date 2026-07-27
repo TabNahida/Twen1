@@ -14,6 +14,7 @@ import gzip
 import hashlib
 import io
 import json
+import math
 import os
 import re
 import struct
@@ -359,12 +360,53 @@ class LockedSourceFile:
 class RowFilter:
     field: str
     operator: str
-    values: tuple[str, ...]
+    values: tuple[str, ...] = ()
+    threshold: int | float | None = None
 
     def matches(self, row: Mapping[str, object]) -> bool:
         value = get_dotted_field(row, self.field, _MISSING)
-        contained = isinstance(value, str) and value in self.values
-        return contained if self.operator == "in" else not contained
+        if self.operator in {"in", "not_in"}:
+            contained = isinstance(value, str) and value in self.values
+            return contained if self.operator == "in" else not contained
+        if not _is_finite_number(value):
+            return False
+        if self.threshold is None:
+            raise DataSourceError("numeric row filter lacks a threshold")
+        if self.operator == "gte":
+            return value >= self.threshold
+        if self.operator == "lte":
+            return value <= self.threshold
+        raise DataSourceError(f"unsupported row filter operator: {self.operator!r}")
+
+    def to_contract(self) -> dict[str, object]:
+        """Return the stable JSON contract without changing legacy membership filters."""
+
+        if self.operator in {"in", "not_in"}:
+            return {
+                "field": self.field,
+                "operator": self.operator,
+                "values": list(self.values),
+            }
+        return {
+            "field": self.field,
+            "operator": self.operator,
+            "value": self.threshold,
+        }
+
+
+def _is_finite_number(value: object) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return not isinstance(value, float) or math.isfinite(value)
+
+
+def _require_finite_number(value: object, field: str) -> int | float:
+    if not _is_finite_number(value):
+        raise DataSourceError(f"{field} must be a finite JSON number")
+    # Canonicalize negative zero so equivalent thresholds have identical contracts.
+    if isinstance(value, float) and value == 0:
+        return 0.0
+    return value
 
 
 def _parse_row_filters(value: object, source_id: str) -> tuple[RowFilter, ...]:
@@ -381,16 +423,35 @@ def _parse_row_filters(value: object, source_id: str) -> tuple[RowFilter, ...]:
         elif name.endswith("_in"):
             raw_field = name[: -len("_in")]
             operator = "in"
+        elif name.endswith("_gte"):
+            raw_field = name[: -len("_gte")]
+            operator = "gte"
+        elif name.endswith("_lte"):
+            raw_field = name[: -len("_lte")]
+            operator = "lte"
         else:
             raise DataSourceError(
-                f"{source_id}.row_filters key must end in _in or _not_in: {name!r}"
+                f"{source_id}.row_filters key must end in "
+                f"_in, _not_in, _gte, or _lte: {name!r}"
             )
         field = _field_path(raw_field, f"{source_id}.row_filters.{name}")
-        values = _string_tuple(
-            raw_values,
-            f"{source_id}.row_filters.{name}",
-        )
-        filters.append(RowFilter(field=field, operator=operator, values=values))
+        contract_field = f"{source_id}.row_filters.{name}"
+        if operator in {"in", "not_in"}:
+            filters.append(
+                RowFilter(
+                    field=field,
+                    operator=operator,
+                    values=_string_tuple(raw_values, contract_field),
+                )
+            )
+        else:
+            filters.append(
+                RowFilter(
+                    field=field,
+                    operator=operator,
+                    threshold=_require_finite_number(raw_values, contract_field),
+                )
+            )
     return tuple(filters)
 
 
@@ -2670,7 +2731,7 @@ def _write_attribution(
         "token_count_with_eos": token_count,
         "source_license": source.license,
         "content_field": source.text_field,
-        "row_filter_contract": [asdict(item) for item in source.row_filters],
+        "row_filter_contract": [item.to_contract() for item in source.row_filters],
         "filter_decisions": {
             "required_fields": "pass",
             "minimum_characters": "pass",
@@ -3067,7 +3128,7 @@ def _write_corpus_manifest(
                 "license": source.license,
                 "license_scope": source.license_scope,
                 "license_value_mode": source.license_value_mode,
-                "row_filters": [asdict(item) for item in source.row_filters],
+                "row_filters": [item.to_contract() for item in source.row_filters],
                 "locked_files": [asdict(item) for item in source.locked_files],
                 "target_train_tokens": source.train_token_quotas[profile],
                 "actual_train_tokens": progress.train_tokens,

@@ -302,6 +302,103 @@ def test_dotted_fields_license_normalization_filters_and_group_split() -> None:
     assert stable_a != stable_b
 
 
+def test_numeric_row_filters_are_strict_and_have_deterministic_contracts() -> None:
+    value = _v1_recipe()
+    source_value = value["sources"][0]
+    assert isinstance(source_value, dict)
+    source_value["required_fields"] = [
+        "id",
+        "text",
+        "quality_score",
+        "toxicity.score",
+        "kind",
+        "origin",
+    ]
+    source_value["row_filters"] = {
+        "quality_score_gte": 0.9,
+        "toxicity.score_lte": 1,
+        "kind_in": ["article"],
+        "origin_not_in": ["blocked"],
+    }
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "recipe.json"
+        path.write_text(json.dumps(value), encoding="utf-8")
+        source = load_base_data_recipe(path).sources[0]
+
+    contracts = [item.to_contract() for item in source.row_filters]
+    assert contracts == [
+        {"field": "quality_score", "operator": "gte", "value": 0.9},
+        {"field": "toxicity.score", "operator": "lte", "value": 1},
+        {"field": "kind", "operator": "in", "values": ["article"]},
+        {"field": "origin", "operator": "not_in", "values": ["blocked"]},
+    ]
+    assert json.dumps(
+        contracts,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ) == (
+        '[{"field":"quality_score","operator":"gte","value":0.9},'
+        '{"field":"toxicity.score","operator":"lte","value":1},'
+        '{"field":"kind","operator":"in","values":["article"]},'
+        '{"field":"origin","operator":"not_in","values":["blocked"]}]'
+    )
+
+    by_operator = {item.operator: item for item in source.row_filters}
+    accepted = {
+        "quality_score": 0.9,
+        "toxicity": {"score": 1},
+        "kind": "article",
+        "origin": "trusted",
+    }
+    assert all(item.matches(accepted) for item in source.row_filters)
+    assert not by_operator["gte"].matches({**accepted, "quality_score": 0.899})
+    assert not by_operator["lte"].matches(
+        {**accepted, "toxicity": {"score": 1.001}}
+    )
+
+    invalid_values = (
+        True,
+        "0.95",
+        None,
+        float("nan"),
+        float("inf"),
+        -float("inf"),
+    )
+    for invalid in invalid_values:
+        assert not by_operator["gte"].matches(
+            {**accepted, "quality_score": invalid}
+        )
+    assert by_operator["in"].matches(accepted)
+    assert not by_operator["in"].matches({**accepted, "kind": 1})
+    without_origin = {
+        key: item for key, item in accepted.items() if key != "origin"
+    }
+    assert by_operator["not_in"].matches(without_origin)
+    assert not by_operator["not_in"].matches({**accepted, "origin": "blocked"})
+
+
+@pytest.mark.parametrize(
+    "threshold",
+    [True, "0.9", None, [], {}, float("nan"), float("inf"), -float("inf")],
+)
+def test_numeric_row_filter_recipe_thresholds_must_be_finite_numbers(
+    threshold: object,
+) -> None:
+    value = _v1_recipe()
+    source_value = value["sources"][0]
+    assert isinstance(source_value, dict)
+    source_value["required_fields"] = ["id", "text", "quality_score"]
+    source_value["row_filters"] = {"quality_score_gte": threshold}
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "recipe.json"
+        path.write_text(json.dumps(value), encoding="utf-8")
+        with pytest.raises(DataSourceError, match="must be a finite JSON number"):
+            load_base_data_recipe(path)
+
+
 def test_gzip_jsonl_reader_streams_nested_rows_and_resumes_by_row() -> None:
     rows = [
         {"id": "一", "metadata": {"license": "CC BY 4.0"}},
