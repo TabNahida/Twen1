@@ -12,14 +12,16 @@
 - 从 `runs/base-dense-v3-500m/step-000000001912-milestone-complete`
   使用 `--resume none --fork-from ...` 分叉
 
-当前只允许继续做 metadata resolve、语料物化、治理审计和 prepare，**不允许启动训练**。
+当前只允许继续做中文来源替换、metadata resolve、语料物化、治理审计和 prepare，
+**不允许启动训练**。
 `configs/base/dense-v4-250m-pilot.blocked.yaml` 中的 prepared manifest 与
 source-map 使用显式 `PENDING_*` 值，因此即使绕过 Web 直接调用 CLI，也会在配置校验阶段
 失败。`locks/base-dense-v4-250m-pilot.readiness.json` 与容量 attestation 同时保持
-`launch_enabled=false`。raw primary/cooldown 的完成不等于正式数据或训练准入；当前仍缺
-refill 后最终审计、prepared identity、两阶段及 train/validation union 不相交证明、
-formal v3 baseline、13M low-LR calibration 质量报告，以及负责暂停评测的外部 governed
-controller。
+`launch_enabled=false`。旧 primary/cooldown 的 refill、prepared、两阶段/validation
+不相交、formal v3 baseline 与 governed controller 证据曾经完成，但 2026-07-27 的
+中文 semantic-quality 全量复核推翻了这套数据的训练准入；这些身份必须在中文
+remediation 后重新生成。13M low-LR calibration 也尚未运行，且旧 calibration prepared
+复用了失败来源，不能启动。
 
 ## 正式超参、fork 与暂停评测门
 
@@ -166,6 +168,15 @@ available、治理保留率和 prepared unique capacity。
 和采集站 boilerplate，并记录独立 reason code。它不宣称能够高精度识别“大年夜、
 软件体系、乾坤”等同一脚本的机械转换语义污染；该项在正式物化后仍需小样统计/人工
 复核，不能因为确定性规则通过就自动解除质量门。
+
+2026-07-27 的正式全量统计复核已经证明该担忧真实存在，而不是待确认的理论风险：
+primary 79,209 篇与 cooldown 9,970 篇中文文档的全部输入 shard 均通过 size/SHA
+认证后，扫描到 170 篇高置信机械转换文档和 5,755 篇异常标点拼接指标文档；确定性
+风险/对照样本还显示更广泛的跨主题串文、SEO 与同义词改写污染。因此当前 FineWeb2
+中文输入及复用它的 13M calibration prepared 均为 **FAIL**，Web 启动门已经关闭。
+不能只删除少量正则命中后沿用本文件后续的旧 capacity/evidence：中文来源替换或重新
+筛选后，必须从 extracted audit、prepared capacity、phase/formal disjointness、formal
+validation baseline、closure 和 calibration 身份开始重做。
 
 ## 可执行命令
 

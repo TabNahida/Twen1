@@ -730,7 +730,7 @@ def test_controller_defaults_to_persistent_gpu_journal(tmp_path: Path) -> None:
     assert controller.gpu_monitor.journal_path == settings.state_dir / "gpu-telemetry.jsonl"
 
 
-def test_real_dashboard_config_only_enables_ready_v4_calibration() -> None:
+def test_real_dashboard_config_fail_closes_v4_after_chinese_quality_failure() -> None:
     project_root = Path(__file__).resolve().parents[1]
     settings = load_dashboard_settings(project_root / "configs/web/dashboard.json")
     assert settings.project_root == project_root.resolve()
@@ -743,7 +743,7 @@ def test_real_dashboard_config_only_enables_ready_v4_calibration() -> None:
     ]
     _, v2, v3, v4, calibration = settings.profiles
     launchable = [profile for profile in settings.profiles if profile.launch_enabled]
-    assert launchable == [calibration]
+    assert launchable == []
     assert v2.resume == v3.resume == v4.resume == calibration.resume == "none"
     assert v2.fork_from == v3.fork_from
     assert (

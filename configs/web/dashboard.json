@@ -40,8 +40,8 @@
       "config_sha256": "3301c226e7ab406311277d82f7a0a26fe58b5597d914bdb24e483b38df98fa79",
       "fork_from": "runs/base-dense-v3-500m/step-000000001912-milestone-complete",
       "id": "base-dense-v4-13m-low-lr-calibration",
-      "label": "Base Dense v4 13M (low-LR calibration; ready)",
-      "launch_enabled": true,
+      "label": "Base Dense v4 13M (blocked: Chinese data remediation)",
+      "launch_enabled": false,
       "resume": "none"
     }
   ],

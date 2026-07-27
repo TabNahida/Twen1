@@ -1,6 +1,6 @@
 # v4 Base 文本数据源、schema v2 与治理运行手册
 
-状态：**r3 已真实物化并完成治理；16.014M unique-token smoke 已 ready for training**
+状态：**16M smoke 已完成；正式中文 semantic-quality 门失败，全部 v4 启动已关闭**
 
 对应 recipe：[`locks/base-data-sources-v4.json`](../locks/base-data-sources-v4.json)
 
@@ -474,11 +474,20 @@ preflight 会同时认证 lineage 与 effective weights，并把
 
 连续运行与 STOP → resume → SIGUSR1 分支在 1,048,576 token 后逐字节等价；最终
 `artifacts/configuration/v4-optimizer-ab/summary.json` 同时要求 power、完整 profiler
-trace 与 recovery，结论为 `accepted=true`。因此 Web allowlist 现在只对 v4 设
-低 LR 校准 profile 设 `launch_enabled=true`；已完成的 16M smoke 与
-v1/v2/v3 继续 monitor-only。
+trace 与 recovery，结论为 `accepted=true`。但性能门不覆盖语料语义质量。2026-07-27
+新增的完整中文统计扫描在 primary 79,209 篇、cooldown 9,970 篇上认证了全部 98 个
+Chinese shard，发现 170 篇高置信同脚本机械转换文档，以及 5,755 篇至少含一个异常
+标点拼接指标的文档；确定性样本还直接观察到“大年夜众/发念头”、SEO 拼接和跨主题
+串文。证据位于
+`artifacts/evidence/base-v4-250m-chinese-semantic-noise-pass-001/`。
 
-13M 校准不再直接使用上述 16M smoke prepared identity：当前扫描器对 filtered
+因此当前 Web allowlist 已把 13M low-LR calibration 改为
+`launch_enabled=false`；已完成的 16M smoke 与 v1/v2/v3 同样 monitor-only。现有
+calibration prepared 复用了同一污染中文来源，不能因为此前 generic audit 为 PASS
+就继续运行。替换中文来源、重新治理、重新 prepare 并取得新的数据身份后，才可重新
+发布 calibration profile。
+
+历史 13M 校准草案不再直接使用上述 16M smoke prepared identity：generic 扫描器对 filtered
 candidate/frozen corpus 重审的 quality-v3 attestation SHA256 为
 `73f973c34fff3d8035c72c0898b9ee3d27c2a98e74bdb068c817491157bc4986`，
 新 prepared manifest SHA256 为
@@ -487,6 +496,7 @@ candidate/frozen corpus 重审的 quality-v3 attestation SHA256 为
 5M warmup；250M 则使用独立的 Adapter `3e-5` / scale `3e-6` / 10M warmup
 合同，并始终从 v3 final model-only fork。正式暂停评测与新增来源 validation 门见
 [`V4_250M_PILOT_DATA_PLAN.zh-CN.md`](V4_250M_PILOT_DATA_PLAN.zh-CN.md)。
+上述 identity 现仅作失败分析的历史输入，不再表示 ready for launch。
 
 ## 9. 明确排除的候选
 
