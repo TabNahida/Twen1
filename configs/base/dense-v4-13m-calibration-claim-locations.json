@@ -1,0 +1,67 @@
+{
+  "claims": {
+    "best_aggregate_nll": {
+      "bundle": "checkpoint_validation_bundle",
+      "json_pointer": "/release_gate/best_aggregate_nll",
+      "path": "summary.json"
+    },
+    "candidate_global_steps": {
+      "bundle": "checkpoint_validation_bundle",
+      "json_pointer": "/release_gate/candidate_global_steps",
+      "path": "summary.json"
+    },
+    "chinese_source_nll": {
+      "bundle": "checkpoint_validation_bundle",
+      "json_pointer": "/release_gate/chinese_source_nll",
+      "path": "summary.json"
+    },
+    "clip_fraction": {
+      "bundle": "training_report_bundle",
+      "json_pointer": "/release_gate/clip_fraction",
+      "path": "analysis.json"
+    },
+    "final_aggregate_nll": {
+      "bundle": "checkpoint_validation_bundle",
+      "json_pointer": "/release_gate/final_aggregate_nll",
+      "path": "summary.json"
+    },
+    "final_scale_relative_l2": {
+      "bundle": "checkpoint_drift_audit_bundle",
+      "json_pointer": "/release_gate/final_scale_relative_l2",
+      "path": "analysis.json"
+    },
+    "fork_checkpoint_complete_sha256": {
+      "bundle": "training_report_bundle",
+      "json_pointer": "/release_gate/fork_checkpoint_complete_sha256",
+      "path": "analysis.json"
+    },
+    "reference_epoch_max": {
+      "bundle": "training_report_bundle",
+      "json_pointer": "/release_gate/reference_epoch_max",
+      "path": "analysis.json"
+    },
+    "required_metrics_finite": {
+      "bundle": "training_report_bundle",
+      "json_pointer": "/release_gate/required_metrics_finite",
+      "path": "analysis.json"
+    },
+    "reused_sequences": {
+      "bundle": "training_report_bundle",
+      "json_pointer": "/release_gate/reused_sequences",
+      "path": "analysis.json"
+    },
+    "reused_tokens": {
+      "bundle": "training_report_bundle",
+      "json_pointer": "/release_gate/reused_tokens",
+      "path": "analysis.json"
+    },
+    "same_frozen_v3_validation_contract": {
+      "bundle": "checkpoint_validation_bundle",
+      "json_pointer": "/release_gate/same_frozen_v3_validation_contract",
+      "path": "summary.json"
+    }
+  },
+  "kind": "twen_v4_13m_calibration_claim_locations",
+  "schema_version": 1,
+  "spec_fingerprint": "2090a38cf394fd3073c64e2fad39dfa4ec8992542a42499364971d1d6993dbca"
+}
