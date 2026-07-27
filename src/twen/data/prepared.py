@@ -248,9 +248,7 @@ def _normalized_prepared_lineage(
                 *_EXTRACTED_CONTRACT_IDENTITY_KEYS,
             )
         }
-        if data_contract.get("contract_fingerprint") != _canonical_sha256(
-            unsigned_contract
-        ):
+        if data_contract.get("contract_fingerprint") != _canonical_sha256(unsigned_contract):
             raise ValueError("prepared data_contract lineage fingerprint mismatch")
     quality = result.get("quality_cooldown")
     if quality is not None:
@@ -553,8 +551,7 @@ def _validated_extracted_data_contract(
     ):
         raise ValueError("unsupported extracted source_map contract")
     source_map_unsigned = {
-        key: source_map.get(key)
-        for key in ("schema_version", "algorithm", "roles")
+        key: source_map.get(key) for key in ("schema_version", "algorithm", "roles")
     }
     if source_map.get("fingerprint") != _canonical_sha256(source_map_unsigned):
         raise ValueError("extracted source_map contract fingerprint mismatch")
@@ -569,9 +566,7 @@ def _validated_extracted_data_contract(
         normalized_outputs: list[dict[str, object]] = []
         for index, item in enumerate(raw_outputs):
             if not isinstance(item, dict):
-                raise ValueError(
-                    f"extracted source_map {role}[{index}] must be an object"
-                )
+                raise ValueError(f"extracted source_map {role}[{index}] must be an object")
             source_ids.add(
                 _required_string(
                     item.get("source_id"),
@@ -598,9 +593,7 @@ def _validated_extracted_data_contract(
                 }
             )
         if normalized_outputs != inventories[role]:
-            raise ValueError(
-                f"extracted source_map {role} differs from role inventory"
-            )
+            raise ValueError(f"extracted source_map {role} differs from role inventory")
 
     source_mix = contract["source_mix"]
     if (
@@ -634,15 +627,11 @@ def _validated_extracted_data_contract(
         raise ValueError("extracted source_mix/source_map source sets differ")
     weights = [item.get("mix_basis_points") for item in raw_mix_sources]
     if any(
-        isinstance(weight, bool)
-        or not isinstance(weight, int)
-        or weight <= 0
-        for weight in weights
+        isinstance(weight, bool) or not isinstance(weight, int) or weight <= 0 for weight in weights
     ):
         raise ValueError("extracted source_mix weights must be positive integers")
     if (
-        sum(int(weight) for weight in weights)
-        != source_mix.get("basis_points_total")
+        sum(int(weight) for weight in weights) != source_mix.get("basis_points_total")
         or source_mix.get("basis_points_total") != 10_000
     ):
         raise ValueError("extracted source_mix must total 10,000 basis points")
@@ -828,6 +817,11 @@ def _authenticate_extracted_prepare_inputs(
     pending_audits = sorted(
         name for name, status in audits.items() if status.lower().startswith("pending")
     )
+    if ready_for_training and pending_audits:
+        raise ValueError(
+            "audit attestation reports ready_for_training but the extracted "
+            f"corpus still has unresolved pending audits: {pending_audits}"
+        )
     if not ready_for_training and not allow_pending_research_audits:
         raise ValueError(
             "extracted corpus is not ready_for_training; after reviewing its pending audits, "

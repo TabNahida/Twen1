@@ -3,7 +3,7 @@
   "config": {
     "contains_pending_identity_sentinels": true,
     "path": "configs/base/dense-v4-250m-pilot.blocked.yaml",
-    "sha256": "f2d31d1ddbb770343796f5f4d57e7fa1fe6677097dc08ba1debaa4c8dc0f8af5"
+    "sha256": "5fe75169f0bb17721759ed6e3997d48b596c7d9c91720a6bb2acece3904465f2"
   },
   "kind": "twen_v4_250m_capacity_attestation",
   "launch_enabled": false,
@@ -39,19 +39,19 @@
         "materialized_attribution_manifest_sha256": null,
         "passed": false
       },
-      "locked_remote_bytes": 3778042685,
+      "locked_remote_bytes": 2856763233,
       "passed": false,
       "per_source_capacity": [
         {
           "available_governed_unique_tokens": null,
-          "governance_retention_rate": 0.8702,
+          "governance_retention_rate": 0.9,
           "margin_tokens": null,
           "mix_basis_points": 2500,
           "passed": false,
-          "planned_raw_tokens": 7986000,
+          "planned_raw_tokens": 7722000,
           "required_clean_tokens": 6317500,
-          "retention_evidence": "base-v4-smoke-r3-r4-governance",
-          "source_id": "chinese_fineweb2_cmn_hani"
+          "retention_evidence": "wikipedia-zh-20231101-current-round-measured-retention-20260727",
+          "source_id": "chinese_wikipedia_zh_20231101"
         },
         {
           "available_governed_unique_tokens": null,
@@ -132,7 +132,7 @@
         }
       ],
       "planned_clean_materialization_tokens": 25270000,
-      "planned_raw_materialization_tokens": 42268000,
+      "planned_raw_materialization_tokens": 42004000,
       "prepared_identity": {
         "available_unique_samples": null,
         "available_unique_tokens": null,
@@ -152,8 +152,8 @@
       },
       "recipe": {
         "path": "locks/base-data-sources-v4-cooldown.json",
-        "recipe_id": "base-v4-250m-cooldown-20260727-r1",
-        "sha256": "7e7d067d0ba0b1552ae582ecb9a3cd55cdde111e3a930538d5d21e868c76b1e4"
+        "recipe_id": "base-v4-250m-cooldown-20260727-r2",
+        "sha256": "851856cbde52f04430e97313595fb1a732455f4654b03375e46128c8d17b9f7d"
       },
       "required_prepared_samples": 6168,
       "required_prepared_tokens": 25262144,
@@ -163,7 +163,7 @@
         "passed": true,
         "path": "locks/base-data-sources-v4-cooldown.resolved.json",
         "remote_identity_verification": "verified_against_hub_metadata",
-        "sha256": "94e1a20c37516c6b2f54d4b591b4661dd2ad1692b690d2a3902a0a82bb30fdac"
+        "sha256": "043d877e67c8ca74a08b5e3252651851c0dea20203920a43a73f93d40fc6611a"
       },
       "stage": "cooldown"
     },
@@ -172,19 +172,19 @@
         "materialized_attribution_manifest_sha256": null,
         "passed": false
       },
-      "locked_remote_bytes": 6193268750,
+      "locked_remote_bytes": 5319180909,
       "passed": false,
       "per_source_capacity": [
         {
           "available_governed_unique_tokens": null,
-          "governance_retention_rate": 0.8702,
+          "governance_retention_rate": 0.9,
           "margin_tokens": null,
           "mix_basis_points": 2400,
           "passed": false,
-          "planned_raw_tokens": 68343000,
+          "planned_raw_tokens": 66080000,
           "required_clean_tokens": 54064800,
-          "retention_evidence": "base-v4-smoke-r3-r4-governance",
-          "source_id": "chinese_fineweb2_cmn_hani"
+          "retention_evidence": "wikipedia-zh-20231101-current-round-measured-retention-20260727",
+          "source_id": "chinese_wikipedia_zh_20231101"
         },
         {
           "available_governed_unique_tokens": null,
@@ -276,7 +276,7 @@
         }
       ],
       "planned_clean_materialization_tokens": 225270000,
-      "planned_raw_materialization_tokens": 323232000,
+      "planned_raw_materialization_tokens": 320969000,
       "prepared_identity": {
         "available_unique_samples": null,
         "available_unique_tokens": null,
@@ -296,8 +296,8 @@
       },
       "recipe": {
         "path": "locks/base-data-sources-v4-primary.json",
-        "recipe_id": "base-v4-250m-primary-20260727-r1",
-        "sha256": "479df3abec68f5c2354c226876188e1b75cceba9bfce21e23108b3d48e0dc58e"
+        "recipe_id": "base-v4-250m-primary-20260727-r2",
+        "sha256": "2f2121c2ea3e8a83c69dcef8c4cc1605628967fe1c2d2915fb7fc6f8120823a4"
       },
       "required_prepared_samples": 54996,
       "required_prepared_tokens": 225262144,
@@ -307,7 +307,7 @@
         "passed": true,
         "path": "locks/base-data-sources-v4-primary.resolved.json",
         "remote_identity_verification": "verified_against_hub_metadata",
-        "sha256": "aedf4cf3df1219c5bd20ce740b44dd6872f536aed286716db26cad64cf05fcb8"
+        "sha256": "896ab492202b4a0e3a327cf3281b40a160851d2722a1ac7553253922abb63343"
       },
       "stage": "primary"
     }

@@ -20,6 +20,8 @@ from typing import Any
 
 import yaml
 
+from twen.source_identity import twen_source_tree_sha256
+
 ROOT = Path(__file__).resolve().parents[1]
 BASE_RECIPE = ROOT / "locks/base-data-sources-v4.json"
 BASE_CONFIG = ROOT / "configs/base/dense-v4-16m-smoke.yaml"
@@ -32,6 +34,7 @@ CAPACITY_ATTESTATION = ROOT / "locks/base-data-sources-v4-250m.capacity-attestat
 BLOCKED_CONFIG = ROOT / "configs/base/dense-v4-250m-pilot.blocked.yaml"
 READINESS = ROOT / "locks/base-dense-v4-250m-pilot.readiness.json"
 CALIBRATION_CONFIG = ROOT / "configs/base/dense-v4-13m-low-lr-calibration.yaml"
+GOVERNED_CONTROLLER = ROOT / "scripts/govern_v4_training.py"
 
 MATERIALIZATION_PROFILE = "materialization"
 PRIMARY_TRAINING_TOKENS = 225_000_000
@@ -68,12 +71,53 @@ PAUSE_EVALUATION_TOKENS = (
     250_000_000,
 )
 REQUIRED_ADDITIONAL_VALIDATION_SOURCES = (
+    "chinese_wikipedia_zh_20231101",
     "science_arxiv_open_permissive",
     "code_stackv2_edu_permissive",
     "multilingual_common_corpus_permissive",
     "education_libretexts_permissive",
     "public_domain_project_gutenberg",
 )
+WIKIPEDIA_SOURCE_ID = "chinese_wikipedia_zh_20231101"
+WIKIPEDIA_LICENSE = "CC-BY-SA-3.0 AND GFDL"
+WIKIPEDIA_ATTRIBUTION_FIELDS = ("id", "url", "title")
+WIKIPEDIA_SOURCE_TEMPLATE = {
+    "source_id": WIKIPEDIA_SOURCE_ID,
+    "origin_group": "new",
+    "category": "chinese_general",
+    "repo_id": "wikimedia/wikipedia",
+    "revision": "b04c8d1ceb2f5cd4588862100d08de323dccfbaa",
+    "config": "20231101.zh",
+    "split": "train",
+    "storage_format": "parquet",
+    "license_declaration": WIKIPEDIA_LICENSE,
+    "license_scope": (
+        "Chinese Wikipedia snapshot admitted only by the formal-v4 "
+        "source-specific share-alike exception; page attribution is mandatory."
+    ),
+    "card_url": (
+        "https://huggingface.co/datasets/wikimedia/wikipedia/blob/"
+        "b04c8d1ceb2f5cd4588862100d08de323dccfbaa/README.md"
+    ),
+    "gated": False,
+    "trust_remote_code": False,
+    "text_field": "text",
+    "stable_id_fields": ["id"],
+    "split_group_fields": ["id"],
+    "required_fields": ["id", "url", "title", "text"],
+    "attribution_fields": list(WIKIPEDIA_ATTRIBUTION_FIELDS),
+    "min_characters": 200,
+    "max_document_tokens": 32768,
+    "share_alike_exception": {
+        "exception_id": "formal-v4-wikipedia-zh-20231101-share-alike-r1",
+        "declared_license": WIKIPEDIA_LICENSE,
+        "scope": "formal-v4-250m-primary-and-cooldown-only",
+        "materialization_allowed": True,
+        "attribution_manifest_required": True,
+        "attribution_fields": list(WIKIPEDIA_ATTRIBUTION_FIELDS),
+        "authorizes_training": False,
+    },
+}
 
 
 def _formal_training_contract() -> dict[str, Any]:
@@ -123,7 +167,10 @@ def _formal_training_contract() -> dict[str, Any]:
 
 RETENTION = {
     "english_fineweb_edu_dedup": (0.9499, "base-v4-smoke-r3-r4-governance"),
-    "chinese_fineweb2_cmn_hani": (0.8702, "base-v4-smoke-r3-r4-governance"),
+    WIKIPEDIA_SOURCE_ID: (
+        0.90,
+        "wikipedia-zh-20231101-current-round-measured-retention-20260727",
+    ),
     "math_finemath_4plus": (0.7374, "base-v4-smoke-r3-r4-governance"),
     "code_github_clean_allowlisted": (0.7585, "base-v4-smoke-r3-r4-governance"),
     "science_cosmopedia_openstax": (0.8577, "base-v4-smoke-r3-r4-governance"),
@@ -142,7 +189,7 @@ RETENTION = {
 }
 
 PRIMARY_MIX = {
-    "chinese_fineweb2_cmn_hani": 2400,
+    WIKIPEDIA_SOURCE_ID: 2400,
     "english_fineweb_edu_dedup": 2500,
     "math_finemath_4plus": 1400,
     "code_github_clean_allowlisted": 900,
@@ -154,7 +201,7 @@ PRIMARY_MIX = {
 }
 
 COOLDOWN_MIX = {
-    "chinese_fineweb2_cmn_hani": 2500,
+    WIKIPEDIA_SOURCE_ID: 2500,
     "math_finemath_4plus": 2200,
     "science_arxiv_open_permissive": 2200,
     "science_cosmopedia_openstax": 1000,
@@ -165,10 +212,10 @@ COOLDOWN_MIX = {
 }
 
 ALTERNATE_FILES = {
-    "chinese_fineweb2_cmn_hani": {
-        "path": "data/cmn_Hani/train/004_00072.parquet",
-        "size": 1_183_319_384,
-        "sha256": "1a12f849443704a260195472bfd4d047d22a0e4db58fce66d870a443e6ce85be",
+    WIKIPEDIA_SOURCE_ID: {
+        "path": "20231101.zh/train-00003-of-00006.parquet",
+        "size": 262_039_932,
+        "sha256": "4884e4933fa91f46dc9bf711db8be07f368da59b8cfc2e00e895a65a3284cbb1",
     },
     "math_finemath_4plus": {
         "path": "finemath-4plus/train-00061-of-00064.parquet",
@@ -198,11 +245,16 @@ ALTERNATE_FILES = {
 }
 
 PRIMARY_FILES = {
+    WIKIPEDIA_SOURCE_ID: {
+        "path": "20231101.zh/train-00001-of-00006.parquet",
+        "size": 263_629_009,
+        "sha256": "038b08e5aae38b5a1671794cee3fa0d4952c0d00fa0890a903d2de3f3fe5f703",
+    },
     "science_arxiv_open_permissive": {
         "path": "arxiv-papers-0005.json.gz",
         "size": 842_526_499,
         "sha256": "f54481c7318b01aa8e459d1da519d839ed2af694fd9a2c33b86d3b8be63e7470",
-    }
+    },
 }
 
 
@@ -236,6 +288,7 @@ def _make_recipe(
     if sum(mix.values()) != 10_000:
         raise ValueError(f"{stage} mix does not total 10,000 basis points")
     source_templates = {str(source["source_id"]): source for source in base["sources"]}
+    source_templates[WIKIPEDIA_SOURCE_ID] = WIKIPEDIA_SOURCE_TEMPLATE
     sources: list[dict[str, Any]] = []
     capacity_rows: list[dict[str, Any]] = []
     for source_id, basis_points in mix.items():
@@ -277,7 +330,7 @@ def _make_recipe(
         )
 
     recipe = copy.deepcopy(base)
-    recipe["recipe_id"] = f"base-v4-250m-{stage}-20260727-r1"
+    recipe["recipe_id"] = f"base-v4-250m-{stage}-20260727-r2"
     recipe["activation"] = {
         **recipe["activation"],
         "reason": (
@@ -315,6 +368,33 @@ def _make_recipe(
         **recipe["mix_contract"],
         "existing_sources_basis_points": existing_basis_points,
         "new_sources_basis_points": 10_000 - existing_basis_points,
+    }
+    recipe["license_policy"] = {
+        **recipe["license_policy"],
+        "source_specific_share_alike_exceptions": [
+            {
+                "exception_id": "formal-v4-wikipedia-zh-20231101-share-alike-r1",
+                "source_id": WIKIPEDIA_SOURCE_ID,
+                "declared_license": WIKIPEDIA_LICENSE,
+                "scope": f"formal-v4-250m-{stage}-only",
+                "overrides_excluded_families": ["cc-by-sa", "gfdl"],
+                "attribution_manifest_required": True,
+                "attribution_fields": list(WIKIPEDIA_ATTRIBUTION_FIELDS),
+                "authorizes_training": False,
+            }
+        ],
+        "exception_precedence": (
+            "source-specific exceptions override excluded families only for the "
+            "listed immutable source identity; final launch authorization remains separate"
+        ),
+    }
+    recipe["attribution_contract"] = {
+        "manifest_required": True,
+        "source_id": WIKIPEDIA_SOURCE_ID,
+        "fields": list(WIKIPEDIA_ATTRIBUTION_FIELDS),
+        "retain_with_prepared_corpus": True,
+        "required_before_launch": True,
+        "authorizes_training": False,
     }
     recipe["sources"] = sources
     recipe["stage_contract"] = {
@@ -481,6 +561,67 @@ def _pending_formal_validation_gate() -> dict[str, Any]:
             "checkpoint_complete_sha256": V3_FINAL_COMPLETE_SHA256,
             "passed": False,
         },
+        "passed": False,
+        "authorizes_training": False,
+    }
+
+
+def _pending_chinese_semantic_quality_gate() -> dict[str, Any]:
+    return {
+        "required": True,
+        "status": "pending_authenticated_chinese_semantic_quality_audit",
+        "source_id": WIKIPEDIA_SOURCE_ID,
+        "required_bundle": {
+            "manifest_kind": "twen_v4_chinese_semantic_noise_bundle",
+            "complete_kind": "twen_v4_chinese_semantic_noise_complete",
+            "attestation_kind": "twen_v4_chinese_semantic_noise_attestation",
+        },
+        "required_gates": {
+            "all_selected_shards_authenticated": True,
+            "complete_streaming_scan": True,
+            "high_precision_conversion_documents_eq": 0,
+            "malformed_punctuation_documents_eq": 0,
+            "risk_samples_per_phase_gte": 32,
+            "control_samples_per_phase_gte": 32,
+            "reviewer_placeholder_forbidden": True,
+            "reviewed_at_timezone_aware_iso8601_required": True,
+            "manual_review_passed": True,
+        },
+        "observed": None,
+        "passed": False,
+        "authorizes_training": False,
+    }
+
+
+def _pending_wikipedia_license_gate() -> dict[str, Any]:
+    contract = {
+        "source_id": WIKIPEDIA_SOURCE_ID,
+        "repo_id": WIKIPEDIA_SOURCE_TEMPLATE["repo_id"],
+        "revision": WIKIPEDIA_SOURCE_TEMPLATE["revision"],
+        "declared_license": WIKIPEDIA_LICENSE,
+        "scope": "formal-v4-250m-primary-and-cooldown-only",
+        "attribution_fields": list(WIKIPEDIA_ATTRIBUTION_FIELDS),
+        "obligations": [
+            "retain the generated attribution manifests with the training evidence",
+            "document the CC-BY-SA-3.0/GFDL source in model and data reports",
+            "perform a separate final review of model/distribution compliance",
+        ],
+    }
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            contract,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    return {
+        "required": True,
+        "status": "pending_explicit_user_acceptance",
+        "contract": contract,
+        "contract_fingerprint": fingerprint,
+        "required_acknowledgement": f"ACCEPT V4 WIKIPEDIA LICENSE {fingerprint}",
+        "observed_acknowledgement": None,
         "passed": False,
         "authorizes_training": False,
     }
@@ -726,17 +867,14 @@ def main() -> int:
         "per-source governed unique capacity has not been bound into final prepared corpora",
         "primary/cooldown stable-ID exact and near disjointness has not passed",
         "13M low-LR calibration COMPLETE and authenticated quality reports are pending",
+        "Wikipedia CC-BY-SA-3.0/GFDL attribution and share-alike acceptance is pending",
         (
             "formal train/validation union disjointness and the authenticated "
             "v3-final frozen-validation baseline are pending"
         ),
-        (
-            "external governed pause/evaluation controller is not implemented; "
-            "the documented train command does not auto-pause or run validation"
-        ),
         "final launch config and authenticated launch authorization have not been generated",
         "ArXiv post-filter/refill versioned-license yield is not bound into final prepared data",
-        "Chinese semantic conversion noise remains a manual/statistical review gate",
+        "Chinese Wikipedia semantic quality audit is pending",
         ("frozen validation does not yet cover ArXiv and every newly introduced formal source"),
     ]
     if unresolved_locks:
@@ -748,6 +886,7 @@ def main() -> int:
         "schema_version": 1,
         "kind": "twen_v4_250m_pilot_readiness",
         "launch_enabled": False,
+        "authorizes_training": False,
         "training_started": False,
         "config_path": str(BLOCKED_CONFIG.relative_to(ROOT)),
         "config_sha256": _sha256(BLOCKED_CONFIG),
@@ -762,6 +901,8 @@ def main() -> int:
                 "runs/base-dense-v4-13m-low-lr-calibration",
             ],
         },
+        "wikipedia_license_gate": _pending_wikipedia_license_gate(),
+        "chinese_semantic_quality_gate": _pending_chinese_semantic_quality_gate(),
         "calibration_gate": _pending_calibration_gate(),
         "formal_validation_gate": _pending_formal_validation_gate(),
         "pause_evaluation_policy": {
@@ -771,7 +912,7 @@ def main() -> int:
                 "first committed optimizer batch at or above each threshold"
             ),
             "enforcement": "external_governed_controller",
-            "controller_implemented": False,
+            "controller_implemented": True,
             "current_launch_command_auto_pauses": False,
             "current_launch_command_runs_validation": False,
             "required_additional_validation_sources": list(REQUIRED_ADDITIONAL_VALIDATION_SOURCES),
@@ -814,11 +955,17 @@ def main() -> int:
         "launch_command_capabilities": {
             "current_blocked_config_rejects_training": True,
             "starts_training_when_explicitly_invoked": False,
-            "automatically_pauses_at_policy_thresholds": False,
-            "automatically_runs_checkpoint_validation": False,
-            "automatically_enforces_post_launch_hard_stops": False,
+            "automatically_pauses_at_policy_thresholds": True,
+            "automatically_runs_checkpoint_validation": True,
+            "automatically_enforces_post_launch_hard_stops": True,
         },
-        "launch_command_status": "pending_final_config_authorization_and_controller",
+        "governed_controller": {
+            "path": str(GOVERNED_CONTROLLER.relative_to(ROOT)),
+            "sha256": _sha256(GOVERNED_CONTROLLER),
+            "twen_source_tree_sha256": twen_source_tree_sha256(),
+            "implemented": True,
+        },
+        "launch_command_status": "pending_final_config_authorization",
         "launch_command_after_all_gates_pass": None,
     }
     _write_json(READINESS, readiness)

@@ -43,7 +43,7 @@ NUMERIC_COMPARISON_FIELDS = (
 EXPECTED_PHASE_SOURCES = {
     "primary": frozenset(
         {
-            "chinese_fineweb2_cmn_hani",
+            "chinese_wikipedia_zh_20231101",
             "english_fineweb_edu_dedup",
             "math_finemath_4plus",
             "code_github_clean_allowlisted",
@@ -56,7 +56,7 @@ EXPECTED_PHASE_SOURCES = {
     ),
     "cooldown": frozenset(
         {
-            "chinese_fineweb2_cmn_hani",
+            "chinese_wikipedia_zh_20231101",
             "math_finemath_4plus",
             "science_arxiv_open_permissive",
             "science_cosmopedia_openstax",
@@ -69,6 +69,7 @@ EXPECTED_PHASE_SOURCES = {
 }
 ADDITIONAL_SOURCES = frozenset(
     {
+        "chinese_wikipedia_zh_20231101",
         "science_arxiv_open_permissive",
         "code_stackv2_edu_permissive",
         "multilingual_common_corpus_permissive",
@@ -86,6 +87,9 @@ LEGACY_SOURCES = frozenset(
         "science_cosmopedia_stanford",
     }
 )
+FORMAL_SOURCE_REPLACEMENTS = {
+    "chinese_fineweb2_cmn_hani": "chinese_wikipedia_zh_20231101",
+}
 
 
 class FormalValidationError(ValueError):
@@ -708,6 +712,12 @@ def _legacy_comparison(
     result: list[dict[str, Any]] = []
     for legacy_row in legacy["sources"]:
         source = str(legacy_row["source"])
+        if source not in current:
+            if source not in FORMAL_SOURCE_REPLACEMENTS:
+                raise FormalValidationError(
+                    f"formal validation unexpectedly removed legacy source {source}"
+                )
+            continue
         formal = current[source]
         delta = float(formal["mean_nll"]) - float(legacy_row["mean_nll"])
         result.append(
@@ -720,6 +730,43 @@ def _legacy_comparison(
                 "formal_predicted_tokens": int(formal["predicted_tokens"]),
                 "comparable_as_model_delta": False,
                 "reason": "same checkpoint, different frozen-validation corpus",
+            }
+        )
+    return result
+
+
+def _source_replacements(
+    combined: Sequence[Mapping[str, Any]],
+    legacy: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    current = {str(row["source"]): row for row in combined}
+    previous = {str(row["source"]): row for row in legacy["sources"]}
+    result: list[dict[str, Any]] = []
+    for legacy_source, formal_source in sorted(FORMAL_SOURCE_REPLACEMENTS.items()):
+        if legacy_source not in previous or legacy_source in current:
+            raise FormalValidationError(
+                f"legacy replacement source state is invalid: {legacy_source}"
+            )
+        if formal_source not in current or formal_source in previous:
+            raise FormalValidationError(
+                f"formal replacement source state is invalid: {formal_source}"
+            )
+        legacy_row = previous[legacy_source]
+        formal_row = current[formal_source]
+        result.append(
+            {
+                "legacy_source": legacy_source,
+                "formal_source": formal_source,
+                "legacy_mean_nll": float(legacy_row["mean_nll"]),
+                "formal_mean_nll": float(formal_row["mean_nll"]),
+                "legacy_predicted_tokens": int(legacy_row["predicted_tokens"]),
+                "formal_predicted_tokens": int(formal_row["predicted_tokens"]),
+                "comparable_as_model_delta": False,
+                "formal_minus_legacy_nll": None,
+                "reason": (
+                    "source replacement and different frozen-validation corpus; "
+                    "no NLL delta is claimed"
+                ),
             }
         )
     return result
@@ -874,6 +921,7 @@ def build_summary(
             "sources": combined,
         },
         "legacy_six_corpus_shift_comparison": _legacy_comparison(combined, legacy),
+        "legacy_source_replacements": _source_replacements(combined, legacy),
         "gate": {
             "passed": validation_disjointness["passed"] is True,
             "conditions": {
@@ -922,6 +970,18 @@ def _markdown(summary: Mapping[str, Any]) -> str:
         )
         for row in summary["legacy_six_corpus_shift_comparison"]
     ]
+    replacement_rows = [
+        _table_row(
+            (
+                row["legacy_source"],
+                row["formal_source"],
+                f"{float(row['legacy_mean_nll']):.6f}",
+                f"{float(row['formal_mean_nll']):.6f}",
+                "不可比较",
+            )
+        )
+        for row in summary["legacy_source_replacements"]
+    ]
     phase_rows = [
         _table_row(
             (
@@ -961,10 +1021,10 @@ mean NLL `{float(combined["mean_nll"]):.6f}`，PPL `{float(combined["perplexity"
 |---|---|---:|---:|---:|
 {chr(10).join(source_rows)}
 
-新增来源 ArXiv、StackV2、CommonCorpus、LibreTexts、Gutenberg 均有独立统计；既有中文、
-英文、数学、GitHub code、OpenStax、Stanford 六来源也继续保留。
+新增来源 Wikipedia、ArXiv、StackV2、CommonCorpus、LibreTexts、Gutenberg
+均有独立统计；旧六来源中的英文、数学、GitHub code、OpenStax、Stanford 五来源继续保留。
 
-## 既有六来源的语料迁移对照
+## 与旧基线共享的五个来源
 
 | source | 旧 frozen NLL | 正式 frozen NLL | 正式−旧 |
 |---|---:|---:|---:|
@@ -974,13 +1034,22 @@ mean NLL `{float(combined["mean_nll"]):.6f}`，PPL `{float(combined["perplexity"
 提升或退化。后续 v4 checkpoint 必须复用本报告两份完全相同的 prepared manifest，才可把
 NLL 差异解释为 checkpoint 差异。
 
+## 中文来源替换
+
+| 旧来源 | 正式来源 | 旧 frozen NLL | 正式 frozen NLL | delta |
+|---|---|---:|---:|---|
+{chr(10).join(replacement_rows)}
+
+FineWeb2 中文与 Wikipedia 是不同来源、不同 held-out 语料；上表仅披露替换及各自绝对
+NLL，不计算、也不暗示可比较的模型质量 delta。
+
 ## 门禁边界
 
 - prepared manifest、dataset fingerprint、source map、audit attestation 和每个 evaluation
   shard 的 COMPLETE/输出 SHA 均已重新认证；
 - primary+cooldown validation union 与两阶段 train union 的 stable-ID、normalized-exact、
   MinHash near-duplicate（estimated Jaccard ≥ 0.8）隔离证明已通过，validation 内部同样通过；
-- primary 与 cooldown 都完整覆盖其 recipe 来源，五个新增来源全部存在；
+- primary 与 cooldown 都完整覆盖其 recipe 来源，六个新增来源全部存在；
 - 两次 evaluation 的 v3 checkpoint state 及保存时 lineage 与旧六来源基线一致；
 - 本工具不运行 forward、不修改输入、不启动训练；`gate.authorizes_training=false`。
 """

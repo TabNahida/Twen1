@@ -225,7 +225,10 @@ def _rewrite_as_historical_prepared(
 
 
 def _write_historical_prepared_fixture(root: Path) -> tuple[Path, str]:
-    extracted = _write_extracted_fixture(root / "extracted")
+    extracted = _write_extracted_fixture(
+        root / "extracted",
+        ready_for_training=True,
+    )
     registry, benchmark_root = _write_benchmark_registry(root)
     audit = build_base_audit_attestation(
         extracted,

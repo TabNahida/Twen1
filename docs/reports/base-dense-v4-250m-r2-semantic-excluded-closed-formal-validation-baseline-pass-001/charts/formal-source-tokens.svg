@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1525" height="720" viewBox="0 0 1525 720" role="img">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>text{font-family:ui-sans-serif,system-ui,sans-serif;fill:#111827}.grid{stroke:#e5e7eb;stroke-width:1}.axis{stroke:#374151;stroke-width:1.4}.title{font-size:24px;font-weight:700}.tick{font-size:12px;fill:#4b5563}.label{font-size:14px;font-weight:600}.legend{font-size:13px}</style>
+<text class="title" x="120.0" y="38">Governed v4 formal validation coverage</text>
+<line class="grid" x1="120.0" y1="565.00" x2="1480.0" y2="565.00"/>
+<text class="tick" x="110.0" y="569.00" text-anchor="end">-49200.60000</text>
+<line class="grid" x1="120.0" y1="485.00" x2="1480.0" y2="485.00"/>
+<text class="tick" x="110.0" y="489.00" text-anchor="end">+35533.76667</text>
+<line class="grid" x1="120.0" y1="405.00" x2="1480.0" y2="405.00"/>
+<text class="tick" x="110.0" y="409.00" text-anchor="end">+120268.13333</text>
+<line class="grid" x1="120.0" y1="325.00" x2="1480.0" y2="325.00"/>
+<text class="tick" x="110.0" y="329.00" text-anchor="end">+205002.50000</text>
+<line class="grid" x1="120.0" y1="245.00" x2="1480.0" y2="245.00"/>
+<text class="tick" x="110.0" y="249.00" text-anchor="end">+289736.86667</text>
+<line class="grid" x1="120.0" y1="165.00" x2="1480.0" y2="165.00"/>
+<text class="tick" x="110.0" y="169.00" text-anchor="end">+374471.23333</text>
+<line class="grid" x1="120.0" y1="85.00" x2="1480.0" y2="85.00"/>
+<text class="tick" x="110.0" y="89.00" text-anchor="end">+459205.60000</text>
+<line class="axis" x1="120.0" y1="85.0" x2="120.0" y2="565.0"/>
+<line x1="120.0" y1="518.55" x2="1480.0" y2="518.55" stroke="#111827" stroke-width="2"/>
+<text class="label" x="28" y="325.00" text-anchor="middle" transform="rotate(-90 28 325.00)">Predicted tokens</text>
+<rect x="144.43" y="178.04" width="74.78" height="340.51" fill="#2563eb" opacity="0.88"/>
+<text class="tick" x="181.82" y="171.04" text-anchor="middle">+360657.00000</text>
+<text class="tick" x="181.82" y="592" text-anchor="end" transform="rotate(-28 181.82 592)">chinese_wikipedia_zh_20231101</text>
+<rect x="268.07" y="417.13" width="74.78" height="101.42" fill="#2563eb" opacity="0.88"/>
+<text class="tick" x="305.45" y="410.13" text-anchor="middle">+107425.00000</text>
+<text class="tick" x="305.45" y="592" text-anchor="end" transform="rotate(-28 305.45 592)">code_github_clean_allowlisted</text>
+<rect x="391.70" y="471.21" width="74.78" height="47.34" fill="#2563eb" opacity="0.88"/>
+<text class="tick" x="429.09" y="464.21" text-anchor="middle">+50145.00000</text>
+<text class="tick" x="429.09" y="592" text-anchor="end" transform="rotate(-28 429.09 592)">code_stackv2_edu_permissive</text>
+<rect x="515.34" y="506.44" width="74.78" height="12.11" fill="#2563eb" opacity="0.88"/>
+<text class="tick" x="552.73" y="499.44" text-anchor="middle">+12830.00000</text>
+<text class="tick" x="552.73" y="592" text-anchor="end" transform="rotate(-28 552.73 592)">education_libretexts_permissive</text>
+<rect x="638.98" y="248.83" width="74.78" height="269.72" fill="#2563eb" opacity="0.88"/>
+<text class="tick" x="676.36" y="241.83" text-anchor="middle">+285680.00000</text>
+<text class="tick" x="676.36" y="592" text-anchor="end" transform="rotate(-28 676.36 592)">english_fineweb_edu_dedup</text>
+<rect x="762.61" y="294.72" width="74.78" height="223.83" fill="#2563eb" opacity="0.88"/>
+<text class="tick" x="800.00" y="287.72" text-anchor="middle">+237074.00000</text>
+<text class="tick" x="800.00" y="592" text-anchor="end" transform="rotate(-28 800.00 592)">math_finemath_4plus</text>
+<rect x="886.25" y="464.34" width="74.78" height="54.21" fill="#2563eb" opacity="0.88"/>
+<text class="tick" x="923.64" y="457.34" text-anchor="middle">+57419.00000</text>
+<text class="tick" x="923.64" y="592" text-anchor="end" transform="rotate(-28 923.64 592)">multilingual_common_corpus_permissive</text>
+<rect x="1009.89" y="452.05" width="74.78" height="66.50" fill="#2563eb" opacity="0.88"/>
+<text class="tick" x="1047.27" y="445.05" text-anchor="middle">+70436.00000</text>
+<text class="tick" x="1047.27" y="592" text-anchor="end" transform="rotate(-28 1047.27 592)">public_domain_project_gutenberg</text>
+<rect x="1133.52" y="131.45" width="74.78" height="387.10" fill="#2563eb" opacity="0.88"/>
+<text class="tick" x="1170.91" y="124.45" text-anchor="middle">+410005.00000</text>
+<text class="tick" x="1170.91" y="592" text-anchor="end" transform="rotate(-28 1170.91 592)">science_arxiv_open_permissive</text>
+<rect x="1257.16" y="448.37" width="74.78" height="70.18" fill="#2563eb" opacity="0.88"/>
+<text class="tick" x="1294.55" y="441.37" text-anchor="middle">+74330.00000</text>
+<text class="tick" x="1294.55" y="592" text-anchor="end" transform="rotate(-28 1294.55 592)">science_cosmopedia_openstax</text>
+<rect x="1380.79" y="464.99" width="74.78" height="53.56" fill="#2563eb" opacity="0.88"/>
+<text class="tick" x="1418.18" y="457.99" text-anchor="middle">+56729.00000</text>
+<text class="tick" x="1418.18" y="592" text-anchor="end" transform="rotate(-28 1418.18 592)">science_cosmopedia_stanford</text>
+<rect x="120.00" y="660" width="18" height="12" fill="#2563eb"/>
+<text class="legend" x="145.00" y="671">predicted tokens</text>
+<text class="tick" x="1480.0" y="704" text-anchor="end">Δ = candidate − baseline；负值更好</text>
+</svg>

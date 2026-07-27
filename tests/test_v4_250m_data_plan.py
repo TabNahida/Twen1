@@ -10,7 +10,10 @@ import pytest
 import yaml
 
 from twen.config import ConfigError, load_train_config
-from twen.data.sources import load_base_data_recipe, load_resolved_source_lock
+from twen.data.sources import (
+    load_base_data_recipe,
+    load_resolved_source_lock,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 PRIMARY_RECIPE = ROOT / "locks/base-data-sources-v4-primary.json"
@@ -22,6 +25,10 @@ READINESS = ROOT / "locks/base-dense-v4-250m-pilot.readiness.json"
 BLOCKED_CONFIG = ROOT / "configs/base/dense-v4-250m-pilot.blocked.yaml"
 CALIBRATION_CONFIG = ROOT / "configs/base/dense-v4-13m-low-lr-calibration.yaml"
 V3_FINAL_COMPLETE_SHA256 = "3a21a50e35de74ecd0ff5b8f00aa29ed6c83f746fc2cf97d4da6b0536262b6c7"
+WIKIPEDIA_SOURCE_ID = "chinese_wikipedia_zh_20231101"
+WIKIPEDIA_REVISION = "b04c8d1ceb2f5cd4588862100d08de323dccfbaa"
+WIKIPEDIA_LICENSE = "CC-BY-SA-3.0 AND GFDL"
+WIKIPEDIA_ATTRIBUTION_FIELDS = ["id", "url", "title"]
 
 
 def _json(path: Path) -> dict[str, object]:
@@ -37,13 +44,21 @@ def test_v4_250m_recipes_are_valid_remote_bound_and_phase_specific() -> None:
     assert cooldown.profiles == {"materialization": 25_270_000}
     assert sum(int(source.mix_basis_points or 0) for source in primary.sources) == 10_000
     assert sum(int(source.mix_basis_points or 0) for source in cooldown.sources) == 10_000
-    assert load_resolved_source_lock(PRIMARY_LOCK, primary).sources
-    assert load_resolved_source_lock(COOLDOWN_LOCK, cooldown).sources
+    for lock_path, recipe in ((PRIMARY_LOCK, primary), (COOLDOWN_LOCK, cooldown)):
+        assert load_resolved_source_lock(lock_path, recipe).sources
 
     primary_by_id = {source.source_id: source for source in primary.sources}
     cooldown_by_id = {source.source_id: source for source in cooldown.sources}
     assert "science_pes2o_open" not in primary_by_id
     assert "science_pes2o_open" not in cooldown_by_id
+    assert "chinese_fineweb2_cmn_hani" not in primary_by_id
+    assert "chinese_fineweb2_cmn_hani" not in cooldown_by_id
+    assert primary_by_id[WIKIPEDIA_SOURCE_ID].locked_files[0].path == (
+        "20231101.zh/train-00001-of-00006.parquet"
+    )
+    assert cooldown_by_id[WIKIPEDIA_SOURCE_ID].locked_files[0].path == (
+        "20231101.zh/train-00003-of-00006.parquet"
+    )
     assert primary_by_id["science_arxiv_open_permissive"].locked_files[0].path == (
         "arxiv-papers-0005.json.gz"
     )
@@ -76,6 +91,81 @@ def test_v4_250m_raw_quotas_use_per_source_retention_and_safety() -> None:
         assert float(
             by_id["science_arxiv_open_permissive"]["governance_retention_rate"]
         ) == pytest.approx(0.4534)
+        wikipedia = by_id[WIKIPEDIA_SOURCE_ID]
+        assert float(wikipedia["governance_retention_rate"]) == pytest.approx(0.90)
+        assert wikipedia["retention_evidence"] == (
+            "wikipedia-zh-20231101-current-round-measured-retention-20260727"
+        )
+
+
+def test_v4_250m_wikipedia_identity_license_and_attribution_are_explicit() -> None:
+    expected_files = {
+        PRIMARY_RECIPE: {
+            "path": "20231101.zh/train-00001-of-00006.parquet",
+            "size": 263_629_009,
+            "sha256": "038b08e5aae38b5a1671794cee3fa0d4952c0d00fa0890a903d2de3f3fe5f703",
+        },
+        COOLDOWN_RECIPE: {
+            "path": "20231101.zh/train-00003-of-00006.parquet",
+            "size": 262_039_932,
+            "sha256": "4884e4933fa91f46dc9bf711db8be07f368da59b8cfc2e00e895a65a3284cbb1",
+        },
+    }
+    for path, expected_file in expected_files.items():
+        recipe = _json(path)
+        assert str(recipe["recipe_id"]).endswith("-r2")
+        sources = {
+            str(source["source_id"]): source
+            for source in recipe["sources"]
+            if isinstance(source, dict)
+        }
+        assert "chinese_fineweb2_cmn_hani" not in sources
+        wikipedia = sources[WIKIPEDIA_SOURCE_ID]
+        assert wikipedia["repo_id"] == "wikimedia/wikipedia"
+        assert wikipedia["revision"] == WIKIPEDIA_REVISION
+        assert wikipedia["config"] == "20231101.zh"
+        assert wikipedia["locked_files"] == [expected_file]
+        assert wikipedia["file_patterns"] == [expected_file["path"]]
+        assert wikipedia["license_declaration"] == WIKIPEDIA_LICENSE
+        assert wikipedia["required_fields"] == ["id", "url", "title", "text"]
+        assert wikipedia["text_field"] == "text"
+        assert wikipedia["stable_id_fields"] == ["id"]
+        assert wikipedia["split_group_fields"] == ["id"]
+        assert wikipedia["attribution_fields"] == WIKIPEDIA_ATTRIBUTION_FIELDS
+        assert wikipedia["min_characters"] == 200
+        assert wikipedia["max_document_tokens"] == 32768
+        source_exception = wikipedia["share_alike_exception"]
+        assert source_exception["declared_license"] == WIKIPEDIA_LICENSE
+        assert source_exception["attribution_manifest_required"] is True
+        assert source_exception["authorizes_training"] is False
+
+        policy = recipe["license_policy"]
+        exceptions = policy["source_specific_share_alike_exceptions"]
+        assert exceptions == [
+            {
+                "attribution_fields": WIKIPEDIA_ATTRIBUTION_FIELDS,
+                "attribution_manifest_required": True,
+                "authorizes_training": False,
+                "declared_license": WIKIPEDIA_LICENSE,
+                "exception_id": "formal-v4-wikipedia-zh-20231101-share-alike-r1",
+                "overrides_excluded_families": ["cc-by-sa", "gfdl"],
+                "scope": (
+                    "formal-v4-250m-primary-only"
+                    if path == PRIMARY_RECIPE
+                    else "formal-v4-250m-cooldown-only"
+                ),
+                "source_id": WIKIPEDIA_SOURCE_ID,
+            }
+        ]
+        assert recipe["attribution_contract"] == {
+            "authorizes_training": False,
+            "fields": WIKIPEDIA_ATTRIBUTION_FIELDS,
+            "manifest_required": True,
+            "required_before_launch": True,
+            "retain_with_prepared_corpus": True,
+            "source_id": WIKIPEDIA_SOURCE_ID,
+        }
+        assert recipe["launch_policy"]["launch_enabled"] is False
 
 
 def test_v4_250m_capacity_attestation_is_complete_but_blocked() -> None:
@@ -177,6 +267,7 @@ def test_v4_250m_readiness_binds_current_blocked_config() -> None:
 
     readiness = _json(READINESS)
     assert readiness["launch_enabled"] is False
+    assert readiness["authorizes_training"] is False
     assert readiness["training_started"] is False
     assert readiness["resolved_lock_identities"]["primary"]["passed"] is True
     assert readiness["resolved_lock_identities"]["cooldown"]["passed"] is True
@@ -215,6 +306,44 @@ def test_v4_250m_readiness_binds_current_blocked_config() -> None:
         "runs/base-dense-v4-16m-smoke",
         "runs/base-dense-v4-13m-low-lr-calibration",
     ]
+    license_gate = readiness["wikipedia_license_gate"]
+    assert license_gate["required"] is True
+    assert license_gate["status"] == "pending_explicit_user_acceptance"
+    assert license_gate["contract"]["source_id"] == WIKIPEDIA_SOURCE_ID
+    assert license_gate["contract"]["revision"] == WIKIPEDIA_REVISION
+    assert license_gate["contract"]["declared_license"] == WIKIPEDIA_LICENSE
+    assert license_gate["contract"]["attribution_fields"] == WIKIPEDIA_ATTRIBUTION_FIELDS
+    assert license_gate["required_acknowledgement"] == (
+        "ACCEPT V4 WIKIPEDIA LICENSE " + license_gate["contract_fingerprint"]
+    )
+    assert license_gate["observed_acknowledgement"] is None
+    assert license_gate["passed"] is False
+    assert license_gate["authorizes_training"] is False
+    semantic_gate = readiness["chinese_semantic_quality_gate"]
+    assert semantic_gate == {
+        "authorizes_training": False,
+        "observed": None,
+        "passed": False,
+        "required": True,
+        "required_bundle": {
+            "attestation_kind": "twen_v4_chinese_semantic_noise_attestation",
+            "complete_kind": "twen_v4_chinese_semantic_noise_complete",
+            "manifest_kind": "twen_v4_chinese_semantic_noise_bundle",
+        },
+        "required_gates": {
+            "all_selected_shards_authenticated": True,
+            "complete_streaming_scan": True,
+            "control_samples_per_phase_gte": 32,
+            "high_precision_conversion_documents_eq": 0,
+            "malformed_punctuation_documents_eq": 0,
+            "manual_review_passed": True,
+            "reviewed_at_timezone_aware_iso8601_required": True,
+            "reviewer_placeholder_forbidden": True,
+            "risk_samples_per_phase_gte": 32,
+        },
+        "source_id": WIKIPEDIA_SOURCE_ID,
+        "status": "pending_authenticated_chinese_semantic_quality_audit",
+    }
     calibration = readiness["calibration_gate"]
     assert calibration["required"] is True
     assert calibration["passed"] is False
@@ -269,27 +398,36 @@ def test_v4_250m_readiness_binds_current_blocked_config() -> None:
         250_000_000,
     ]
     assert evaluation["enforcement"] == "external_governed_controller"
-    assert evaluation["controller_implemented"] is False
+    assert evaluation["controller_implemented"] is True
     assert evaluation["current_launch_command_auto_pauses"] is False
     assert evaluation["current_launch_command_runs_validation"] is False
     assert "science_arxiv_open_permissive" in (evaluation["required_additional_validation_sources"])
+    assert WIKIPEDIA_SOURCE_ID in evaluation["required_additional_validation_sources"]
     assert evaluation["hard_stop"]["scale_relative_l2_gt"] == pytest.approx(0.05)
     assert readiness["launch_command_capabilities"] == {
-        "automatically_enforces_post_launch_hard_stops": False,
-        "automatically_pauses_at_policy_thresholds": False,
-        "automatically_runs_checkpoint_validation": False,
+        "automatically_enforces_post_launch_hard_stops": True,
+        "automatically_pauses_at_policy_thresholds": True,
+        "automatically_runs_checkpoint_validation": True,
         "current_blocked_config_rejects_training": True,
         "starts_training_when_explicitly_invoked": False,
     }
+    controller = readiness["governed_controller"]
+    controller_path = ROOT / "scripts/govern_v4_training.py"
+    assert controller["implemented"] is True
+    assert controller["path"] == "scripts/govern_v4_training.py"
+    assert controller["sha256"] == hashlib.sha256(controller_path.read_bytes()).hexdigest()
+    assert len(controller["twen_source_tree_sha256"]) == 64
     assert readiness["launch_command_after_all_gates_pass"] is None
-    assert (
-        readiness["launch_command_status"]
-        == "pending_final_config_authorization_and_controller"
-    )
+    assert readiness["launch_command_status"] == "pending_final_config_authorization"
     assert readiness["blockers"]
+    assert not any(
+        "remote-resolved locks are unbound" in blocker for blocker in readiness["blockers"]
+    )
     assert any("13M low-LR calibration" in blocker for blocker in readiness["blockers"])
+    assert any("Wikipedia CC-BY-SA" in blocker for blocker in readiness["blockers"])
     assert any("formal train/validation" in blocker for blocker in readiness["blockers"])
-    assert any("external governed pause" in blocker for blocker in readiness["blockers"])
+    assert not any("external governed pause" in blocker for blocker in readiness["blockers"])
+    assert any("semantic quality audit" in blocker for blocker in readiness["blockers"])
     assert any("final launch config" in blocker for blocker in readiness["blockers"])
 
 

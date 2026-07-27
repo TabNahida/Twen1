@@ -1,6 +1,7 @@
 # v4 Base 文本数据源、schema v2 与治理运行手册
 
-状态：**16M smoke 已完成；正式中文 semantic-quality 门失败，全部 v4 启动已关闭**
+状态：**16M smoke 已完成；旧正式中文源已判失败，r2 Wikipedia 替换正在重新治理，
+全部 v4 启动仍关闭**
 
 对应 recipe：[`locks/base-data-sources-v4.json`](../locks/base-data-sources-v4.json)
 
@@ -10,6 +11,14 @@
 本方案面向纯文本 causal NTP + Qwen3.5 原生 MTP 的 v4 Base Dense Adapter
 训练。它不生成、下载或消费 9B teacher logits，也不启用 teacher KD、anchor KL
 或 teacher hidden alignment。
+
+本文件前半保留 16M smoke 使用的历史 r3 recipe 说明。正式 225M+25M r2 recipe 是
+[`locks/base-data-sources-v4-primary.json`](../locks/base-data-sources-v4-primary.json)
+与
+[`locks/base-data-sources-v4-cooldown.json`](../locks/base-data-sources-v4-cooldown.json)：
+它们已完全移除 `chinese_fineweb2_cmn_hani`，改用不同固定分片的
+`chinese_wikipedia_zh_20231101`。不得把下面的历史 smoke 比例或失败中文身份重新带回
+正式训练。
 
 recipe 使用稳定的 `schema_version: 2` 和
 `kind: twen_base_data_source_recipe_v2`。运行时现在已经实现并 fail-closed
@@ -487,7 +496,7 @@ calibration prepared 复用了同一污染中文来源，不能因为此前 gene
 就继续运行。替换中文来源、重新治理、重新 prepare 并取得新的数据身份后，才可重新
 发布 calibration profile。
 
-历史 13M 校准草案不再直接使用上述 16M smoke prepared identity：generic 扫描器对 filtered
+历史 13M 校准草案曾使用上述 16M smoke prepared identity：generic 扫描器对 filtered
 candidate/frozen corpus 重审的 quality-v3 attestation SHA256 为
 `73f973c34fff3d8035c72c0898b9ee3d27c2a98e74bdb068c817491157bc4986`，
 新 prepared manifest SHA256 为
@@ -496,7 +505,21 @@ candidate/frozen corpus 重审的 quality-v3 attestation SHA256 为
 5M warmup；250M 则使用独立的 Adapter `3e-5` / scale `3e-6` / 10M warmup
 合同，并始终从 v3 final model-only fork。正式暂停评测与新增来源 validation 门见
 [`V4_250M_PILOT_DATA_PLAN.zh-CN.md`](V4_250M_PILOT_DATA_PLAN.zh-CN.md)。
-上述 identity 现仅作失败分析的历史输入，不再表示 ready for launch。
+上述 identity 现仅作失败分析的历史输入，不再表示 ready for launch。当前 13M 配置已经
+改绑 formal-primary r2 prepared manifest
+`artifacts/data/base-v4-250m-primary-r2-semantic-excluded-closed-train-pass-001/manifest.json`
+（SHA256 `cf1d837e2130e1d5a045f151eddae5fb20250b44f037676c933b2c6ccfe75af8`）
+及其 source-map
+`d6620197c785464885461738727c320d8046c513b535090c7412615292c50efe`；
+正式语义审阅与 formal evidence closure 已通过；Wikipedia 许可确认和 calibration
+release gate 未通过前仍不可启动。
+
+正式 r2 选择中文 Wikipedia 的原因是：它在本轮三类候选中正文质量和 provenance 最清楚；
+Common Corpus 中文样本约 98% 为法院裁判文书并含 PII/采集站噪声，不能作为通用中文主源；
+IndustryCorpus2 教育 high 虽比 FineWeb2 干净，但公开子仓库缺少可独立核验的许可证声明。
+Wikipedia 的代价是 `CC-BY-SA-3.0/GFDL`，所以 r2 使用显式、仅限该 immutable source 的
+share-alike exception，强制保留条目 `id/url/title` attribution，并继续令
+`authorizes_training=false`。这不是把 copyleft 静默加入全局 permissive allowlist。
 
 ## 9. 明确排除的候选
 
@@ -507,7 +530,7 @@ candidate/frozen corpus 重审的 quality-v3 attestation SHA256 为
 | `EleutherAI/proof-pile-2` | 依赖 dataset script，viewer 返回 script unsupported；脚本中的数据 URL 硬编码 `main`，且底层许可不统一。 |
 | OpenCSG Chinese FineWeb Edu v2.x | Hub 的 Apache-2.0 tag 与 README 中 OpenCSG Community License、商业使用需邮件许可的要求冲突。 |
 | BAAI CCI3-HQ / IndustryCorpus2 | 主仓库 gated；ungated 行业子仓库缺少可核验的 README/license 声明。 |
-| `wikimedia/wikipedia` 中文 | 数据质量高，但本 recipe 默认排除 CC-BY-SA/GFDL，因此用 Common Corpus permissive sample 替代。 |
+| `wikimedia/wikipedia` 中文 | 历史 smoke recipe 未采用；正式 r2 已通过 source-specific share-alike exception 纳入，最终发布仍需显式许可确认。 |
 | `PleIAs/common_corpus` 完整仓库 | README 描述 2.27T token，但 default config 只绑定一个 sample；不得把完整规模宣传当作当前锁定输入规模。 |
 
 ## 10. 历史 500M formal 门（已由 250M 分阶段 pilot 取代）

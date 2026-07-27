@@ -1,0 +1,944 @@
+{
+  "checkpoint_state": {
+    "committed_tokens": 500009962,
+    "global_step": 1912,
+    "kind": "milestone",
+    "tag": "complete"
+  },
+  "combined": {
+    "input_tokens": 1723172,
+    "mean_nll": 1.944711523771315,
+    "nll_sum": 3350212.8833465576,
+    "perplexity": 6.991614649462535,
+    "predicted_tokens": 1722730,
+    "required_additional_sources": [
+      "chinese_wikipedia_zh_20231101",
+      "code_stackv2_edu_permissive",
+      "education_libretexts_permissive",
+      "multilingual_common_corpus_permissive",
+      "public_domain_project_gutenberg",
+      "science_arxiv_open_permissive"
+    ],
+    "required_additional_sources_present": true,
+    "sequences": 442,
+    "source_count": 11,
+    "sources": [
+      {
+        "input_tokens": 360749,
+        "mean_nll": 1.779889721667435,
+        "nll_sum": 641929.6873474121,
+        "perplexity": 5.929202519969041,
+        "phases": [
+          "primary",
+          "cooldown"
+        ],
+        "predicted_tokens": 360657,
+        "sequences": 92,
+        "shards": 6,
+        "source": "chinese_wikipedia_zh_20231101",
+        "source_group": "additional_v4"
+      },
+      {
+        "input_tokens": 107454,
+        "mean_nll": 1.1418951630498022,
+        "nll_sum": 122668.087890625,
+        "perplexity": 3.132699719723849,
+        "phases": [
+          "primary",
+          "cooldown"
+        ],
+        "predicted_tokens": 107425,
+        "sequences": 29,
+        "shards": 4,
+        "source": "code_github_clean_allowlisted",
+        "source_group": "legacy_six"
+      },
+      {
+        "input_tokens": 50158,
+        "mean_nll": 1.2935807642212585,
+        "nll_sum": 64866.607421875,
+        "perplexity": 3.6458180252610166,
+        "phases": [
+          "primary"
+        ],
+        "predicted_tokens": 50145,
+        "sequences": 13,
+        "shards": 2,
+        "source": "code_stackv2_edu_permissive",
+        "source_group": "additional_v4"
+      },
+      {
+        "input_tokens": 12834,
+        "mean_nll": 1.8734433133250925,
+        "nll_sum": 24036.277709960938,
+        "perplexity": 6.510676144861657,
+        "phases": [
+          "cooldown"
+        ],
+        "predicted_tokens": 12830,
+        "sequences": 4,
+        "shards": 1,
+        "source": "education_libretexts_permissive",
+        "source_group": "additional_v4"
+      },
+      {
+        "input_tokens": 285751,
+        "mean_nll": 2.681600253944536,
+        "nll_sum": 766079.560546875,
+        "perplexity": 14.608451833770411,
+        "phases": [
+          "primary"
+        ],
+        "predicted_tokens": 285680,
+        "sequences": 71,
+        "shards": 3,
+        "source": "english_fineweb_edu_dedup",
+        "source_group": "legacy_six"
+      },
+      {
+        "input_tokens": 237134,
+        "mean_nll": 1.6803412885284623,
+        "nll_sum": 398365.2306365967,
+        "perplexity": 5.367387486343531,
+        "phases": [
+          "primary",
+          "cooldown"
+        ],
+        "predicted_tokens": 237074,
+        "sequences": 60,
+        "shards": 5,
+        "source": "math_finemath_4plus",
+        "source_group": "legacy_six"
+      },
+      {
+        "input_tokens": 57434,
+        "mean_nll": 3.1344467755962135,
+        "nll_sum": 179976.79940795898,
+        "perplexity": 22.975921484947822,
+        "phases": [
+          "primary"
+        ],
+        "predicted_tokens": 57419,
+        "sequences": 15,
+        "shards": 1,
+        "source": "multilingual_common_corpus_permissive",
+        "source_group": "additional_v4"
+      },
+      {
+        "input_tokens": 70454,
+        "mean_nll": 2.830713290616881,
+        "nll_sum": 199384.12133789062,
+        "perplexity": 16.957552174556486,
+        "phases": [
+          "cooldown"
+        ],
+        "predicted_tokens": 70436,
+        "sequences": 18,
+        "shards": 1,
+        "source": "public_domain_project_gutenberg",
+        "source_group": "additional_v4"
+      },
+      {
+        "input_tokens": 410110,
+        "mean_nll": 1.8246239738358754,
+        "nll_sum": 748104.9523925781,
+        "perplexity": 6.200463044356217,
+        "phases": [
+          "primary",
+          "cooldown"
+        ],
+        "predicted_tokens": 410005,
+        "sequences": 105,
+        "shards": 11,
+        "source": "science_arxiv_open_permissive",
+        "source_group": "additional_v4"
+      },
+      {
+        "input_tokens": 74350,
+        "mean_nll": 1.5627636516750156,
+        "nll_sum": 116160.2222290039,
+        "perplexity": 4.771991159588747,
+        "phases": [
+          "primary",
+          "cooldown"
+        ],
+        "predicted_tokens": 74330,
+        "sequences": 20,
+        "shards": 4,
+        "source": "science_cosmopedia_openstax",
+        "source_group": "legacy_six"
+      },
+      {
+        "input_tokens": 56744,
+        "mean_nll": 1.5625400840096115,
+        "nll_sum": 88641.33642578125,
+        "perplexity": 4.770924415915009,
+        "phases": [
+          "primary",
+          "cooldown"
+        ],
+        "predicted_tokens": 56729,
+        "sequences": 15,
+        "shards": 4,
+        "source": "science_cosmopedia_stanford",
+        "source_group": "legacy_six"
+      }
+    ]
+  },
+  "evaluation_numeric_contract": {
+    "formal": {
+      "batch_size": 1,
+      "checkpoint_inference_lineage": {
+        "archived_config_sha256": "c44934dab4639befcc95aa1b505649a48d45c0c48b6a14ffcd0ec29bd1243de9",
+        "current_preflight_fingerprint": "d02407b18cad5b9989df77d94b0cf5e3706e2b96d61c0c9c5c5775b1168b2100",
+        "current_source_tree_sha256": "13331462fc032fafc0701826a59d1a5c673f83683efb7bb861efad4b02f348fd",
+        "exact_training_fingerprint_match": false,
+        "mode": "forward_only_lineage_compatible_not_exact_resume",
+        "saved_critical_fingerprint": "b7c448678a3705d50f5951041ef28f9a13176e1a77352c711b11c88d1d42c0dd",
+        "saved_source_tree_sha256": "a7aff762d504557a32d0cfbeb7bfde6a812f9303333480255fcbdfec0ca0cdbd",
+        "source_tree_match": false
+      },
+      "config_fingerprint": "d02407b18cad5b9989df77d94b0cf5e3706e2b96d61c0c9c5c5775b1168b2100",
+      "device_type": "cuda",
+      "dtype": "bfloat16",
+      "expert_initialization": "donor",
+      "runtime": {
+        "compute_capability": "12.0",
+        "cuda_home": "/usr/local/cuda-13.2",
+        "cuda_version": "13.0",
+        "device": "cuda:0",
+        "device_name": "NVIDIA GeForce RTX 5090",
+        "fla_tilelang": "0",
+        "torch_version": "2.11.0+cu130"
+      },
+      "stage": "dense-oracle",
+      "track": "base"
+    },
+    "formal_phases_identical": true,
+    "interpretation": "runtime/config drift versus the historical evaluation is reported, while both formal phases are required to be numerically identical",
+    "legacy": {
+      "batch_size": 1,
+      "config_fingerprint": "b7c448678a3705d50f5951041ef28f9a13176e1a77352c711b11c88d1d42c0dd",
+      "device_type": "cuda",
+      "dtype": "bfloat16",
+      "expert_initialization": "donor",
+      "runtime": {
+        "compute_capability": "12.0",
+        "cuda_home": "/usr/local/cuda-13.2",
+        "cuda_version": "13.0",
+        "device": "cuda:0",
+        "device_name": "NVIDIA GeForce RTX 5090",
+        "fla_tilelang": "0",
+        "torch_version": "2.11.0+cu130"
+      },
+      "stage": "dense-oracle",
+      "track": "base"
+    },
+    "legacy_core_contract_identical": true,
+    "legacy_current_preflight_fingerprint_identical": false,
+    "legacy_runtime_identical": true
+  },
+  "formal_validation_disjointness": {
+    "attestation_fingerprint": "b8371210e40ad8879d69b03f043609110a97907f88eb292b421229bb2de774a2",
+    "gates": {
+      "train_validation_near_duplicate": {
+        "algorithm": "lexical-5gram-one-permutation-minhash-lsh-v1",
+        "estimated_jaccard_threshold": 0.8,
+        "matches": 0,
+        "passed": true
+      },
+      "train_validation_normalized_exact": {
+        "algorithm": "unicode-nfkc-whitespace-sha256-intersection-v1",
+        "matches": 0,
+        "passed": true
+      },
+      "train_validation_stable_id": {
+        "algorithm": "source-scoped-authenticated-stable-id-intersection-v1",
+        "matches": 0,
+        "passed": true
+      },
+      "validation_internal_near_duplicate": {
+        "algorithm": "lexical-5gram-one-permutation-minhash-lsh-v1",
+        "estimated_jaccard_threshold": 0.8,
+        "matches": 0,
+        "passed": true
+      },
+      "validation_internal_normalized_exact": {
+        "algorithm": "unicode-nfkc-whitespace-sha256-intersection-v1",
+        "matches": 0,
+        "passed": true
+      },
+      "validation_internal_stable_id": {
+        "algorithm": "source-scoped-authenticated-stable-id-intersection-v1",
+        "matches": 0,
+        "passed": true
+      }
+    },
+    "identity_reverification": {
+      "input_identity_end_sha256": "ce5419406738fe4354404b37488b6e2df53b4d257b770792bd3b2e9038fe9618",
+      "input_identity_start_sha256": "ce5419406738fe4354404b37488b6e2df53b4d257b770792bd3b2e9038fe9618",
+      "passed": true,
+      "scanner_sources_end": {
+        "formal_validation_scanner_sha256": "420e1da08b533031226eb4ae30a900976eda0b341968b4ead554ca729cdc9825",
+        "phase_attestation_validator_sha256": "943dad1d8d4ac25a499bd94ac7719cd94388fe4befbd1cd907dd3ff4adbb096c",
+        "twen_source_tree_sha256": "13331462fc032fafc0701826a59d1a5c673f83683efb7bb861efad4b02f348fd"
+      },
+      "scanner_sources_start": {
+        "formal_validation_scanner_sha256": "420e1da08b533031226eb4ae30a900976eda0b341968b4ead554ca729cdc9825",
+        "phase_attestation_validator_sha256": "943dad1d8d4ac25a499bd94ac7719cd94388fe4befbd1cd907dd3ff4adbb096c",
+        "twen_source_tree_sha256": "13331462fc032fafc0701826a59d1a5c673f83683efb7bb861efad4b02f348fd"
+      }
+    },
+    "near_duplicate_threshold": 0.8,
+    "passed": true,
+    "path": "/media/data1/Project/AI/Twen1/artifacts/evidence/base-v4-250m-r2-semantic-excluded-closed-formal-validation-disjointness-pass-001/attestation.json",
+    "phase_attestation_validator_source_sha256": "943dad1d8d4ac25a499bd94ac7719cd94388fe4befbd1cd907dd3ff4adbb096c",
+    "scanner_source_sha256": "420e1da08b533031226eb4ae30a900976eda0b341968b4ead554ca729cdc9825",
+    "scanner_source_tree_sha256": "13331462fc032fafc0701826a59d1a5c673f83683efb7bb861efad4b02f348fd",
+    "sha256": "a9b58394e20cdcdae082a7c7122b511e49ae7b94c7021cda6ee08067312f6d63"
+  },
+  "gate": {
+    "authorizes_training": false,
+    "conditions": {
+      "additional_source_coverage_complete": true,
+      "candidate_role_full_shard_coverage": true,
+      "cooldown_source_coverage_complete": true,
+      "frozen_validation_attestations_passed": true,
+      "prepared_lineage_governed": true,
+      "primary_source_coverage_complete": true,
+      "same_authenticated_v3_final_checkpoint": true,
+      "train_validation_union_disjointness_passed": true
+    },
+    "passed": true,
+    "training_started_by_summarizer": false
+  },
+  "identity_reverification": {
+    "input_identity_end_sha256": "a9bd9d46f5c30e2d453228e9d409cf95b5e3309b23e1d0bc0ea7dcd1f7549254",
+    "input_identity_start_sha256": "a9bd9d46f5c30e2d453228e9d409cf95b5e3309b23e1d0bc0ea7dcd1f7549254",
+    "passed": true
+  },
+  "kind": "twen_v4_formal_frozen_validation_baseline",
+  "legacy_six_corpus_shift_comparison": [
+    {
+      "comparable_as_model_delta": false,
+      "formal_mean_nll": 1.1418951630498022,
+      "formal_minus_legacy_nll": 0.11373522537062697,
+      "formal_predicted_tokens": 107425,
+      "legacy_mean_nll": 1.0281599376791752,
+      "legacy_predicted_tokens": 2999344,
+      "reason": "same checkpoint, different frozen-validation corpus",
+      "source": "code_github_clean_allowlisted"
+    },
+    {
+      "comparable_as_model_delta": false,
+      "formal_mean_nll": 2.681600253944536,
+      "formal_minus_legacy_nll": 0.07829228008482625,
+      "formal_predicted_tokens": 285680,
+      "legacy_mean_nll": 2.60330797385971,
+      "legacy_predicted_tokens": 6998422,
+      "reason": "same checkpoint, different frozen-validation corpus",
+      "source": "english_fineweb_edu_dedup"
+    },
+    {
+      "comparable_as_model_delta": false,
+      "formal_mean_nll": 1.6803412885284623,
+      "formal_minus_legacy_nll": 0.10297819529840835,
+      "formal_predicted_tokens": 237074,
+      "legacy_mean_nll": 1.577363093230054,
+      "legacy_predicted_tokens": 3011595,
+      "reason": "same checkpoint, different frozen-validation corpus",
+      "source": "math_finemath_4plus"
+    },
+    {
+      "comparable_as_model_delta": false,
+      "formal_mean_nll": 1.5627636516750156,
+      "formal_minus_legacy_nll": -0.0860893172121846,
+      "formal_predicted_tokens": 74330,
+      "legacy_mean_nll": 1.6488529688872002,
+      "legacy_predicted_tokens": 999908,
+      "reason": "same checkpoint, different frozen-validation corpus",
+      "source": "science_cosmopedia_openstax"
+    },
+    {
+      "comparable_as_model_delta": false,
+      "formal_mean_nll": 1.5625400840096115,
+      "formal_minus_legacy_nll": -0.010387406000712529,
+      "formal_predicted_tokens": 56729,
+      "legacy_mean_nll": 1.572927490010324,
+      "legacy_predicted_tokens": 1000313,
+      "reason": "same checkpoint, different frozen-validation corpus",
+      "source": "science_cosmopedia_stanford"
+    }
+  ],
+  "legacy_six_source_baseline": {
+    "checkpoint_artifact": {
+      "complete_path": "/media/data1/Project/AI/Twen1/runs/base-dense-v3-500m/step-000000001912-milestone-complete/COMPLETE",
+      "complete_sha256": "3a21a50e35de74ecd0ff5b8f00aa29ed6c83f746fc2cf97d4da6b0536262b6c7",
+      "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v3-500m/step-000000001912-milestone-complete"
+    },
+    "checkpoint_state": {
+      "committed_tokens": 500009962,
+      "global_step": 1912,
+      "kind": "milestone",
+      "tag": "complete"
+    },
+    "comparison_contract": {
+      "batch_size": 1,
+      "device_type": "cuda",
+      "dtype": "bfloat16",
+      "expert_initialization": "donor",
+      "prepared_dataset_fingerprint": "6839d5aefb3b5b8f960e7da1b54bd40c2882bcb915954e727f2480252d4cdc79",
+      "prepared_manifest_sha256": "4d3877bfaf4e01551d41913e11d37db08c6097b513ac94ae4a63b8a640b68e7f",
+      "stage": "dense-oracle",
+      "track": "base"
+    },
+    "evaluation_harness": {
+      "checkpoint_inference_lineage": {
+        "archived_config_sha256": "c44934dab4639befcc95aa1b505649a48d45c0c48b6a14ffcd0ec29bd1243de9",
+        "current_preflight_fingerprint": "b7c448678a3705d50f5951041ef28f9a13176e1a77352c711b11c88d1d42c0dd",
+        "current_source_tree_sha256": "a7aff762d504557a32d0cfbeb7bfde6a812f9303333480255fcbdfec0ca0cdbd",
+        "exact_training_fingerprint_match": true,
+        "mode": "forward_only_lineage_compatible_not_exact_resume",
+        "saved_critical_fingerprint": "b7c448678a3705d50f5951041ef28f9a13176e1a77352c711b11c88d1d42c0dd",
+        "saved_source_tree_sha256": "a7aff762d504557a32d0cfbeb7bfde6a812f9303333480255fcbdfec0ca0cdbd",
+        "source_tree_match": true
+      },
+      "config_fingerprint": "b7c448678a3705d50f5951041ef28f9a13176e1a77352c711b11c88d1d42c0dd",
+      "runtime": {
+        "compute_capability": "12.0",
+        "cuda_home": "/usr/local/cuda-13.2",
+        "cuda_version": "13.0",
+        "device": "cuda:0",
+        "device_name": "NVIDIA GeForce RTX 5090",
+        "fla_tilelang": "0",
+        "torch_version": "2.11.0+cu130"
+      }
+    },
+    "identity": {
+      "complete": {
+        "path": "/media/data1/Project/AI/Twen1/docs/reports/base-dense-v4-16m-smoke-checkpoint-validation/COMPLETE",
+        "sha256": "419b4c398792f666b6f68fa59296ff34d9de3eee33b2d895c05229e6d9a6582c",
+        "size": 65
+      },
+      "manifest": {
+        "path": "/media/data1/Project/AI/Twen1/docs/reports/base-dense-v4-16m-smoke-checkpoint-validation/MANIFEST.json",
+        "sha256": "d7417a12e8c23f88d1e61bf4696189e22c36a109fe56307180d35a44e3cc32ce",
+        "size": 1181
+      },
+      "summary": {
+        "path": "/media/data1/Project/AI/Twen1/docs/reports/base-dense-v4-16m-smoke-checkpoint-validation/summary.json",
+        "sha256": "63d48570029f577406d4eef8fe70a4761dff5f30ae8b1e19a58c6861220a421e",
+        "size": 31410
+      }
+    },
+    "overall": {
+      "mean_nll": 2.3766688031972105,
+      "nll_sum": 47555823.700790405,
+      "perplexity": 10.768969489855895,
+      "predicted_tokens": 20009445,
+      "sequences": 4947
+    },
+    "sources": [
+      {
+        "input_tokens": 5001101,
+        "mean_nll": 3.656194313354557,
+        "nll_sum": 18280470.668151855,
+        "perplexity": 38.713729840373034,
+        "predicted_tokens": 4999863,
+        "sequences": 1238,
+        "shards": 30,
+        "source": "chinese_fineweb2_cmn_hani"
+      },
+      {
+        "input_tokens": 3000084,
+        "mean_nll": 1.0281599376791752,
+        "nll_sum": 3083805.340118408,
+        "perplexity": 2.795916438056783,
+        "predicted_tokens": 2999344,
+        "sequences": 740,
+        "shards": 18,
+        "source": "code_github_clean_allowlisted"
+      },
+      {
+        "input_tokens": 7000153,
+        "mean_nll": 2.60330797385971,
+        "nll_sum": 18219047.797035217,
+        "perplexity": 13.508349474532604,
+        "predicted_tokens": 6998422,
+        "sequences": 1731,
+        "shards": 42,
+        "source": "english_fineweb_edu_dedup"
+      },
+      {
+        "input_tokens": 3012338,
+        "mean_nll": 1.577363093230054,
+        "nll_sum": 4750378.804756165,
+        "perplexity": 4.842170609491765,
+        "predicted_tokens": 3011595,
+        "sequences": 743,
+        "shards": 18,
+        "source": "math_finemath_4plus"
+      },
+      {
+        "input_tokens": 1000155,
+        "mean_nll": 1.6488529688872002,
+        "nll_sum": 1648701.2744140625,
+        "perplexity": 5.201010683365646,
+        "predicted_tokens": 999908,
+        "sequences": 247,
+        "shards": 6,
+        "source": "science_cosmopedia_openstax"
+      },
+      {
+        "input_tokens": 1000561,
+        "mean_nll": 1.572927490010324,
+        "nll_sum": 1573419.8163146973,
+        "perplexity": 4.820740225422243,
+        "predicted_tokens": 1000313,
+        "sequences": 248,
+        "shards": 6,
+        "source": "science_cosmopedia_stanford"
+      }
+    ]
+  },
+  "legacy_source_replacements": [
+    {
+      "comparable_as_model_delta": false,
+      "formal_mean_nll": 1.779889721667435,
+      "formal_minus_legacy_nll": null,
+      "formal_predicted_tokens": 360657,
+      "formal_source": "chinese_wikipedia_zh_20231101",
+      "legacy_mean_nll": 3.656194313354557,
+      "legacy_predicted_tokens": 4999863,
+      "legacy_source": "chinese_fineweb2_cmn_hani",
+      "reason": "source replacement and different frozen-validation corpus; no NLL delta is claimed"
+    }
+  ],
+  "phases": [
+    {
+      "checkpoint": {
+        "complete_sha256": "3a21a50e35de74ecd0ff5b8f00aa29ed6c83f746fc2cf97d4da6b0536262b6c7",
+        "manifest_sha256": "ef43670d7c1cbc8ed3908b258659c7426b4cfe10e14c9b7db54968e2481b0e9a",
+        "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v3-500m/step-000000001912-milestone-complete"
+      },
+      "checkpoint_state": {
+        "committed_tokens": 500009962,
+        "global_step": 1912,
+        "kind": "milestone",
+        "tag": "complete"
+      },
+      "comparison_contract": {
+        "batch_size": 1,
+        "device_type": "cuda",
+        "dtype": "bfloat16",
+        "expert_initialization": "donor",
+        "prepared_dataset_fingerprint": "387ca27dd1dc59999a62643072e00af60d3e022d8da31fd3288679b0c77feb06",
+        "prepared_manifest_sha256": "077ceac36b6e42c3750ea5838a9c2028feea6b998b443c16e21353d4cbeb0b47",
+        "stage": "dense-oracle",
+        "track": "base"
+      },
+      "evaluation": {
+        "complete": {
+          "path": "/media/data1/Project/AI/Twen1/artifacts/evaluations/base-dense-v3-500m-r2-semantic-excluded-closed-primary-validation-pass-001/COMPLETE",
+          "sha256": "18487a094e5bef6897ce06c989182c4aa214493769b772f61eb58cd5752db600",
+          "size": 65
+        },
+        "manifest": {
+          "path": "/media/data1/Project/AI/Twen1/artifacts/evaluations/base-dense-v3-500m-r2-semantic-excluded-closed-primary-validation-pass-001/manifest.json",
+          "sha256": "611acb004011e103d5317ffac49f7dea124b8ef654afa74796bf607c32b99eee",
+          "size": 18774
+        },
+        "plan": {
+          "path": "/media/data1/Project/AI/Twen1/artifacts/evaluations/base-dense-v3-500m-r2-semantic-excluded-closed-primary-validation-pass-001/PLAN.json",
+          "sha256": "bde62bed90855fe6f1c8ab4067bfcc04676e4eed6ad38bf7530c58b1ef59683a",
+          "size": 3912
+        },
+        "root": "/media/data1/Project/AI/Twen1/artifacts/evaluations/base-dense-v3-500m-r2-semantic-excluded-closed-primary-validation-pass-001"
+      },
+      "evaluation_harness": {
+        "checkpoint_inference_lineage": {
+          "archived_config_sha256": "c44934dab4639befcc95aa1b505649a48d45c0c48b6a14ffcd0ec29bd1243de9",
+          "current_preflight_fingerprint": "d02407b18cad5b9989df77d94b0cf5e3706e2b96d61c0c9c5c5775b1168b2100",
+          "current_source_tree_sha256": "13331462fc032fafc0701826a59d1a5c673f83683efb7bb861efad4b02f348fd",
+          "exact_training_fingerprint_match": false,
+          "mode": "forward_only_lineage_compatible_not_exact_resume",
+          "saved_critical_fingerprint": "b7c448678a3705d50f5951041ef28f9a13176e1a77352c711b11c88d1d42c0dd",
+          "saved_source_tree_sha256": "a7aff762d504557a32d0cfbeb7bfde6a812f9303333480255fcbdfec0ca0cdbd",
+          "source_tree_match": false
+        },
+        "config_fingerprint": "d02407b18cad5b9989df77d94b0cf5e3706e2b96d61c0c9c5c5775b1168b2100",
+        "runtime": {
+          "compute_capability": "12.0",
+          "cuda_home": "/usr/local/cuda-13.2",
+          "cuda_version": "13.0",
+          "device": "cuda:0",
+          "device_name": "NVIDIA GeForce RTX 5090",
+          "fla_tilelang": "0",
+          "torch_version": "2.11.0+cu130"
+        }
+      },
+      "label": "v3-final-primary",
+      "overall": {
+        "mean_nll": 1.8841650005120638,
+        "nll_sum": 2482457.102279663,
+        "perplexity": 6.580857134872349,
+        "predicted_tokens": 1317537,
+        "sequences": 334
+      },
+      "phase": "primary",
+      "prepared": {
+        "dataset_fingerprint": "387ca27dd1dc59999a62643072e00af60d3e022d8da31fd3288679b0c77feb06",
+        "lineage": {
+          "audit_attestation": {
+            "attestation_fingerprint": "efe9036c4e660cdf9406a2f21ffa87f47c5959d91dabe4f072db984154cff897",
+            "bound_as": "frozen_validation",
+            "gates": {
+              "cross_source_exact_dedup": {
+                "passed": true,
+                "status": "complete_no_matches"
+              },
+              "cross_source_near_dedup": {
+                "passed": true,
+                "status": "complete_no_matches_minhash_lsh_v1"
+              },
+              "deterministic_content_quality_scan": {
+                "passed": true,
+                "status": "complete_policy_v1_no_findings"
+              },
+              "full_contextual_pii_scan": {
+                "passed": true,
+                "status": "complete_policy_v1_no_findings"
+              },
+              "project_benchmark_13gram_scan": {
+                "passed": true,
+                "status": "complete_no_overlaps"
+              },
+              "train_vs_frozen_validation_exact_dedup": {
+                "passed": true,
+                "status": "complete_no_matches"
+              }
+            },
+            "path": "/media/data1/Project/AI/Twen1/data/base-v4-250m-primary-r2-semantic-excluded-closed-filtered-audit-pass-001/attestation.json",
+            "ready_for_training": true,
+            "sha256": "ddf6956898e6c4bd2890a27e95e71a88bfcc9194b0724c5b76d23137aa61d8fa"
+          },
+          "corpus_fingerprint": "257d73a8d16e2079a7059ee6d4c7dea75f169303b575c03faf50307242ff2f47",
+          "extracted_manifest_path": "/media/data1/Project/AI/Twen1/data/base-v4-250m-primary-r2-semantic-excluded-closed-filtered-pass-001/corpus-manifest.json",
+          "extracted_manifest_sha256": "dd3a003df06ce88bf0487652a9dc094990f0ffcd1d0d852d9f1da2b731e42f84"
+        },
+        "path": "/media/data1/Project/AI/Twen1/artifacts/data/base-v4-250m-primary-r2-semantic-excluded-closed-validation-pass-001/manifest.json",
+        "sequence_count": 334,
+        "sha256": "077ceac36b6e42c3750ea5838a9c2028feea6b998b443c16e21353d4cbeb0b47",
+        "shard_count": 25,
+        "token_count": 1317871
+      },
+      "run_id": "base-dense-v3-500m",
+      "sources": [
+        {
+          "input_tokens": 287856,
+          "mean_nll": 1.4616861018626044,
+          "nll_sum": 420649.87313842773,
+          "perplexity": 4.313225938958986,
+          "predicted_tokens": 287784,
+          "sequences": 72,
+          "shards": 3,
+          "source": "chinese_wikipedia_zh_20231101"
+        },
+        {
+          "input_tokens": 93053,
+          "mean_nll": 1.1451917843767971,
+          "nll_sum": 106536.04650878906,
+          "perplexity": 3.1430440857915607,
+          "predicted_tokens": 93029,
+          "sequences": 24,
+          "shards": 2,
+          "source": "code_github_clean_allowlisted"
+        },
+        {
+          "input_tokens": 50158,
+          "mean_nll": 1.2935807642212585,
+          "nll_sum": 64866.607421875,
+          "perplexity": 3.6458180252610166,
+          "predicted_tokens": 50145,
+          "sequences": 13,
+          "shards": 2,
+          "source": "code_stackv2_edu_permissive"
+        },
+        {
+          "input_tokens": 285751,
+          "mean_nll": 2.681600253944536,
+          "nll_sum": 766079.560546875,
+          "perplexity": 14.608451833770411,
+          "predicted_tokens": 285680,
+          "sequences": 71,
+          "shards": 3,
+          "source": "english_fineweb_edu_dedup"
+        },
+        {
+          "input_tokens": 164244,
+          "mean_nll": 1.6884333237661793,
+          "nll_sum": 277245.81706237793,
+          "perplexity": 5.410996781027257,
+          "predicted_tokens": 164203,
+          "sequences": 41,
+          "shards": 3,
+          "source": "math_finemath_4plus"
+        },
+        {
+          "input_tokens": 57434,
+          "mean_nll": 3.1344467755962135,
+          "nll_sum": 179976.79940795898,
+          "perplexity": 22.975921484947822,
+          "predicted_tokens": 57419,
+          "sequences": 15,
+          "shards": 1,
+          "source": "multilingual_common_corpus_permissive"
+        },
+        {
+          "input_tokens": 299493,
+          "mean_nll": 1.8112747461869,
+          "nll_sum": 542324.6394042969,
+          "perplexity": 6.118241668576175,
+          "predicted_tokens": 299416,
+          "sequences": 77,
+          "shards": 7,
+          "source": "science_arxiv_open_permissive"
+        },
+        {
+          "input_tokens": 46003,
+          "mean_nll": 1.563475267239786,
+          "nll_sum": 71905.791015625,
+          "perplexity": 4.775388191319831,
+          "predicted_tokens": 45991,
+          "sequences": 12,
+          "shards": 2,
+          "source": "science_cosmopedia_openstax"
+        },
+        {
+          "input_tokens": 33879,
+          "mean_nll": 1.5610265064492914,
+          "nll_sum": 52871.9677734375,
+          "perplexity": 4.763708713916958,
+          "predicted_tokens": 33870,
+          "sequences": 9,
+          "shards": 2,
+          "source": "science_cosmopedia_stanford"
+        }
+      ]
+    },
+    {
+      "checkpoint": {
+        "complete_sha256": "3a21a50e35de74ecd0ff5b8f00aa29ed6c83f746fc2cf97d4da6b0536262b6c7",
+        "manifest_sha256": "ef43670d7c1cbc8ed3908b258659c7426b4cfe10e14c9b7db54968e2481b0e9a",
+        "path": "/media/data1/Project/AI/Twen1/runs/base-dense-v3-500m/step-000000001912-milestone-complete"
+      },
+      "checkpoint_state": {
+        "committed_tokens": 500009962,
+        "global_step": 1912,
+        "kind": "milestone",
+        "tag": "complete"
+      },
+      "comparison_contract": {
+        "batch_size": 1,
+        "device_type": "cuda",
+        "dtype": "bfloat16",
+        "expert_initialization": "donor",
+        "prepared_dataset_fingerprint": "d9642bec58e7b4a48ad26e6c5d51c78252bae1c2d6b46fa96ed66f4a9788e33c",
+        "prepared_manifest_sha256": "8a32233ee2cecfeac610917dae40edd415452c3361b262505dc3456c88218d01",
+        "stage": "dense-oracle",
+        "track": "base"
+      },
+      "evaluation": {
+        "complete": {
+          "path": "/media/data1/Project/AI/Twen1/artifacts/evaluations/base-dense-v3-500m-r2-semantic-excluded-closed-cooldown-validation-pass-001/COMPLETE",
+          "sha256": "380290ad870614305258f3790b512aab122ba7780656c2ddc3b0f75e20b46e96",
+          "size": 65
+        },
+        "manifest": {
+          "path": "/media/data1/Project/AI/Twen1/artifacts/evaluations/base-dense-v3-500m-r2-semantic-excluded-closed-cooldown-validation-pass-001/manifest.json",
+          "sha256": "17736693a8f64cfb58c30e2e2352ca49cb4204c58903cabe18f235f8a09b8526",
+          "size": 13836
+        },
+        "plan": {
+          "path": "/media/data1/Project/AI/Twen1/artifacts/evaluations/base-dense-v3-500m-r2-semantic-excluded-closed-cooldown-validation-pass-001/PLAN.json",
+          "sha256": "d657b283609d548cf334cb02e75c680a10b0c13ea4a3f29fc22e15762aaa2993",
+          "size": 3913
+        },
+        "root": "/media/data1/Project/AI/Twen1/artifacts/evaluations/base-dense-v3-500m-r2-semantic-excluded-closed-cooldown-validation-pass-001"
+      },
+      "evaluation_harness": {
+        "checkpoint_inference_lineage": {
+          "archived_config_sha256": "c44934dab4639befcc95aa1b505649a48d45c0c48b6a14ffcd0ec29bd1243de9",
+          "current_preflight_fingerprint": "d02407b18cad5b9989df77d94b0cf5e3706e2b96d61c0c9c5c5775b1168b2100",
+          "current_source_tree_sha256": "13331462fc032fafc0701826a59d1a5c673f83683efb7bb861efad4b02f348fd",
+          "exact_training_fingerprint_match": false,
+          "mode": "forward_only_lineage_compatible_not_exact_resume",
+          "saved_critical_fingerprint": "b7c448678a3705d50f5951041ef28f9a13176e1a77352c711b11c88d1d42c0dd",
+          "saved_source_tree_sha256": "a7aff762d504557a32d0cfbeb7bfde6a812f9303333480255fcbdfec0ca0cdbd",
+          "source_tree_match": false
+        },
+        "config_fingerprint": "d02407b18cad5b9989df77d94b0cf5e3706e2b96d61c0c9c5c5775b1168b2100",
+        "runtime": {
+          "compute_capability": "12.0",
+          "cuda_home": "/usr/local/cuda-13.2",
+          "cuda_version": "13.0",
+          "device": "cuda:0",
+          "device_name": "NVIDIA GeForce RTX 5090",
+          "fla_tilelang": "0",
+          "torch_version": "2.11.0+cu130"
+        }
+      },
+      "label": "v3-final-cooldown",
+      "overall": {
+        "mean_nll": 2.141586308418197,
+        "nll_sum": 867755.7810668945,
+        "perplexity": 8.51293105788723,
+        "predicted_tokens": 405193,
+        "sequences": 108
+      },
+      "phase": "cooldown",
+      "prepared": {
+        "dataset_fingerprint": "d9642bec58e7b4a48ad26e6c5d51c78252bae1c2d6b46fa96ed66f4a9788e33c",
+        "lineage": {
+          "audit_attestation": {
+            "attestation_fingerprint": "f83aa29ab579ab58c3c6790cc0359a0760b7a9d44bafbdf4dc982ae1d6a8c2a8",
+            "bound_as": "frozen_validation",
+            "gates": {
+              "cross_source_exact_dedup": {
+                "passed": true,
+                "status": "complete_no_matches"
+              },
+              "cross_source_near_dedup": {
+                "passed": true,
+                "status": "complete_no_matches_minhash_lsh_v1"
+              },
+              "deterministic_content_quality_scan": {
+                "passed": true,
+                "status": "complete_policy_v1_no_findings"
+              },
+              "full_contextual_pii_scan": {
+                "passed": true,
+                "status": "complete_policy_v1_no_findings"
+              },
+              "project_benchmark_13gram_scan": {
+                "passed": true,
+                "status": "complete_no_overlaps"
+              },
+              "train_vs_frozen_validation_exact_dedup": {
+                "passed": true,
+                "status": "complete_no_matches"
+              }
+            },
+            "path": "/media/data1/Project/AI/Twen1/data/base-v4-250m-cooldown-r2-semantic-excluded-closed-filtered-audit-pass-001/attestation.json",
+            "ready_for_training": true,
+            "sha256": "535616756e837d4e547a30d64f9ee20171a9c1b3288f8ae66b0336d5f7e5dbef"
+          },
+          "corpus_fingerprint": "7addfe620861817873fb0a5483e2b4d0641f3b9a0585483de20eeaf602e2d36f",
+          "extracted_manifest_path": "/media/data1/Project/AI/Twen1/data/base-v4-250m-cooldown-r2-semantic-excluded-closed-filtered-pass-001/corpus-manifest.json",
+          "extracted_manifest_sha256": "4cde548b44004e0f2c9ea85c1f0b1939a7f6cf933ba19cdc4935e34a6e237f7f"
+        },
+        "path": "/media/data1/Project/AI/Twen1/artifacts/data/base-v4-250m-cooldown-r2-semantic-excluded-closed-validation-pass-001/manifest.json",
+        "sequence_count": 108,
+        "sha256": "8a32233ee2cecfeac610917dae40edd415452c3361b262505dc3456c88218d01",
+        "shard_count": 17,
+        "token_count": 405301
+      },
+      "run_id": "base-dense-v3-500m",
+      "sources": [
+        {
+          "input_tokens": 72893,
+          "mean_nll": 3.036513032384894,
+          "nll_sum": 221279.81420898438,
+          "perplexity": 20.8324742741839,
+          "predicted_tokens": 72873,
+          "sequences": 20,
+          "shards": 3,
+          "source": "chinese_wikipedia_zh_20231101"
+        },
+        {
+          "input_tokens": 14401,
+          "mean_nll": 1.1205919270516767,
+          "nll_sum": 16132.041381835938,
+          "perplexity": 3.0666689104395153,
+          "predicted_tokens": 14396,
+          "sequences": 5,
+          "shards": 2,
+          "source": "code_github_clean_allowlisted"
+        },
+        {
+          "input_tokens": 12834,
+          "mean_nll": 1.8734433133250925,
+          "nll_sum": 24036.277709960938,
+          "perplexity": 6.510676144861657,
+          "predicted_tokens": 12830,
+          "sequences": 4,
+          "shards": 1,
+          "source": "education_libretexts_permissive"
+        },
+        {
+          "input_tokens": 72890,
+          "mean_nll": 1.66210719729685,
+          "nll_sum": 121119.41357421875,
+          "perplexity": 5.270404934654987,
+          "predicted_tokens": 72871,
+          "sequences": 19,
+          "shards": 2,
+          "source": "math_finemath_4plus"
+        },
+        {
+          "input_tokens": 70454,
+          "mean_nll": 2.830713290616881,
+          "nll_sum": 199384.12133789062,
+          "perplexity": 16.957552174556486,
+          "predicted_tokens": 70436,
+          "sequences": 18,
+          "shards": 1,
+          "source": "public_domain_project_gutenberg"
+        },
+        {
+          "input_tokens": 110617,
+          "mean_nll": 1.860766558955061,
+          "nll_sum": 205780.31298828125,
+          "perplexity": 6.428662832193006,
+          "predicted_tokens": 110589,
+          "sequences": 28,
+          "shards": 4,
+          "source": "science_arxiv_open_permissive"
+        },
+        {
+          "input_tokens": 28347,
+          "mean_nll": 1.5616087798926888,
+          "nll_sum": 44254.431213378906,
+          "perplexity": 4.766483302699442,
+          "predicted_tokens": 28339,
+          "sequences": 8,
+          "shards": 2,
+          "source": "science_cosmopedia_openstax"
+        },
+        {
+          "input_tokens": 22865,
+          "mean_nll": 1.5647827399424188,
+          "nll_sum": 35769.36865234375,
+          "perplexity": 4.78163596453088,
+          "predicted_tokens": 22859,
+          "sequences": 6,
+          "shards": 2,
+          "source": "science_cosmopedia_stanford"
+        }
+      ]
+    }
+  ],
+  "reporter_provenance": {
+    "passed": true,
+    "source_identity_end": {
+      "checkpoint_summarizer_sha256": "a78230ebec1523c2146a3bfb19896e01db808b00ef4d63fb641cb27cdc9ef217",
+      "formal_validation_reporter_sha256": "9e4c0179c088eeefbf15e078fdc87ba2c411d3d500dc97fb499ecb33934924ff"
+    },
+    "source_identity_start": {
+      "checkpoint_summarizer_sha256": "a78230ebec1523c2146a3bfb19896e01db808b00ef4d63fb641cb27cdc9ef217",
+      "formal_validation_reporter_sha256": "9e4c0179c088eeefbf15e078fdc87ba2c411d3d500dc97fb499ecb33934924ff"
+    }
+  },
+  "schema_version": 1,
+  "scope": "v3-final candidate-role NTP NLL; no training performed"
+}

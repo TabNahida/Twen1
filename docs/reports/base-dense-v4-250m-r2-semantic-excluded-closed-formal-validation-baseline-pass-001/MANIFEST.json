@@ -1,0 +1,41 @@
+{
+  "files": {
+    "REPORT.zh-CN.md": {
+      "path": "REPORT.zh-CN.md",
+      "sha256": "6ff2286c04f0615c3b95d8d13a55207218153f897a87a9e832606f94a93c1f15",
+      "size": 3835
+    },
+    "charts/formal-source-nll.svg": {
+      "path": "charts/formal-source-nll.svg",
+      "sha256": "2a9cf6580eed85d911b867663d15b2cc71b4ec8516bc07ab1be08f27706d07e7",
+      "size": 5334
+    },
+    "charts/formal-source-tokens.svg": {
+      "path": "charts/formal-source-tokens.svg",
+      "sha256": "c957ea56ec00e7d463f381ac572ac2987dd66bed43d85deef997148f609e5ed7",
+      "size": 5404
+    },
+    "summary.json": {
+      "path": "summary.json",
+      "sha256": "17cc3116fd8409f164f6fe4c6a0cdcfae97f7489bf0cbdd554e062198d765671",
+      "size": 36337
+    }
+  },
+  "gate": {
+    "authorizes_training": false,
+    "conditions": {
+      "additional_source_coverage_complete": true,
+      "candidate_role_full_shard_coverage": true,
+      "cooldown_source_coverage_complete": true,
+      "frozen_validation_attestations_passed": true,
+      "prepared_lineage_governed": true,
+      "primary_source_coverage_complete": true,
+      "same_authenticated_v3_final_checkpoint": true,
+      "train_validation_union_disjointness_passed": true
+    },
+    "passed": true,
+    "training_started_by_summarizer": false
+  },
+  "kind": "twen_v4_formal_frozen_validation_baseline_bundle",
+  "schema_version": 1
+}

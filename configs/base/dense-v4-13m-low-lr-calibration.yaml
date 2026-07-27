@@ -26,29 +26,26 @@ checkpoint:
 data:
   allow_corpus_reuse: false
   global_batch_tokens: 262144
-  manifest_path: artifacts/data/base-v4-smoke-r3-filtered-quality-v3-train/manifest.json
-  manifest_sha256: fff506fd87c69b75d6bd1f86a96a96ee5b9c8e66ae0ba76f5b670154031f4393
+  manifest_path: artifacts/data/base-v4-250m-primary-r2-semantic-excluded-closed-train-pass-001/manifest.json
+  manifest_sha256: cf1d837e2130e1d5a045f151eddae5fb20250b44f037676c933b2c6ccfe75af8
   max_sequence_length: 4096
   micro_batch_size: 1
   mode: prepared-text
   num_workers: 4
   shuffle_seed: 3407
-  source_map_sha256: 63f09c7a01a7ca21b1bee6edcd54f314c60f3530464f99570d3fe7ce115031fc
+  source_map_sha256: d6620197c785464885461738727c320d8046c513b535090c7412615292c50efe
   source_mix_algorithm: token-deficit-corrected-source-mix-bp-v2
-  source_mix_allow_weight_override: true
+  source_mix_allow_weight_override: false
   source_mix_basis_points:
-    chinese_fineweb2_cmn_hani: 1841
-    code_github_clean_allowlisted: 884
-    code_stackv2_edu_permissive: 540
-    education_libretexts_permissive: 729
-    english_fineweb_edu_dedup: 3155
-    math_finemath_4plus: 1017
-    multilingual_common_corpus_permissive: 860
-    public_domain_project_gutenberg: 150
-    public_domain_usgpo: 3
-    science_arxiv_open_permissive: 124
-    science_cosmopedia_openstax: 372
-    science_cosmopedia_stanford: 325
+    chinese_wikipedia_zh_20231101: 2400
+    code_github_clean_allowlisted: 900
+    code_stackv2_edu_permissive: 400
+    english_fineweb_edu_dedup: 2500
+    math_finemath_4plus: 1400
+    multilingual_common_corpus_permissive: 500
+    science_arxiv_open_permissive: 1200
+    science_cosmopedia_openstax: 400
+    science_cosmopedia_stanford: 300
 losses:
   anchor_kl: 0.0
   dense_oracle: 0.0

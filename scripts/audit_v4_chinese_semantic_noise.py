@@ -10,10 +10,12 @@ same-script substitutions such as ``大年夜众``.  This command:
   corpus manifest;
 * performs a complete deterministic scan for conservative, high-precision
   conversion and sentence-stitching indicators;
-* emits deterministic risk and control samples for semantic review; and
+* emits deterministic risk, review-challenge, and control samples; and
 * optionally authenticates a complete review-decision file.
 
 It never rewrites training data and never authorizes training by itself.
+The reviewer name is declarative metadata.  Bundle content hashes authenticate
+the referenced bytes and inventories, not the reviewer's cryptographic identity.
 """
 
 from __future__ import annotations
@@ -33,25 +35,20 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_PRIMARY = (
-    ROOT
-    / "data/base-v4-250m-primary-r1-refill-filtered-pass-002/corpus-manifest.json"
-)
-DEFAULT_COOLDOWN = (
-    ROOT
-    / "artifacts/data/base-v4-250m-cooldown-phase-near-excluded-v2/"
-    "corpus-manifest.json"
-)
-DEFAULT_SOURCE_ID = "chinese_fineweb2_cmn_hani"
 SCHEMA_VERSION = 1
 ATTESTATION_KIND = "twen_v4_chinese_semantic_noise_attestation"
 MANIFEST_KIND = "twen_v4_chinese_semantic_noise_bundle"
 COMPLETE_KIND = "twen_v4_chinese_semantic_noise_complete"
 DECISIONS_KIND = "twen_v4_chinese_semantic_noise_manual_decisions"
+MIN_RISK_SAMPLES_PER_PHASE = 32
+MIN_CONTROL_SAMPLES_PER_PHASE = 32
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _CJK = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
+_REVIEWED_AT = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}"
+    r"(?:\.\d{1,6})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$"
+)
 _MALFORMED_PUNCTUATION = re.compile(
     r"(?:\uff0c\u3002|\uff0c\u3002\uff0c\u3002|\u3002\u3002|"
     r"\uff1b\u3002|\uff1a\u3002|\u3001\u3002|\uff0c\uff1b|"
@@ -286,6 +283,7 @@ def _sample_value(
     text: str,
     reasons: Sequence[str],
     stratum: str,
+    review_reasons: Sequence[str] = (),
 ) -> Sample:
     text_sha = _sha256_bytes(text.encode("utf-8"))
     sample_id = _sha256_bytes(
@@ -313,9 +311,22 @@ def _sample_value(
             "text_characters": len(text),
             "cjk_characters": len(_CJK.findall(text)),
             "risk_reasons": list(reasons),
+            "review_reasons": list(review_reasons),
             "excerpt": excerpt,
         },
     )
+
+
+def _relabel_sample(
+    value: Mapping[str, Any],
+    *,
+    stratum: str,
+    review_reasons: Sequence[str],
+) -> dict[str, Any]:
+    result = dict(value)
+    result["stratum"] = stratum
+    result["review_reasons"] = list(review_reasons)
+    return result
 
 
 def _scan_phase(
@@ -326,12 +337,15 @@ def _scan_phase(
     control_sample_size: int,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     risk_samples = _LowestSamples(risk_sample_size)
-    control_samples = _LowestSamples(control_sample_size)
+    soft_indicator_samples = _LowestSamples(risk_sample_size)
+    ordinary_samples = _LowestSamples(risk_sample_size + control_sample_size)
     documents = 0
     characters = 0
     utf8_bytes = 0
     cjk_characters = 0
     risk_documents = 0
+    soft_indicator_documents = 0
+    ordinary_documents = 0
     conversion_documents = 0
     marker_documents: Counter[str] = Counter()
     marker_occurrences: Counter[str] = Counter()
@@ -385,20 +399,75 @@ def _scan_phase(
                             stratum="risk",
                         )
                     )
-                else:
-                    control_samples.add(
+                elif occurrences:
+                    soft_indicator_documents += 1
+                    soft_indicator_samples.add(
                         _sample_value(
                             phase=phase,
                             shard=shard,
                             line_number=line_number,
                             text=text,
                             reasons=(),
-                            stratum="control",
+                            stratum="review_challenge",
+                            review_reasons=tuple(
+                                f"soft_indicator:{name}" for name in sorted(occurrences)
+                            ),
+                        )
+                    )
+                else:
+                    ordinary_documents += 1
+                    ordinary_samples.add(
+                        _sample_value(
+                            phase=phase,
+                            shard=shard,
+                            line_number=line_number,
+                            text=text,
+                            reasons=(),
+                            stratum="ordinary_candidate",
                         )
                     )
     if documents <= 0:
         raise AuditError(f"{phase} Chinese shard inventory is empty")
-    samples = risk_samples.values() + control_samples.values()
+
+    selected_risk = risk_samples.values()
+    challenge_needed = risk_sample_size - len(selected_risk)
+    selected_soft = soft_indicator_samples.values()[:challenge_needed]
+    fallback_needed = challenge_needed - len(selected_soft)
+    selected_ordinary = ordinary_samples.values()
+    selected_fallback = [
+        _relabel_sample(
+            value,
+            stratum="review_challenge",
+            review_reasons=("deterministic_risk_population_shortfall_fallback",),
+        )
+        for value in selected_ordinary[:fallback_needed]
+    ]
+    selected_control = [
+        _relabel_sample(
+            value,
+            stratum="control",
+            review_reasons=(),
+        )
+        for value in selected_ordinary[
+            fallback_needed : fallback_needed + control_sample_size
+        ]
+    ]
+    selected_challenge = selected_soft + selected_fallback
+    samples = selected_risk + selected_challenge + selected_control
+    sample_ids = [str(row["sample_id"]) for row in samples]
+    if (
+        len(selected_risk) + len(selected_challenge) != risk_sample_size
+        or len(selected_control) != control_sample_size
+        or len(sample_ids) != len(set(sample_ids))
+    ):
+        raise AuditError(
+            f"{phase} cannot satisfy disjoint manual-review sample contract: "
+            f"risk_population={risk_documents}, "
+            f"soft_indicator_population={soft_indicator_documents}, "
+            f"ordinary_population={ordinary_documents}, "
+            f"requested_risk_or_challenge={risk_sample_size}, "
+            f"requested_control={control_sample_size}"
+        )
     samples.sort(key=lambda row: (row["stratum"], row["sample_id"]))
     return (
         {
@@ -408,6 +477,11 @@ def _scan_phase(
             "cjk_characters": cjk_characters,
             "risk_documents": risk_documents,
             "risk_document_rate": risk_documents / documents,
+            "risk_population_documents": risk_documents,
+            "risk_population_exhausted": risk_documents < risk_sample_size,
+            "risk_population_fully_sampled": risk_documents <= risk_sample_size,
+            "soft_indicator_documents": soft_indicator_documents,
+            "ordinary_documents": ordinary_documents,
             "high_precision_conversion_documents": conversion_documents,
             "high_precision_conversion_document_rate": conversion_documents / documents,
             "marker_documents": dict(sorted(marker_documents.items())),
@@ -415,7 +489,21 @@ def _scan_phase(
             "authenticated_shards": len(shards),
             "sample_count": len(samples),
             "risk_sample_count": sum(row["stratum"] == "risk" for row in samples),
+            "review_challenge_sample_count": sum(
+                row["stratum"] == "review_challenge" for row in samples
+            ),
+            "review_challenge_soft_indicator_sample_count": len(selected_soft),
+            "review_challenge_fallback_sample_count": len(selected_fallback),
+            "risk_or_review_challenge_sample_count": (
+                len(selected_risk) + len(selected_challenge)
+            ),
             "control_sample_count": sum(row["stratum"] == "control" for row in samples),
+            "sample_strata": {
+                "risk": len(selected_risk),
+                "review_challenge": len(selected_challenge),
+                "control": len(selected_control),
+            },
+            "sample_contract_satisfied": True,
         },
         samples,
     )
@@ -446,11 +534,35 @@ def _load_manual_decisions(
     if (
         not isinstance(reviewer, str)
         or not reviewer.strip()
+        or reviewer.strip().upper().startswith("REPLACE_WITH")
         or not isinstance(reviewed_at, str)
         or not reviewed_at.strip()
+        or reviewed_at.strip().upper().startswith("REPLACE_WITH")
         or not isinstance(decisions, list)
     ):
         raise AuditError("manual decisions metadata is incomplete")
+    reviewer = reviewer.strip()
+    reviewed_at = reviewed_at.strip()
+    if (
+        reviewer != value["reviewer"]
+        or len(reviewer) > 200
+        or any(ord(character) < 32 for character in reviewer)
+    ):
+        raise AuditError("manual decisions reviewer is invalid")
+    if _REVIEWED_AT.fullmatch(reviewed_at) is None:
+        raise AuditError(
+            "manual decisions reviewed_at must be a timezone-aware ISO-8601 timestamp"
+        )
+    try:
+        parsed_reviewed_at = datetime.fromisoformat(reviewed_at.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise AuditError(
+            "manual decisions reviewed_at must be a timezone-aware ISO-8601 timestamp"
+        ) from exc
+    if parsed_reviewed_at.tzinfo is None or parsed_reviewed_at.utcoffset() is None:
+        raise AuditError(
+            "manual decisions reviewed_at must be a timezone-aware ISO-8601 timestamp"
+        )
     expected = {str(row["sample_id"]) for row in samples}
     observed: dict[str, str] = {}
     allowed = {
@@ -482,7 +594,7 @@ def _load_manual_decisions(
         "path": str(path.resolve()),
         "size": len(payload),
         "sha256": _sha256_bytes(payload),
-        "reviewer": reviewer.strip(),
+        "reviewer": reviewer,
         "reviewed_at": reviewed_at,
         "reviewed_samples": len(observed),
         "unacceptable_samples": bad,
@@ -514,47 +626,43 @@ def _manual_template(
     }
 
 
-def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--primary-manifest", type=Path, default=DEFAULT_PRIMARY)
-    parser.add_argument("--cooldown-manifest", type=Path, default=DEFAULT_COOLDOWN)
-    parser.add_argument("--source-id", default=DEFAULT_SOURCE_ID)
-    parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--risk-samples-per-phase", type=int, default=32)
-    parser.add_argument("--control-samples-per-phase", type=int, default=32)
-    parser.add_argument("--manual-decisions", type=Path)
-    return parser
+def recompute_scan(
+    *,
+    primary_manifest: Path,
+    cooldown_manifest: Path,
+    source_id: str,
+    risk_sample_size: int,
+    control_sample_size: int,
+) -> dict[str, Any]:
+    """Recompute the deterministic, source-authenticated scan snapshot.
 
+    This function intentionally performs no writes and records no wall-clock
+    fields.  Evidence consumers use it to rebuild every statistic and emitted
+    sample from the exact manifests instead of trusting a self-consistent
+    attestation.
+    """
 
-def _validate_count(value: int, *, label: str) -> int:
-    if isinstance(value, bool) or value < 1 or value > 1_000:
-        raise AuditError(f"{label} must be in [1, 1000]")
-    return value
-
-
-def run(args: argparse.Namespace) -> dict[str, Any]:
-    output = args.output.expanduser().resolve()
-    if output.exists():
-        raise AuditError(f"immutable output already exists: {output}")
     risk_size = _validate_count(
-        args.risk_samples_per_phase,
+        risk_sample_size,
         label="risk-samples-per-phase",
+        minimum=MIN_RISK_SAMPLES_PER_PHASE,
     )
     control_size = _validate_count(
-        args.control_samples_per_phase,
+        control_sample_size,
         label="control-samples-per-phase",
+        minimum=MIN_CONTROL_SAMPLES_PER_PHASE,
     )
     inputs: dict[str, Any] = {}
     phase_shards: dict[str, list[Shard]] = {}
     for phase, raw_path in (
-        ("primary", args.primary_manifest),
-        ("cooldown", args.cooldown_manifest),
+        ("primary", primary_manifest),
+        ("cooldown", cooldown_manifest),
     ):
         path = raw_path.expanduser().resolve()
         identity, shards = _manifest_shards(
             path,
             phase=phase,
-            source_id=args.source_id,
+            source_id=source_id,
         )
         inputs[phase] = identity
         phase_shards[phase] = shards
@@ -578,7 +686,61 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         ).encode("utf-8")
         for row in samples
     )
-    samples_sha = _sha256_bytes(samples_payload)
+    return {
+        "inputs": inputs,
+        "phases": phase_stats,
+        "samples": samples,
+        "samples_payload": samples_payload,
+        "samples_sha256": _sha256_bytes(samples_payload),
+        "risk_samples_per_phase": risk_size,
+        "control_samples_per_phase": control_size,
+    }
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--primary-manifest", type=Path, required=True)
+    parser.add_argument("--cooldown-manifest", type=Path, required=True)
+    parser.add_argument("--source-id", required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--risk-samples-per-phase",
+        type=int,
+        default=MIN_RISK_SAMPLES_PER_PHASE,
+    )
+    parser.add_argument(
+        "--control-samples-per-phase",
+        type=int,
+        default=MIN_CONTROL_SAMPLES_PER_PHASE,
+    )
+    parser.add_argument("--manual-decisions", type=Path)
+    return parser
+
+
+def _validate_count(value: int, *, label: str, minimum: int) -> int:
+    if isinstance(value, bool) or value < minimum or value > 1_000:
+        raise AuditError(f"{label} must be in [{minimum}, 1000]")
+    return value
+
+
+def run(args: argparse.Namespace) -> dict[str, Any]:
+    output = args.output.expanduser().resolve()
+    if output.exists():
+        raise AuditError(f"immutable output already exists: {output}")
+    snapshot = recompute_scan(
+        primary_manifest=args.primary_manifest,
+        cooldown_manifest=args.cooldown_manifest,
+        source_id=args.source_id,
+        risk_sample_size=args.risk_samples_per_phase,
+        control_sample_size=args.control_samples_per_phase,
+    )
+    inputs = snapshot["inputs"]
+    phase_stats = snapshot["phases"]
+    samples = snapshot["samples"]
+    samples_payload = snapshot["samples_payload"]
+    samples_sha = snapshot["samples_sha256"]
+    risk_size = snapshot["risk_samples_per_phase"]
+    control_size = snapshot["control_samples_per_phase"]
 
     manual: dict[str, Any]
     if args.manual_decisions is None:
@@ -622,6 +784,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "high_precision_conversion_documents_eq": 0,
                 "malformed_punctuation_documents_eq": 0,
                 "manual_unacceptable_samples_eq": 0,
+                "risk_samples_per_phase_gte": MIN_RISK_SAMPLES_PER_PHASE,
+                "control_samples_per_phase_gte": MIN_CONTROL_SAMPLES_PER_PHASE,
+                "reviewer_placeholder_forbidden": True,
+                "reviewed_at_timezone_aware_iso8601_required": True,
             },
         },
         "inputs": inputs,

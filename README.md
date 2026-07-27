@@ -818,26 +818,40 @@ headroom 6.09 GiB，GPU utilization p95 98%，功耗 p95 604.19 W。micro-batch 
 peak reserved 升到 28.20 GiB；未 checkpoint 的 B2 与 B4 均越过 5090/WSL driver
 容量边界。因此没有用“剩余显存”盲目增大 physical batch。
 
+checkpoint 元数据确认真正可训练的只有 48 张 Adapter A/B
+（共 `201,326,592` 参数）和 24 个 branch scale；Muon 只有 48 个 momentum，
+AdamW 只有 24+24 个 scale moment，没有为冻结 backbone/donor/MTP 建立 optimizer
+state。因此约 25.75 GiB 峰值并非“全模型优化器状态”，主要来自冻结模型权重、4K
+activation、原生 MTP、分块词表 loss、反向重算和 CUDA workspace。
+
 连续 4-step 与 STOP → resume → SIGUSR1 → complete 分支的 model、Muon/AdamW、
 scheduler、RNG、data cursor、metrics 与全 rank runtime 哈希逐字节一致。最终审计位于
 `artifacts/configuration/v4-optimizer-ab/summary.json`，结论为 `accepted=true`；
-16M smoke 已改为 monitor-only；Dashboard 当前唯一 `launch_enabled=true` 的 v4
-profile 是尚待用户安排的 13M low-LR calibration。250M formal 仍保持 blocked，不能
-循环当前 16M 来冒充正式训练容量。
+16M smoke 已改为 monitor-only。中文数据治理切换为固定版本的中文 Wikipedia 后，
+Dashboard 当前所有训练 profile 均为 `launch_enabled=false`；最终数据身份、语义审阅
+和 formal baseline 已闭合，13M low-LR calibration 仍需 Wikipedia 许可确认与显式启动
+授权。250M formal 继续保持 blocked，不能循环当前 16M 或复用其 checkpoint/数据来冒充
+正式训练容量。
 
 250M 合同为 225M primary + 25M cooldown、physical B1/GA64、NTP `1.0` +
 native frozen MTP `0.1`、Muon Adapter/Lora `3e-5`、AdamW scale `3e-6`、
 10M warmup 和全程 cosine。它必须从 v3 final model-only fork；checkpoint
 `COMPLETE` SHA256 固定为
 `3a21a50e35de74ecd0ff5b8f00aa29ed6c83f746fc2cf97d4da6b0536262b6c7`。
-当前正式 config 仍有 `PENDING_*`，readiness/capacity 均
-`launch_enabled=false`。13M calibration 的 authenticated quality gate、正式
-train/validation union 不相交与 v3 baseline bundle 也都仍为 pending。
+225M/250M 都是完整 optimizer-batch 的切换/停止阈值，因此每个边界的实际 committed
+token 最多 overshoot 一个 global batch（严格小于 262,144 token），报告必须使用实际
+cursor 数值。13M calibration 有意读取最终 formal primary manifest 来验证同一输入合同，
+但它的 checkpoint/optimizer/cursor 不会作为正式 warm start；16M smoke 的 manifest、
+checkpoint 和数据 cursor 均不得进入正式 release。
+当前正式 config 仍有 `PENDING_*`，closure readiness/capacity 均
+`launch_enabled=false`。正式 train/validation union 不相交、中文语义质量与 v3
+baseline bundle 已通过；13M calibration 与 Wikipedia 许可门仍为 pending。
 
-readiness 中的 13M/26M/.../250M 暂停点尚未接入训练引擎：它们要求未来的外部
-governed controller 在第一个达到或越过阈值的完整 optimizer batch 后暂停并运行
-validation。当前文档中的 `twen.cli train` 命令不会自动暂停、评测或执行 post-launch
-hard stop，因此 controller 未实现本身也是正式 launch blocker。
+外部 governed controller 已实现 13M/26M/.../250M 暂停点：它会在第一个达到或越过
+阈值的完整 optimizer batch 后保存 milestone、暂停并运行认证 validation，同时执行
+post-launch hard stop。正式发布仍需把最终 config、数据、baseline、calibration 和
+报告身份原子绑定为 release plan；随后只有精确的 `RUN <plan-id>` 用户确认才能启动。
+直接调用普通 `twen.cli train` 不属于正式 v4 准入路径。
 
 ## 7. Fold 与 sparse 蒸馏
 
@@ -1056,10 +1070,11 @@ loss、NTP/MTP/KD/anchor/hidden、吞吐、显存、LR、gradient norm 与 check
 `configs/web/dashboard.json` 中固定且启动后 SHA 不变的 profile；start 还需要页面二次输入确认，
 stop 会在核验 rank-zero hostname/PID/cmdline/config 身份后发送 SIGTERM，让引擎先 checkpoint。
 
-当前 v1/v2/v3 与 v4 16M smoke 均为 completed monitor-only。allowlist 中唯一
-`launch_enabled=true` 的任务是尚未运行的 v4 13M low-LR calibration，固定 config
-SHA 为 `3301c226e7ab406311277d82f7a0a26fe58b5597d914bdb24e483b38df98fa79`；
-250M formal 没有可启动 Web profile。
+当前 v1/v2/v3 与 v4 16M smoke 均为 completed monitor-only。v4 13M low-LR
+calibration 已绑定新的 formal-primary r2 prepared identity，固定 config SHA 为
+`15ce9dbf68643b6abbcbc687a698f2994e2200587c442974903b07613a43109d`，但在
+Wikipedia 许可确认与 calibration 启动授权前仍保持 `launch_enabled=false`；
+250M formal 也没有可启动 Web profile。
 前台只读验收命令：
 
 ```bash

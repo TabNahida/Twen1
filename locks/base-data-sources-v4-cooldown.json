@@ -11,6 +11,18 @@
     ],
     "runnable": true
   },
+  "attribution_contract": {
+    "authorizes_training": false,
+    "fields": [
+      "id",
+      "url",
+      "title"
+    ],
+    "manifest_required": true,
+    "required_before_launch": true,
+    "retain_with_prepared_corpus": true,
+    "source_id": "chinese_wikipedia_zh_20231101"
+  },
   "kind": "twen_base_data_source_recipe_v2",
   "launch_policy": {
     "data_allow_corpus_reuse": false,
@@ -33,6 +45,7 @@
       "isc",
       "mit"
     ],
+    "exception_precedence": "source-specific exceptions override excluded families only for the listed immutable source identity; final launch authorization remains separate",
     "excluded_families": [
       "cc-by-sa",
       "gfdl",
@@ -44,12 +57,31 @@
       "no-license"
     ],
     "mode": "allowlist_only_for_per_document_licenses",
-    "normalization_required": true
+    "normalization_required": true,
+    "source_specific_share_alike_exceptions": [
+      {
+        "attribution_fields": [
+          "id",
+          "url",
+          "title"
+        ],
+        "attribution_manifest_required": true,
+        "authorizes_training": false,
+        "declared_license": "CC-BY-SA-3.0 AND GFDL",
+        "exception_id": "formal-v4-wikipedia-zh-20231101-share-alike-r1",
+        "overrides_excluded_families": [
+          "cc-by-sa",
+          "gfdl"
+        ],
+        "scope": "formal-v4-250m-cooldown-only",
+        "source_id": "chinese_wikipedia_zh_20231101"
+      }
+    ]
   },
   "mix_contract": {
     "basis_points_total": 10000,
-    "existing_sources_basis_points": 7000,
-    "new_sources_basis_points": 3000,
+    "existing_sources_basis_points": 4500,
+    "new_sources_basis_points": 5500,
     "quota_shortfall_policy": "fail_closed_and_revise_recipe",
     "silent_redistribution_allowed": false
   },
@@ -73,49 +105,66 @@
       "train_tokens": 25270000
     }
   },
-  "recipe_id": "base-v4-250m-cooldown-20260727-r1",
+  "recipe_id": "base-v4-250m-cooldown-20260727-r2",
   "schema_status": "stable",
   "schema_version": 2,
   "sources": [
     {
       "attribution_fields": [
-        "id"
+        "id",
+        "url",
+        "title"
       ],
       "capacity_plan": {
         "clean_materialization_token_quota": 6317500,
-        "governance_retention_rate": 0.8702,
+        "governance_retention_rate": 0.9,
         "passed": false,
-        "raw_materialization_token_quota": 7986000,
+        "raw_materialization_token_quota": 7722000,
         "raw_safety_multiplier": 1.1,
-        "retention_evidence": "base-v4-smoke-r3-r4-governance"
+        "retention_evidence": "wikipedia-zh-20231101-current-round-measured-retention-20260727"
       },
-      "card_url": "https://huggingface.co/datasets/HuggingFaceFW/fineweb-2/blob/af9c13333eb981300149d5ca60a8e9d659b276b9/README.md",
+      "card_url": "https://huggingface.co/datasets/wikimedia/wikipedia/blob/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/README.md",
       "category": "chinese_general",
-      "config": "cmn_Hani",
+      "config": "20231101.zh",
       "file_patterns": [
-        "data/cmn_Hani/train/004_00072.parquet"
+        "20231101.zh/train-00003-of-00006.parquet"
       ],
       "gated": false,
-      "license_declaration": "ODC-By-1.0",
-      "license_scope": "Database license; also subject to Common Crawl Terms of Use.",
+      "license_declaration": "CC-BY-SA-3.0 AND GFDL",
+      "license_scope": "Chinese Wikipedia snapshot admitted only by the formal-v4 source-specific share-alike exception; page attribution is mandatory.",
       "locked_files": [
         {
-          "path": "data/cmn_Hani/train/004_00072.parquet",
-          "sha256": "1a12f849443704a260195472bfd4d047d22a0e4db58fce66d870a443e6ce85be",
-          "size": 1183319384
+          "path": "20231101.zh/train-00003-of-00006.parquet",
+          "sha256": "4884e4933fa91f46dc9bf711db8be07f368da59b8cfc2e00e895a65a3284cbb1",
+          "size": 262039932
         }
       ],
       "max_document_tokens": 32768,
-      "min_characters": 100,
+      "min_characters": 200,
       "mix_basis_points": 2500,
-      "origin_group": "existing",
-      "repo_id": "HuggingFaceFW/fineweb-2",
+      "origin_group": "new",
+      "repo_id": "wikimedia/wikipedia",
       "required_fields": [
-        "text",
-        "id"
+        "id",
+        "url",
+        "title",
+        "text"
       ],
-      "revision": "af9c13333eb981300149d5ca60a8e9d659b276b9",
-      "source_id": "chinese_fineweb2_cmn_hani",
+      "revision": "b04c8d1ceb2f5cd4588862100d08de323dccfbaa",
+      "share_alike_exception": {
+        "attribution_fields": [
+          "id",
+          "url",
+          "title"
+        ],
+        "attribution_manifest_required": true,
+        "authorizes_training": false,
+        "declared_license": "CC-BY-SA-3.0 AND GFDL",
+        "exception_id": "formal-v4-wikipedia-zh-20231101-share-alike-r1",
+        "materialization_allowed": true,
+        "scope": "formal-v4-250m-primary-and-cooldown-only"
+      },
+      "source_id": "chinese_wikipedia_zh_20231101",
       "split": "train",
       "split_group_fields": [
         "id"
@@ -611,18 +660,18 @@
     "minimum_prepared_samples": 6168,
     "minimum_prepared_tokens": 25262144,
     "planned_training_tokens": 25000000,
-    "raw_materialization_tokens": 42268000,
+    "raw_materialization_tokens": 42004000,
     "raw_safety_multiplier": 1.1,
     "sequence_length": 4096,
     "sources": [
       {
-        "governance_retention_rate": 0.8702,
+        "governance_retention_rate": 0.9,
         "mix_basis_points": 2500,
         "passed": false,
-        "planned_raw_tokens": 7986000,
+        "planned_raw_tokens": 7722000,
         "required_clean_tokens": 6317500,
-        "retention_evidence": "base-v4-smoke-r3-r4-governance",
-        "source_id": "chinese_fineweb2_cmn_hani"
+        "retention_evidence": "wikipedia-zh-20231101-current-round-measured-retention-20260727",
+        "source_id": "chinese_wikipedia_zh_20231101"
       },
       {
         "governance_retention_rate": 0.7374,

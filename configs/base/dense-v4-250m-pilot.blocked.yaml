@@ -36,7 +36,7 @@ data:
   source_mix_algorithm: token-deficit-corrected-source-mix-bp-v2
   source_mix_allow_weight_override: false
   source_mix_basis_points:
-    chinese_fineweb2_cmn_hani: 2400
+    chinese_wikipedia_zh_20231101: 2400
     code_github_clean_allowlisted: 900
     code_stackv2_edu_permissive: 400
     english_fineweb_edu_dedup: 2500

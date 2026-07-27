@@ -37,10 +37,10 @@
     },
     {
       "config": "configs/base/dense-v4-13m-low-lr-calibration.yaml",
-      "config_sha256": "3301c226e7ab406311277d82f7a0a26fe58b5597d914bdb24e483b38df98fa79",
+      "config_sha256": "15ce9dbf68643b6abbcbc687a698f2994e2200587c442974903b07613a43109d",
       "fork_from": "runs/base-dense-v3-500m/step-000000001912-milestone-complete",
       "id": "base-dense-v4-13m-low-lr-calibration",
-      "label": "Base Dense v4 13M (blocked: Chinese data remediation)",
+      "label": "Base Dense v4 13M (blocked: license + calibration authorization)",
       "launch_enabled": false,
       "resume": "none"
     }

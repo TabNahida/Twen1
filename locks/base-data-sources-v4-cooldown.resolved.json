@@ -40,10 +40,10 @@
     "sources": [
       {
         "allowlist": [],
-        "declaration": "ODC-By-1.0",
+        "declaration": "CC-BY-SA-3.0 AND GFDL",
         "field": null,
-        "scope": "Database license; also subject to Common Crawl Terms of Use.",
-        "source_id": "chinese_fineweb2_cmn_hani",
+        "scope": "Chinese Wikipedia snapshot admitted only by the formal-v4 source-specific share-alike exception; page attribution is mandatory.",
+        "source_id": "chinese_wikipedia_zh_20231101",
         "value_mode": "canonical_after_normalization"
       },
       {
@@ -135,13 +135,13 @@
       {
         "locked_files": [
           {
-            "path": "data/cmn_Hani/train/004_00072.parquet",
-            "sha256": "1a12f849443704a260195472bfd4d047d22a0e4db58fce66d870a443e6ce85be",
-            "size": 1183319384
+            "path": "20231101.zh/train-00003-of-00006.parquet",
+            "sha256": "4884e4933fa91f46dc9bf711db8be07f368da59b8cfc2e00e895a65a3284cbb1",
+            "size": 262039932
           }
         ],
         "method": "immutable_lfs_range_stream",
-        "source_id": "chinese_fineweb2_cmn_hani",
+        "source_id": "chinese_wikipedia_zh_20231101",
         "storage_format": "parquet"
       },
       {
@@ -230,9 +230,9 @@
       }
     ]
   },
-  "recipe_id": "base-v4-250m-cooldown-20260727-r1",
+  "recipe_id": "base-v4-250m-cooldown-20260727-r2",
   "recipe_schema_version": 2,
-  "recipe_sha256": "7e7d067d0ba0b1552ae582ecb9a3cd55cdde111e3a930538d5d21e868c76b1e4",
+  "recipe_sha256": "851856cbde52f04430e97313595fb1a732455f4654b03375e46128c8d17b9f7d",
   "schema_version": 1,
   "source_mix": {
     "algorithm": "token-deficit-corrected-source-mix-bp-v2",
@@ -241,8 +241,8 @@
     "sources": [
       {
         "mix_basis_points": 2500,
-        "origin_group": "existing",
-        "source_id": "chinese_fineweb2_cmn_hani",
+        "origin_group": "new",
+        "source_id": "chinese_wikipedia_zh_20231101",
         "train_token_quotas": {
           "materialization": 6317500
         },
@@ -316,19 +316,19 @@
   },
   "sources": [
     {
-      "config": "cmn_Hani",
+      "config": "20231101.zh",
       "files": [
         {
-          "path": "data/cmn_Hani/train/004_00072.parquet",
-          "sha256": "1a12f849443704a260195472bfd4d047d22a0e4db58fce66d870a443e6ce85be",
-          "size": 1183319384,
-          "url": "https://huggingface.co/datasets/HuggingFaceFW/fineweb-2/resolve/af9c13333eb981300149d5ca60a8e9d659b276b9/data/cmn_Hani/train/004_00072.parquet"
+          "path": "20231101.zh/train-00003-of-00006.parquet",
+          "sha256": "4884e4933fa91f46dc9bf711db8be07f368da59b8cfc2e00e895a65a3284cbb1",
+          "size": 262039932,
+          "url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.zh/train-00003-of-00006.parquet"
         }
       ],
-      "license": "ODC-By-1.0",
-      "repo_id": "HuggingFaceFW/fineweb-2",
-      "revision": "af9c13333eb981300149d5ca60a8e9d659b276b9",
-      "source_id": "chinese_fineweb2_cmn_hani",
+      "license": "CC-BY-SA-3.0 AND GFDL",
+      "repo_id": "wikimedia/wikipedia",
+      "revision": "b04c8d1ceb2f5cd4588862100d08de323dccfbaa",
+      "source_id": "chinese_wikipedia_zh_20231101",
       "split": "train",
       "storage_format": "parquet"
     },

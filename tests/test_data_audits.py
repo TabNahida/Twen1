@@ -76,17 +76,26 @@ def test_content_quality_rejection_reasons_are_explicit(
 def test_content_quality_policy_is_conservative_for_code_and_clean_text() -> None:
     repeated_code = "def f():\\n    return 1\\n" * 10
     assert content_quality_rejection_reasons(repeated_code, category="code") == ()
-    assert content_quality_rejection_reasons(
-        "这是一段结构正常的中文教材正文，介绍牛顿定律及其适用条件。"
-    ) == ()
-    assert content_quality_rejection_reasons(
-        "财政部门公布彩票公益金审计报告，并要求销售机构落实未成年人保护。"
-        "报告讨论彩票监管、预算收入和公益项目绩效，不包含投注入口。"
-    ) == ()
-    assert content_quality_rejection_reasons(
-        "本文对照繁體字與简体字的规范写法，例如「後」对应“后”、"
-        "「發」对应“发”，供语言学课程查阅。"
-    ) == ()
+    assert (
+        content_quality_rejection_reasons(
+            "这是一段结构正常的中文教材正文，介绍牛顿定律及其适用条件。"
+        )
+        == ()
+    )
+    assert (
+        content_quality_rejection_reasons(
+            "财政部门公布彩票公益金审计报告，并要求销售机构落实未成年人保护。"
+            "报告讨论彩票监管、预算收入和公益项目绩效，不包含投注入口。"
+        )
+        == ()
+    )
+    assert (
+        content_quality_rejection_reasons(
+            "本文对照繁體字與简体字的规范写法，例如「後」对应“后”、"
+            "「發」对应“发”，供语言学课程查阅。"
+        )
+        == ()
+    )
 
 
 def _entry(root: Path, relative: str) -> dict[str, object]:
@@ -255,10 +264,7 @@ def _write_extracted_v2(
             actual_tokens[role][source_id] = token_total
         attribution = directory / "attribution.jsonl"
         attribution.write_text(
-            "".join(
-                json.dumps(row, sort_keys=True) + "\n"
-                for row in attribution_rows
-            ),
+            "".join(json.dumps(row, sort_keys=True) + "\n" for row in attribution_rows),
             encoding="utf-8",
         )
         attribution_entry = _entry(
@@ -569,6 +575,44 @@ def test_clean_audit_attests_both_roles_and_unlocks_prepare() -> None:
         assert prepared.lineage["ready_for_training"] is True
 
 
+def test_passing_content_audit_cannot_mask_pending_static_governance() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        candidate, frozen, registry, benchmark_root = _clean_inputs(root)
+        value = json.loads(candidate.read_text(encoding="utf-8"))
+        value["audits"]["manual_static_license_review"] = "pending_manual_review"
+        candidate.write_text(
+            json.dumps(value, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        complete_path = candidate.parent / "COMPLETE"
+        complete = json.loads(complete_path.read_text(encoding="utf-8"))
+        complete["manifest_sha256"] = sha256_file(candidate)
+        complete_path.write_text(
+            json.dumps(complete, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        attestation = build_base_audit_attestation(
+            candidate,
+            frozen,
+            registry,
+            benchmark_root,
+            root / "audit",
+        )
+        assert validate_base_audit_attestation(attestation)["ready_for_training"] is True
+        with pytest.raises(
+            ValueError,
+            match=r"ready_for_training.*unresolved pending audits",
+        ):
+            _authenticate_extracted_prepare_inputs(
+                candidate,
+                role="train",
+                tokenizer_sha256=TOKENIZER_SHA,
+                allow_pending_research_audits=False,
+                audit_attestation=attestation,
+            )
+
+
 def test_exact_and_near_validation_leakage_fail_closed() -> None:
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
@@ -674,9 +718,7 @@ def test_v2_materialization_preserves_source_contract_through_reaudit_and_prepar
                     shared,
                     "Frozen validation about harmonic analysis and musical form.",
                 ],
-                "source_b": [
-                    "Frozen validation about marine ecology and coral reef surveys."
-                ],
+                "source_b": ["Frozen validation about marine ecology and coral reef surveys."],
             },
             mix_basis_points={"source_a": 6_000, "source_b": 4_000},
         )
@@ -709,17 +751,12 @@ def test_v2_materialization_preserves_source_contract_through_reaudit_and_prepar
         assert report["license_audit"]["complete"] is True
         assert report["materialization_audit"]["complete"] is True
         filtered_value = json.loads(filtered.read_text(encoding="utf-8"))
-        mix = {
-            item["source_id"]: item
-            for item in filtered_value["source_mix"]["sources"]
+        mix = {item["source_id"]: item for item in filtered_value["source_mix"]["sources"]}
+        assert {source_id: item["mix_basis_points"] for source_id, item in mix.items()} == {
+            "source_a": 6_000,
+            "source_b": 4_000,
         }
-        assert {
-            source_id: item["mix_basis_points"]
-            for source_id, item in mix.items()
-        } == {"source_a": 6_000, "source_b": 4_000}
-        assert mix["source_a"]["target_train_tokens"] == (
-            len(shared) + len(retained_a) + 2
-        )
+        assert mix["source_a"]["target_train_tokens"] == (len(shared) + len(retained_a) + 2)
         assert mix["source_a"]["actual_train_tokens"] == len(retained_a) + 1
         assert mix["source_b"]["actual_train_tokens"] == len(retained_b) + 1
         assert (
@@ -732,9 +769,9 @@ def test_v2_materialization_preserves_source_contract_through_reaudit_and_prepar
         assert filtered_value["materialization_audit"][
             "parent_frozen_validation_manifest_sha256"
         ] == sha256_file(frozen)
-        assert filtered_value["materialization_audit"][
-            "audit_attestation_sha256"
-        ] == sha256_file(attestation)
+        assert filtered_value["materialization_audit"]["audit_attestation_sha256"] == sha256_file(
+            attestation
+        )
 
         rescanned = build_base_audit_attestation(
             filtered,

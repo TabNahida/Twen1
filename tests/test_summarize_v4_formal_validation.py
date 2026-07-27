@@ -22,6 +22,15 @@ def _load_script() -> ModuleType:
 formal = _load_script()
 
 
+def test_r2_formal_source_contract_uses_wikipedia_without_changing_legacy_baseline() -> None:
+    assert "chinese_wikipedia_zh_20231101" in formal.EXPECTED_PHASE_SOURCES["primary"]
+    assert "chinese_wikipedia_zh_20231101" in formal.EXPECTED_PHASE_SOURCES["cooldown"]
+    assert "chinese_wikipedia_zh_20231101" in formal.ADDITIONAL_SOURCES
+    assert "chinese_fineweb2_cmn_hani" not in formal.EXPECTED_PHASE_SOURCES["primary"]
+    assert "chinese_fineweb2_cmn_hani" not in formal.EXPECTED_PHASE_SOURCES["cooldown"]
+    assert "chinese_fineweb2_cmn_hani" in formal.LEGACY_SOURCES
+
+
 def _lineage(phase: str) -> dict[str, object]:
     validation = [
         {
@@ -130,6 +139,57 @@ def test_combine_sources_uses_predicted_token_weighting() -> None:
     assert arxiv["mean_nll"] == pytest.approx(2.75)
     assert arxiv["phases"] == ["primary", "cooldown"]
     assert arxiv["source_group"] == "additional_v4"
+
+
+def test_legacy_comparison_records_wikipedia_replacement_without_fake_delta() -> None:
+    combined = [
+        {
+            "source": "english_fineweb_edu_dedup",
+            "mean_nll": 2.0,
+            "predicted_tokens": 100,
+        },
+        {
+            "source": "chinese_wikipedia_zh_20231101",
+            "mean_nll": 3.0,
+            "predicted_tokens": 80,
+        },
+    ]
+    legacy = {
+        "sources": [
+            {
+                "source": "english_fineweb_edu_dedup",
+                "mean_nll": 2.5,
+                "predicted_tokens": 90,
+            },
+            {
+                "source": "chinese_fineweb2_cmn_hani",
+                "mean_nll": 3.5,
+                "predicted_tokens": 70,
+            },
+        ]
+    }
+
+    comparison = formal._legacy_comparison(combined, legacy)
+    assert [row["source"] for row in comparison] == ["english_fineweb_edu_dedup"]
+    assert comparison[0]["formal_minus_legacy_nll"] == pytest.approx(-0.5)
+
+    replacements = formal._source_replacements(combined, legacy)
+    assert replacements == [
+        {
+            "legacy_source": "chinese_fineweb2_cmn_hani",
+            "formal_source": "chinese_wikipedia_zh_20231101",
+            "legacy_mean_nll": 3.5,
+            "formal_mean_nll": 3.0,
+            "legacy_predicted_tokens": 70,
+            "formal_predicted_tokens": 80,
+            "comparable_as_model_delta": False,
+            "formal_minus_legacy_nll": None,
+            "reason": (
+                "source replacement and different frozen-validation corpus; "
+                "no NLL delta is claimed"
+            ),
+        }
+    ]
 
 
 def test_disjointness_attestation_must_bind_both_prepared_inputs(
