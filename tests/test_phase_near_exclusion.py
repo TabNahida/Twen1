@@ -419,6 +419,37 @@ def test_partial_duplicate_text_locator_projection_fails_closed(
         near._validate_unambiguous_selection_states(states)
 
 
+def test_near_projection_preserves_static_audits_and_reopens_only_content_gates() -> None:
+    projected = near._project_pending_reaudit_statuses(
+        {
+            "immutable_hub_commit_url_and_lfs_identity_lock": "complete",
+            "code_license_allowlist": "complete",
+            "cross_source_near_dedup": "complete_no_matches_minhash_lsh_v1",
+            "validation_byte_preservation": "complete_sha256_identical",
+        },
+        {
+            "cross_source_near_dedup": {
+                "passed": True,
+                "status": "complete_no_matches_minhash_lsh_v1",
+            }
+        },
+    )
+    assert (
+        projected["immutable_hub_commit_url_and_lfs_identity_lock"]
+        == "complete"
+    )
+    assert projected["code_license_allowlist"] == "complete"
+    assert (
+        projected["cross_source_near_dedup"]
+        == "pending_reaudit_phase_near_excluded_output"
+    )
+    assert (
+        projected["cross_phase_near_duplicate_exclusion"]
+        == "complete_exhaustive_attested_locator_projection"
+    )
+    assert projected["validation_byte_preservation"] == "complete_sha256_identical"
+
+
 def test_near_exclusion_cli_requires_external_pin_and_match_count() -> None:
     args = build_parser().parse_args(
         [

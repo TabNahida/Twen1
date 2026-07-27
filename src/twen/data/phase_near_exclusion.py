@@ -652,6 +652,35 @@ def _validate_unambiguous_selection_states(
         )
 
 
+def _project_pending_reaudit_statuses(
+    parent_audits: object,
+    audit_gates: object,
+) -> dict[str, object]:
+    audits = (
+        deepcopy(dict(parent_audits))
+        if isinstance(parent_audits, Mapping)
+        else {}
+    )
+    if not isinstance(audit_gates, Mapping):
+        raise DataAuditError("cooldown audit gates are invalid")
+    for name, gate in audit_gates.items():
+        if not isinstance(name, str) or not isinstance(gate, Mapping):
+            raise DataAuditError("cooldown audit gate is invalid")
+        status = gate.get("status")
+        if not isinstance(status, str) or not status:
+            raise DataAuditError("cooldown audit gate status is invalid")
+        audits[name] = "pending_reaudit_phase_near_excluded_output"
+    audits.update(
+        {
+            "cross_phase_near_duplicate_exclusion": (
+                "complete_exhaustive_attested_locator_projection"
+            ),
+            "validation_byte_preservation": "complete_sha256_identical",
+        }
+    )
+    return audits
+
+
 def _output_attestation(manifest_path: Path) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
     report = validate_extracted_base_corpus(manifest_path, verify_hashes=True)
     if report.get("ready_for_training") is not False:
@@ -1069,28 +1098,9 @@ def materialize_phase_near_excluded_cooldown(
             "materialization_audit": materialization_audit,
         }
         corpus_fingerprint = _canonical_sha256(identity)
-        parent_audits = cooldown.value.get("audits")
-        audits = (
-            deepcopy(dict(parent_audits))
-            if isinstance(parent_audits, Mapping)
-            else {}
-        )
-        for name in tuple(audits):
-            audits[name] = "pending_reaudit_phase_near_excluded_output"
-        gates = cooldown.audit.get("gates")
-        if not isinstance(gates, Mapping):
-            raise DataAuditError("cooldown audit gates are invalid")
-        for name in gates:
-            if not isinstance(name, str):
-                raise DataAuditError("cooldown audit gate name is invalid")
-            audits[name] = "pending_reaudit_phase_near_excluded_output"
-        audits.update(
-            {
-                "cross_phase_near_duplicate_exclusion": (
-                    "complete_exhaustive_attested_locator_projection"
-                ),
-                "validation_byte_preservation": "complete_sha256_identical",
-            }
+        audits = _project_pending_reaudit_statuses(
+            cooldown.value.get("audits"),
+            cooldown.audit.get("gates"),
         )
         parent_reasons = cooldown.value.get("rejection_reasons")
         rejection_reasons = (
