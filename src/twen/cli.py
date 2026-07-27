@@ -351,6 +351,36 @@ def _cmd_data_materialize_audit(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_data_exclude_cooldown_phase(args: argparse.Namespace) -> int:
+    from .data.phase_exclusion import (
+        materialize_phase_excluded_cooldown,
+        validate_phase_exclusion_output,
+    )
+    from .utils import sha256_file
+
+    manifest = materialize_phase_excluded_cooldown(
+        primary_manifest=args.primary_manifest,
+        primary_audit=args.primary_audit,
+        cooldown_manifest=args.cooldown_manifest,
+        cooldown_audit=args.cooldown_audit,
+        output_root=args.output,
+    )
+    attestation = validate_phase_exclusion_output(manifest)
+    _print_json(
+        {
+            "ok": True,
+            "manifest": str(manifest),
+            "manifest_sha256": sha256_file(manifest),
+            "attestation": str(manifest.parent / "phase-exclusion-attestation.json"),
+            "attestation_fingerprint": attestation["attestation_fingerprint"],
+            "metrics": attestation["metrics"],
+            "ready_for_training": False,
+            "next": "run data audit-base against the phase-excluded manifest",
+        }
+    )
+    return 0
+
+
 def _cmd_data_materialize_cooldown(args: argparse.Namespace) -> int:
     from .data import materialize_quality_cooldown_view
 
@@ -1121,6 +1151,19 @@ def build_parser() -> argparse.ArgumentParser:
     materialize_audit.add_argument("--audit-attestation", required=True)
     materialize_audit.add_argument("--output", required=True)
     materialize_audit.set_defaults(func=_cmd_data_materialize_audit)
+    exclude_cooldown_phase = data_sub.add_parser(
+        "exclude-cooldown-phase",
+        help=(
+            "atomically remove primary-overlapping stable keys from an audited "
+            "cooldown extracted corpus"
+        ),
+    )
+    exclude_cooldown_phase.add_argument("--primary-manifest", required=True)
+    exclude_cooldown_phase.add_argument("--primary-audit", required=True)
+    exclude_cooldown_phase.add_argument("--cooldown-manifest", required=True)
+    exclude_cooldown_phase.add_argument("--cooldown-audit", required=True)
+    exclude_cooldown_phase.add_argument("--output", required=True)
+    exclude_cooldown_phase.set_defaults(func=_cmd_data_exclude_cooldown_phase)
     generate_cooldown_policy = data_sub.add_parser(
         "generate-cooldown-policy",
         help="dry-plan or explicitly publish the deterministic Base-v2 50M quality policy",

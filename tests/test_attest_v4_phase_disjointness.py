@@ -40,7 +40,18 @@ def test_phase_index_matches_source_scoped_stable_and_normalized_exact(
 ) -> None:
     index = phase._PhaseIndex(tmp_path / "index.sqlite3")
     try:
-        index.add_stable_id("same_source", "a" * 64, "primary/a.jsonl", 1)
+        assert index.add_stable_id(
+            "same_source",
+            "a" * 64,
+            "primary/a.jsonl",
+            1,
+        )
+        assert not index.add_stable_id(
+            "same_source",
+            "a" * 64,
+            "primary/a.jsonl",
+            2,
+        )
         assert index.match_stable_id("same_source", "a" * 64) == (
             "primary/a.jsonl",
             1,
@@ -134,6 +145,75 @@ def test_phase_scanner_rejects_weaker_near_duplicate_threshold(tmp_path: Path) -
             output_root=tmp_path / "output",
             threshold=1.0,
         )
+
+
+def test_phase_scanner_treats_within_phase_stable_id_repeats_as_set_members(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    primary = SimpleNamespace(name="primary")
+    cooldown = SimpleNamespace(name="cooldown")
+    primary_identity = {"prepared": {"dataset_fingerprint": "1" * 64}}
+    cooldown_identity = {"prepared": {"dataset_fingerprint": "2" * 64}}
+    identities = iter(
+        (
+            (primary, {}, primary_identity),
+            (cooldown, {}, cooldown_identity),
+            (primary, {}, primary_identity),
+            (cooldown, {}, cooldown_identity),
+        )
+    )
+    monkeypatch.setattr(phase, "_attested_corpus", lambda *_args: next(identities))
+
+    def stable_ids(corpus: object):
+        if corpus is primary:
+            return iter(
+                (
+                    ("math", "a" * 64, "primary.jsonl", 1, 100),
+                    ("math", "a" * 64, "primary.jsonl", 2, 200),
+                )
+            )
+        return iter(
+            (
+                ("math", "b" * 64, "cooldown.jsonl", 1, 300),
+                ("math", "b" * 64, "cooldown.jsonl", 2, 400),
+            )
+        )
+
+    monkeypatch.setattr(phase, "_iter_train_stable_ids", stable_ids)
+    monkeypatch.setattr(
+        phase,
+        "_iter_jsonl_documents",
+        lambda _corpus, _role: iter(()),
+    )
+    monkeypatch.setattr(phase, "twen_source_tree_sha256", lambda: "a" * 64)
+
+    attestation = phase.build_phase_disjointness_attestation(
+        primary_manifest=tmp_path / "primary.json",
+        primary_audit=tmp_path / "primary-audit.json",
+        primary_prepared=tmp_path / "primary-prepared.json",
+        cooldown_manifest=tmp_path / "cooldown.json",
+        cooldown_audit=tmp_path / "cooldown-audit.json",
+        cooldown_prepared=tmp_path / "cooldown-prepared.json",
+        output_root=tmp_path / "phase-attestation",
+    )
+    payload = json.loads(attestation.read_text())
+    assert payload["passed"] is True
+    assert payload["metrics"] == {
+        "primary_train_documents": 0,
+        "primary_train_attribution_rows": 2,
+        "primary_train_attributed_tokens": 300,
+        "primary_unique_stable_ids": 1,
+        "primary_duplicate_stable_id_rows": 1,
+        "cooldown_train_documents": 0,
+        "cooldown_train_attribution_rows": 2,
+        "cooldown_train_attributed_tokens": 700,
+        "cooldown_unique_stable_ids": 1,
+        "cooldown_duplicate_stable_id_rows": 1,
+        "stable_id_exact_matches": 0,
+        "normalized_text_exact_matches": 0,
+        "near_duplicate_matches": 0,
+    }
 
 
 def test_phase_scanner_rejects_source_identity_drift(

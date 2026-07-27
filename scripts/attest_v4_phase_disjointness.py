@@ -242,17 +242,21 @@ class _PhaseIndex:
         stable_id: str,
         path: str,
         line_number: int,
-    ) -> None:
-        try:
-            self.connection.execute(
-                "INSERT INTO stable_ids(source_id,stable_id,path,line_number) VALUES(?,?,?,?)",
-                (source_id, stable_id, path, line_number),
-            )
-        except sqlite3.IntegrityError as error:
-            raise DataAuditError(
-                "primary train attribution contains a duplicate source-scoped "
-                f"stable ID: {source_id}/{stable_id}"
-            ) from error
+    ) -> bool:
+        """Add one member to the primary stable-ID set.
+
+        Some governed sources intentionally use one split-group key (for
+        example, a URL) for multiple rows.  The cross-phase gate is a set
+        intersection, so repeated members inside one phase are counted and
+        reported but do not invalidate that phase or change the intersection.
+        """
+
+        cursor = self.connection.execute(
+            "INSERT OR IGNORE INTO stable_ids(source_id,stable_id,path,line_number) "
+            "VALUES(?,?,?,?)",
+            (source_id, stable_id, path, line_number),
+        )
+        return cursor.rowcount == 1
 
     def match_stable_id(
         self,
@@ -398,9 +402,13 @@ def build_phase_disjointness_attestation(
         "primary_train_documents": 0,
         "primary_train_attribution_rows": 0,
         "primary_train_attributed_tokens": 0,
+        "primary_unique_stable_ids": 0,
+        "primary_duplicate_stable_id_rows": 0,
         "cooldown_train_documents": 0,
         "cooldown_train_attribution_rows": 0,
         "cooldown_train_attributed_tokens": 0,
+        "cooldown_unique_stable_ids": 0,
+        "cooldown_duplicate_stable_id_rows": 0,
         "stable_id_exact_matches": 0,
         "normalized_text_exact_matches": 0,
         "near_duplicate_matches": 0,
@@ -413,7 +421,18 @@ def build_phase_disjointness_attestation(
     scan_completed = False
     try:
         for source_id, stable_id, path, line_number, token_count in _iter_train_stable_ids(primary):
-            index.add_stable_id(source_id, stable_id, path, line_number)
+            inserted = index.add_stable_id(
+                source_id,
+                stable_id,
+                path,
+                line_number,
+            )
+            metric = (
+                "primary_unique_stable_ids"
+                if inserted
+                else "primary_duplicate_stable_id_rows"
+            )
+            metrics[metric] += 1
             metrics["primary_train_attribution_rows"] += 1
             metrics["primary_train_attributed_tokens"] += token_count
             if metrics["primary_train_attribution_rows"] % progress_every == 0:
@@ -448,33 +467,40 @@ def build_phase_disjointness_attestation(
                 )
         index.commit()
 
+        cooldown_stable_ids: set[tuple[str, str]] = set()
         for source_id, stable_id, path, line_number, token_count in _iter_train_stable_ids(
             cooldown
         ):
-            match = index.match_stable_id(source_id, stable_id)
             metrics["cooldown_train_attribution_rows"] += 1
             metrics["cooldown_train_attributed_tokens"] += token_count
-            if match is not None:
-                metrics["stable_id_exact_matches"] += 1
-                if len(examples["stable_id_exact"]) < max_examples:
-                    examples["stable_id_exact"].append(
-                        {
-                            "primary": _locator(
-                                source_id=source_id,
-                                path=match[0],
-                                line=match[1],
-                                digest_field="stable_id",
-                                digest=stable_id,
-                            ),
-                            "cooldown": _locator(
-                                source_id=source_id,
-                                path=path,
-                                line=line_number,
-                                digest_field="stable_id",
-                                digest=stable_id,
-                            ),
-                        }
-                    )
+            stable_key = (source_id, stable_id)
+            if stable_key in cooldown_stable_ids:
+                metrics["cooldown_duplicate_stable_id_rows"] += 1
+            else:
+                cooldown_stable_ids.add(stable_key)
+                metrics["cooldown_unique_stable_ids"] += 1
+                match = index.match_stable_id(source_id, stable_id)
+                if match is not None:
+                    metrics["stable_id_exact_matches"] += 1
+                    if len(examples["stable_id_exact"]) < max_examples:
+                        examples["stable_id_exact"].append(
+                            {
+                                "primary": _locator(
+                                    source_id=source_id,
+                                    path=match[0],
+                                    line=match[1],
+                                    digest_field="stable_id",
+                                    digest=stable_id,
+                                ),
+                                "cooldown": _locator(
+                                    source_id=source_id,
+                                    path=path,
+                                    line=line_number,
+                                    digest_field="stable_id",
+                                    digest=stable_id,
+                                ),
+                            }
+                        )
             if metrics["cooldown_train_attribution_rows"] % progress_every == 0:
                 _progress(
                     progress,
